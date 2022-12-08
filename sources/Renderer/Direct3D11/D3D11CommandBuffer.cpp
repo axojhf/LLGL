@@ -129,7 +129,13 @@ void D3D11CommandBuffer::CopyBuffer(
         0,                                              // DstZ
         srcBufferD3D.GetNative(),                       // pSrcResource
         0,                                              // SrcSubresource
-        &CD3D11_BOX(                                    // pSrcBox
+        //当处于MinGW环境下时使用D3D11_BOX替代CD3D11_BOX
+        #ifdef __MINGW32__
+        D3D11_BOX                                      // pSrcBox
+        #else
+        &CD3D11_BOX                  
+        #endif
+        (                  // pSrcBox
             static_cast<LONG>(srcOffset), 0, 0,
             static_cast<LONG>(srcOffset + size), 1, 1
         )
