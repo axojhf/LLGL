@@ -1,12 +1,13 @@
 /*
  * MTSwapChain.mm
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "MTSwapChain.h"
 #include "MTTypes.h"
+#include "RenderState/MTRenderPass.h"
 #include "../TextureUtils.h"
 #include <LLGL/Platform/NativeHandle.h>
 
@@ -109,6 +110,22 @@ bool MTSwapChain::SetVsyncInterval(std::uint32_t vsyncInterval)
         view_.preferredFramesPerSecond = defaultRefreshRate;
     }
     return true;
+}
+
+MTLRenderPassDescriptor* MTSwapChain::GetAndUpdateNativeRenderPass(
+    const MTRenderPass& renderPass,
+    std::uint32_t       numClearValues,
+    const ClearValue*   clearValues)
+{
+    /* Create copy of native render pass descriptor for the first time */
+    if (nativeMutableRenderPass_ == nil)
+        nativeMutableRenderPass_ = [GetNativeRenderPass() copy];
+
+    /* Update mutable render pass with clear values */
+    if (renderPass.GetColorAttachments().size() == 1)
+        renderPass.UpdateNativeRenderPass(nativeMutableRenderPass_, numClearValues, clearValues);
+
+    return nativeMutableRenderPass_;
 }
 
 

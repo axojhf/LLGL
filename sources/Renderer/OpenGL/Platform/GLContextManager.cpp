@@ -1,13 +1,14 @@
 /*
  * GLContextManager.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GLContextManager.h"
 #include "../RenderState/GLStateManager.h"
 #include "../Ext/GLExtensionLoader.h"
+#include "../Ext/GLExtensionRegistry.h"
 #include <LLGL/Window.h>
 #include <LLGL/Canvas.h>
 
@@ -81,7 +82,7 @@ std::shared_ptr<GLContext> GLContextManager::MakeContextWithPixelFormat(const GL
 
     /* Load GL extensions for the very first context */
     const bool hasGLCoreProfile = (profile_.contextProfile == OpenGLContextProfile::CoreProfile);
-    LoadGLExtensions(hasGLCoreProfile);
+    LoadSupportedOpenGLExtensions(hasGLCoreProfile);
 
     /* Initialize state manager for new GL context */
     auto& stateMngr = context->GetStateManager();
@@ -118,12 +119,14 @@ void GLContextManager::InitRenderStates(GLStateManager& stateMngr)
 
     /* D3D11, Vulkan, and Metal always use a fixed restart index for strip topologies */
     #ifdef LLGL_PRIMITIVE_RESTART_FIXED_INDEX
-    stateMngr.Enable(GLState::PRIMITIVE_RESTART_FIXED_INDEX);
+    if (HasExtension(GLExt::ARB_ES3_compatibility))
+        stateMngr.Enable(GLState::PRIMITIVE_RESTART_FIXED_INDEX);
     #endif
 
     #ifdef LLGL_OPENGL
-    /* D3D10+ has this per default */
-    stateMngr.Enable(GLState::TEXTURE_CUBE_MAP_SEAMLESS);
+    /* D3D10+ has this by default */
+    if (HasExtension(GLExt::ARB_seamless_cubemap_per_texture))
+        stateMngr.Enable(GLState::TEXTURE_CUBE_MAP_SEAMLESS);
     #endif
 
     /* D3D10+ uses clock-wise vertex winding per default */
@@ -135,18 +138,6 @@ void GLContextManager::InitRenderStates(GLStateManager& stateMngr)
     */
     stateMngr.SetPixelStorePack(0, 0, 1);
     stateMngr.SetPixelStoreUnpack(0, 0, 1);
-}
-
-
-void GLContextManager::LoadGLExtensions(bool hasGLCoreProfile)
-{
-    /* Load OpenGL extensions if not already done */
-    if (!AreExtensionsLoaded())
-    {
-        /* Query extensions and load all of them */
-        auto extensions = QueryExtensions(hasGLCoreProfile);
-        LoadAllExtensions(extensions, hasGLCoreProfile);
-    }
 }
 
 

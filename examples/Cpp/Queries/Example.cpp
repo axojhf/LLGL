@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_Queries)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
@@ -12,7 +12,7 @@
 class Example_Queries : public ExampleBase
 {
 
-    LLGL::ShaderProgram*    shaderProgram           = nullptr;
+    ShaderPipeline          shaderPipeline;
 
     LLGL::PipelineState*    occlusionPipeline       = nullptr;
     LLGL::PipelineState*    scenePipeline           = nullptr;
@@ -60,7 +60,7 @@ public:
     {
         // Create all graphics objects
         auto vertexFormat = CreateBuffers();
-        shaderProgram = LoadStandardShaderProgram({ vertexFormat });
+        shaderPipeline = LoadStandardShaderPipeline({ vertexFormat });
         CreatePipelines();
         CreateQueries();
         CreateResourceHeaps();
@@ -91,12 +91,13 @@ public:
     void CreatePipelines()
     {
         // Create pipeline layout
-        pipelineLayout = renderer->CreatePipelineLayout(LLGL::PipelineLayoutDesc("cbuffer(0):vert:frag"));
+        pipelineLayout = renderer->CreatePipelineLayout(LLGL::PipelineLayoutDesc("heap{cbuffer(0):vert:frag}"));
 
         // Create graphics pipeline for occlusion query
         LLGL::GraphicsPipelineDescriptor pipelineDesc;
         {
-            pipelineDesc.shaderProgram                  = shaderProgram;
+            pipelineDesc.vertexShader                   = shaderPipeline.vs;
+            pipelineDesc.fragmentShader                 = shaderPipeline.ps;
             pipelineDesc.pipelineLayout                 = pipelineLayout;
 
             pipelineDesc.depth.testEnabled              = true;
@@ -105,14 +106,14 @@ public:
             pipelineDesc.rasterizer.multiSampleEnabled  = (GetSampleCount() > 1);
             pipelineDesc.rasterizer.cullMode            = LLGL::CullMode::Back;
 
-            pipelineDesc.blend.targets[0].colorMask     = LLGL::ColorRGBAb{ false };
+            pipelineDesc.blend.targets[0].colorMask     = 0x0;
         }
         occlusionPipeline = renderer->CreatePipelineState(pipelineDesc);
 
         // Create graphics pipeline for scene rendering
         {
             pipelineDesc.blend.targets[0].blendEnabled  = true;
-            pipelineDesc.blend.targets[0].colorMask     = LLGL::ColorRGBAb{ true };
+            pipelineDesc.blend.targets[0].colorMask     = 0xF;
         }
         scenePipeline = renderer->CreatePipelineState(pipelineDesc);
     }
@@ -145,12 +146,7 @@ public:
     void CreateResourceHeaps()
     {
         // Create resource heap for constant buffer
-        LLGL::ResourceHeapDescriptor heapDesc;
-        {
-            heapDesc.pipelineLayout = pipelineLayout;
-            heapDesc.resourceViews  = { constantBuffer };
-        }
-        resourceHeap = renderer->CreateResourceHeap(heapDesc);
+        resourceHeap = renderer->CreateResourceHeap(pipelineLayout, { constantBuffer });
     }
 
     std::uint64_t GetAndSyncQueryResult(LLGL::QueryHeap* query)
@@ -261,7 +257,7 @@ private:
     void RenderScene()
     {
         // Clear color and depth buffers
-        commands->Clear(LLGL::ClearFlags::ColorDepth);
+        commands->Clear(LLGL::ClearFlags::ColorDepth, backgroundColor);
 
         // Set resources
         commands->SetPipelineState(*scenePipeline);

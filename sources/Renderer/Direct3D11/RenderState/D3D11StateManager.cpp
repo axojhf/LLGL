@@ -1,12 +1,14 @@
 /*
  * D3D11StateManager.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D11StateManager.h"
-#include "../../../Core/HelperMacros.h"
+#include "../Texture/D3D11Sampler.h"
+#include "../../../Core/MacroUtils.h"
+#include <LLGL/Utils/ForRange.h>
 #include <algorithm>
 #include <cstddef>
 
@@ -15,18 +17,14 @@ namespace LLGL
 {
 
 
-static const UINT g_cbufferChunkSize = 4096u;
+static constexpr UINT g_cbufferChunkSize = 4096u;
 
-D3D11StateManager::D3D11StateManager(
-    ID3D11Device*                       device,
-    const ComPtr<ID3D11DeviceContext>&  context,
-    ID3D11DeviceContext*                cbufferPoolDeviceContext)
-:
+D3D11StateManager::D3D11StateManager(ID3D11Device* device, const ComPtr<ID3D11DeviceContext>& context) :
     context_ { context },
-    intermediateCbufferPool_
+    stagingCbufferPool_
     {
         device,
-        (cbufferPoolDeviceContext != nullptr ? cbufferPoolDeviceContext : context.Get()),
+        context.Get(),
         g_cbufferChunkSize,
         D3D11_BIND_CONSTANT_BUFFER
     }
@@ -212,7 +210,7 @@ void D3D11StateManager::SetStencilRef(UINT stencilRef)
     }
 }
 
-static bool EqualsBlendFactors(const FLOAT* lhs, const FLOAT* rhs)
+static bool EqualsBlendFactors(const FLOAT lhs[4], const FLOAT rhs[4])
 {
     return
     (
@@ -233,7 +231,7 @@ void D3D11StateManager::SetBlendState(ID3D11BlendState* blendState, UINT sampleM
     }
 }
 
-void D3D11StateManager::SetBlendState(ID3D11BlendState* blendState, const FLOAT* blendFactor, UINT sampleMask)
+void D3D11StateManager::SetBlendState(ID3D11BlendState* blendState, const FLOAT blendFactor[4], UINT sampleMask)
 {
     if (renderState_.blendState != blendState || !EqualsBlendFactors(renderState_.blendFactor, blendFactor) || renderState_.sampleMask != sampleMask)
     {
@@ -247,7 +245,7 @@ void D3D11StateManager::SetBlendState(ID3D11BlendState* blendState, const FLOAT*
     }
 }
 
-void D3D11StateManager::SetBlendFactor(const FLOAT* blendFactor)
+void D3D11StateManager::SetBlendFactor(const FLOAT blendFactor[4])
 {
     if (!EqualsBlendFactors(renderState_.blendFactor, blendFactor))
     {
@@ -296,11 +294,13 @@ void D3D11StateManager::SetConstantBuffersRange(
     #endif
     {
         /* Buffer range is not supported for D3D 11.0 */
-        for (UINT i = 0; i < count; ++i)
+        #ifdef LLGL_DEBUG
+        for_range(i, count)
         {
             if (firstConstants[i] > 0)
                 throw std::runtime_error("constant buffer range is only supported with Direct3D 11.1 or later");
         }
+        #endif
 
         /* Bind buffer to shader stage */
         if (LLGL_VS_STAGE(stageFlags)) { context_->VSSetConstantBuffers(startSlot, count, buffers); }
@@ -324,20 +324,6 @@ void D3D11StateManager::SetShaderResources(
     if (LLGL_GS_STAGE(stageFlags)) { context_->GSSetShaderResources(startSlot, count, views); }
     if (LLGL_PS_STAGE(stageFlags)) { context_->PSSetShaderResources(startSlot, count, views); }
     if (LLGL_CS_STAGE(stageFlags)) { context_->CSSetShaderResources(startSlot, count, views); }
-}
-
-void D3D11StateManager::SetSamplers(
-    UINT                        startSlot,
-    UINT                        count,
-    ID3D11SamplerState* const*  samplers,
-    long                        stageFlags)
-{
-    if (LLGL_VS_STAGE(stageFlags)) { context_->VSSetSamplers(startSlot, count, samplers); }
-    if (LLGL_HS_STAGE(stageFlags)) { context_->HSSetSamplers(startSlot, count, samplers); }
-    if (LLGL_DS_STAGE(stageFlags)) { context_->DSSetSamplers(startSlot, count, samplers); }
-    if (LLGL_GS_STAGE(stageFlags)) { context_->GSSetSamplers(startSlot, count, samplers); }
-    if (LLGL_PS_STAGE(stageFlags)) { context_->PSSetSamplers(startSlot, count, samplers); }
-    if (LLGL_CS_STAGE(stageFlags)) { context_->CSSetSamplers(startSlot, count, samplers); }
 }
 
 void D3D11StateManager::SetUnorderedAccessViews(
@@ -368,10 +354,45 @@ void D3D11StateManager::SetUnorderedAccessViews(
     }
 }
 
-void D3D11StateManager::SetConstants(std::uint32_t slot, const void* data, std::uint16_t dataSize, long stageFlags)
+void D3D11StateManager::SetSamplers(
+    UINT                        startSlot,
+    UINT                        count,
+    ID3D11SamplerState* const*  samplers,
+    long                        stageFlags)
+{
+    if (LLGL_VS_STAGE(stageFlags)) { context_->VSSetSamplers(startSlot, count, samplers); }
+    if (LLGL_HS_STAGE(stageFlags)) { context_->HSSetSamplers(startSlot, count, samplers); }
+    if (LLGL_DS_STAGE(stageFlags)) { context_->DSSetSamplers(startSlot, count, samplers); }
+    if (LLGL_GS_STAGE(stageFlags)) { context_->GSSetSamplers(startSlot, count, samplers); }
+    if (LLGL_PS_STAGE(stageFlags)) { context_->PSSetSamplers(startSlot, count, samplers); }
+    if (LLGL_CS_STAGE(stageFlags)) { context_->CSSetSamplers(startSlot, count, samplers); }
+}
+
+void D3D11StateManager::SetGraphicsStaticSampler(const D3D11StaticSampler& staticSamplerD3D)
+{
+    if (LLGL_VS_STAGE(staticSamplerD3D.stageFlags))
+        context_->VSSetSamplers(staticSamplerD3D.slot, 1, staticSamplerD3D.native.GetAddressOf());
+    if (LLGL_HS_STAGE(staticSamplerD3D.stageFlags))
+        context_->HSSetSamplers(staticSamplerD3D.slot, 1, staticSamplerD3D.native.GetAddressOf());
+    if (LLGL_DS_STAGE(staticSamplerD3D.stageFlags))
+        context_->DSSetSamplers(staticSamplerD3D.slot, 1, staticSamplerD3D.native.GetAddressOf());
+    if (LLGL_GS_STAGE(staticSamplerD3D.stageFlags))
+        context_->GSSetSamplers(staticSamplerD3D.slot, 1, staticSamplerD3D.native.GetAddressOf());
+    if (LLGL_PS_STAGE(staticSamplerD3D.stageFlags))
+        context_->PSSetSamplers(staticSamplerD3D.slot, 1, staticSamplerD3D.native.GetAddressOf());
+}
+
+void D3D11StateManager::SetComputeStaticSampler(const D3D11StaticSampler& staticSamplerD3D)
+{
+    if (LLGL_CS_STAGE(staticSamplerD3D.stageFlags))
+        context_->CSSetSamplers(staticSamplerD3D.slot, 1, staticSamplerD3D.native.GetAddressOf());
+}
+
+void D3D11StateManager::SetConstants(UINT slot, const void* data, UINT dataSize, long stageFlags)
 {
     /* Write data to intermediate constant buffer */
-    auto bufferRange = intermediateCbufferPool_.Write(data, dataSize);
+    constexpr UINT cbufferUpdateAlignment = 16*16;
+    auto bufferRange = stagingCbufferPool_.Write(data, dataSize, cbufferUpdateAlignment);
 
     /* Bind intermediate buffer to buffer range */
     const UINT firstConstants[] = { bufferRange.offset / 16 };
@@ -383,13 +404,14 @@ void D3D11StateManager::SetConstants(std::uint32_t slot, const void* data, std::
 void D3D11StateManager::DispatchBuiltin(const D3D11BuiltinShader builtinShader, UINT numWorkGroupsX, UINT numWorkGroupsY, UINT numWorkGroupsZ)
 {
     ID3D11ComputeShader* cs = D3D11BuiltinShaderFactory::Get().GetBulitinShader(builtinShader).cs.Get();
-    SetComputeShader(cs);
+    context_->CSSetShader(cs, nullptr, 0);
     context_->Dispatch(numWorkGroupsX, numWorkGroupsY, numWorkGroupsZ);
+    context_->CSSetShader(shaderState_.cs, nullptr, 0);
 }
 
-void D3D11StateManager::ResetIntermediateBufferPools()
+void D3D11StateManager::ResetStagingBufferPools()
 {
-    intermediateCbufferPool_.Reset();
+    stagingCbufferPool_.Reset();
 }
 
 

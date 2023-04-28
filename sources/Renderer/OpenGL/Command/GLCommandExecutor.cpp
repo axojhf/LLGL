@@ -1,8 +1,8 @@
 /*
  * GLCommandExecutor.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GLCommandExecutor.h"
@@ -13,7 +13,7 @@
 #include "../GLTypes.h"
 #include "../GLCore.h"
 #include "../Ext/GLExtensions.h"
-#include "../Ext/GLExtensionLoader.h"
+#include "../Ext/GLExtensionRegistry.h"
 #include "../../CheckedCast.h"
 #include "../../../Core/Assertion.h"
 
@@ -190,12 +190,14 @@ static std::size_t ExecuteGLCommand(const GLOpcode opcode, const void* pc, GLSta
             stateMngr->BindVertexArray(cmd->vao);
             return sizeof(*cmd);
         }
+        #ifdef LLGL_GL_ENABLE_OPENGL2X
         case GLOpcodeBindGL2XVertexArray:
         {
             auto cmd = reinterpret_cast<const GLCmdBindGL2XVertexArray*>(pc);
             cmd->vertexArrayGL2X->Bind(*stateMngr);
             return sizeof(*cmd);
         }
+        #endif
         case GLOpcodeBindElementArrayBufferToVAO:
         {
             auto cmd = reinterpret_cast<const GLCmdBindElementArrayBufferToVAO*>(pc);
@@ -243,7 +245,7 @@ static std::size_t ExecuteGLCommand(const GLOpcode opcode, const void* pc, GLSta
         case GLOpcodeBindResourceHeap:
         {
             auto cmd = reinterpret_cast<const GLCmdBindResourceHeap*>(pc);
-            cmd->resourceHeap->Bind(*stateMngr, cmd->firstSet);
+            cmd->resourceHeap->Bind(*stateMngr, cmd->descriptorSet);
             return sizeof(*cmd);
         }
         case GLOpcodeBindRenderTarget:
@@ -275,7 +277,7 @@ static std::size_t ExecuteGLCommand(const GLOpcode opcode, const void* pc, GLSta
         case GLOpcodeSetUniforms:
         {
             auto cmd = reinterpret_cast<const GLCmdSetUniforms*>(pc);
-            GLSetUniformsByLocation(cmd->program, cmd->location, cmd->count, (cmd + 1));
+            GLSetUniformsByType(cmd->type, cmd->location, cmd->count, (cmd + 1));
             return (sizeof(*cmd) + cmd->size);
         }
         case GLOpcodeBeginQuery:
@@ -443,12 +445,14 @@ static std::size_t ExecuteGLCommand(const GLOpcode opcode, const void* pc, GLSta
             stateMngr->BindSampler(cmd->layer, cmd->sampler);
             return sizeof(*cmd);
         }
+        #ifdef LLGL_GL_ENABLE_OPENGL2X
         case GLOpcodeBindGL2XSampler:
         {
             auto cmd = reinterpret_cast<const GLCmdBindGL2XSampler*>(pc);
             stateMngr->BindGL2XSampler(cmd->layer, *(cmd->samplerGL2X));
             return sizeof(*cmd);
         }
+        #endif
         case GLOpcodeUnbindResources:
         {
             auto cmd = reinterpret_cast<const GLCmdUnbindResources*>(pc);

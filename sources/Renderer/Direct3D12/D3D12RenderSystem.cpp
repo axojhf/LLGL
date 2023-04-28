@@ -1,18 +1,19 @@
 /*
  * D3D12RenderSystem.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D12RenderSystem.h"
 #include "D3D12Types.h"
 #include "D3D12Serialization.h"
+#include "D3D12SubresourceContext.h"
 #include "../DXCommon/DXCore.h"
 #include "../TextureUtils.h"
 #include "../CheckedCast.h"
 #include "../../Core/Vendor.h"
-#include "../../Core/Helper.h"
+#include "../../Core/CoreUtils.h"
 #include "../../Core/Assertion.h"
 #include "D3DX12/d3dx12.h"
 #include <limits.h>
@@ -72,7 +73,6 @@ D3D12RenderSystem::~D3D12RenderSystem()
 
     /* Clear shaders explicitly to release all ComPtr<ID3DBlob> objects */
     shaders_.clear();
-    shaderPrograms_.clear();
 
     /* Clear resources of singletons */
     D3D12MipGenerator::Get().Clear();
@@ -81,14 +81,14 @@ D3D12RenderSystem::~D3D12RenderSystem()
 
 /* ----- Swap-chain ----- */
 
-SwapChain* D3D12RenderSystem::CreateSwapChain(const SwapChainDescriptor& desc, const std::shared_ptr<Surface>& surface)
+SwapChain* D3D12RenderSystem::CreateSwapChain(const SwapChainDescriptor& swapChainDesc, const std::shared_ptr<Surface>& surface)
 {
-    return TakeOwnership(swapChains_, MakeUnique<D3D12SwapChain>(*this, desc, surface));
+    return swapChains_.emplace<D3D12SwapChain>(*this, swapChainDesc, surface);
 }
 
 void D3D12RenderSystem::Release(SwapChain& swapChain)
 {
-    RemoveFromUniqueSet(swapChains_, &swapChain);
+    swapChains_.erase(&swapChain);
 }
 
 /* ----- Command queues ----- */
@@ -100,85 +100,69 @@ CommandQueue* D3D12RenderSystem::GetCommandQueue()
 
 /* ----- Command buffers ----- */
 
-CommandBuffer* D3D12RenderSystem::CreateCommandBuffer(const CommandBufferDescriptor& desc)
+CommandBuffer* D3D12RenderSystem::CreateCommandBuffer(const CommandBufferDescriptor& commandBufferDesc)
 {
-    return TakeOwnership(commandBuffers_, MakeUnique<D3D12CommandBuffer>(*this, desc));
+    return commandBuffers_.emplace<D3D12CommandBuffer>(*this, commandBufferDesc);
 }
 
 void D3D12RenderSystem::Release(CommandBuffer& commandBuffer)
 {
     SyncGPU();
-    RemoveFromUniqueSet(commandBuffers_, &commandBuffer);
+    commandBuffers_.erase(&commandBuffer);
 }
 
 /* ----- Buffers ------ */
 
-// private
-std::unique_ptr<D3D12Buffer> D3D12RenderSystem::CreateGpuBuffer(const BufferDescriptor& desc, const void* initialData)
+Buffer* D3D12RenderSystem::CreateBuffer(const BufferDescriptor& bufferDesc, const void* initialData)
 {
-    auto bufferD3D = MakeUnique<D3D12Buffer>(device_.GetNative(), desc);
-
-    if (initialData)
-    {
-        /* Write initial data to GPU buffer */
-        stagingBufferPool_.WriteImmediate(
-            *commandContext_,
-            bufferD3D->GetResource(),
-            0,
-            initialData,
-            desc.size,
-            bufferD3D->GetAlignment()
-        );
-
-        /* Execute upload commands and wait for GPU to finish execution */
-        ExecuteCommandListAndSync();
-    }
-
+    AssertCreateBuffer(bufferDesc, ULLONG_MAX);
+    D3D12Buffer* bufferD3D = buffers_.emplace<D3D12Buffer>(device_.GetNative(), bufferDesc);
+    if (initialData != nullptr)
+        UpdateBufferAndSync(*bufferD3D, 0, initialData, bufferDesc.size, bufferD3D->GetAlignment());
     return bufferD3D;
-}
-
-Buffer* D3D12RenderSystem::CreateBuffer(const BufferDescriptor& desc, const void* initialData)
-{
-    AssertCreateBuffer(desc, ULLONG_MAX);
-    return TakeOwnership(buffers_, CreateGpuBuffer(desc, initialData));
 }
 
 BufferArray* D3D12RenderSystem::CreateBufferArray(std::uint32_t numBuffers, Buffer* const * bufferArray)
 {
     AssertCreateBufferArray(numBuffers, bufferArray);
-    return TakeOwnership(bufferArrays_, MakeUnique<D3D12BufferArray>(numBuffers, bufferArray));
+    return bufferArrays_.emplace<D3D12BufferArray>(numBuffers, bufferArray);
 }
 
 void D3D12RenderSystem::Release(Buffer& buffer)
 {
     SyncGPU();
-    RemoveFromUniqueSet(buffers_, &buffer);
+    buffers_.erase(&buffer);
 }
 
 void D3D12RenderSystem::Release(BufferArray& bufferArray)
 {
     SyncGPU();
-    RemoveFromUniqueSet(bufferArrays_, &bufferArray);
+    bufferArrays_.erase(&bufferArray);
 }
 
-void D3D12RenderSystem::WriteBuffer(Buffer& dstBuffer, std::uint64_t dstOffset, const void* data, std::uint64_t dataSize)
+void D3D12RenderSystem::WriteBuffer(Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t dataSize)
 {
-    auto& dstBufferD3D = LLGL_CAST(D3D12Buffer&, dstBuffer);
-    stagingBufferPool_.WriteImmediate(*commandContext_, dstBufferD3D.GetResource(), dstOffset, data, dataSize);
-    ExecuteCommandListAndSync();
+    auto& bufferD3D = LLGL_CAST(D3D12Buffer&, buffer);
+    UpdateBufferAndSync(bufferD3D, offset, data, dataSize);
+}
+
+void D3D12RenderSystem::ReadBuffer(Buffer& buffer, std::uint64_t offset, void* data, std::uint64_t dataSize)
+{
+    auto& bufferD3D = LLGL_CAST(D3D12Buffer&, buffer);
+    stagingBufferPool_.ReadSubresourceRegion(*commandContext_, bufferD3D.GetResource(), offset, data, dataSize);
+    /* No ExecuteCommandListAndSync() here as it has already been flushed by the staging buffer pool */
 }
 
 void* D3D12RenderSystem::MapBuffer(Buffer& buffer, const CPUAccess access)
 {
     auto& bufferD3D = LLGL_CAST(D3D12Buffer&, buffer);
+    return MapBufferRange(bufferD3D, access, 0, bufferD3D.GetBufferSize());
+}
 
-    void* mappedData = nullptr;
-    const D3D12_RANGE range{ 0, static_cast<SIZE_T>(bufferD3D.GetBufferSize()) };
-
-    if (SUCCEEDED(bufferD3D.Map(*commandContext_, range, &mappedData, access)))
-        return mappedData;
-
-    return nullptr;
+void* D3D12RenderSystem::MapBuffer(Buffer& buffer, const CPUAccess access, std::uint64_t offset, std::uint64_t length)
+{
+    auto& bufferD3D = LLGL_CAST(D3D12Buffer&, buffer);
+    return MapBufferRange(bufferD3D, access, offset, length);
 }
 
 void D3D12RenderSystem::UnmapBuffer(Buffer& buffer)
@@ -189,97 +173,33 @@ void D3D12RenderSystem::UnmapBuffer(Buffer& buffer)
 
 /* ----- Textures ----- */
 
-//private
-void D3D12RenderSystem::UpdateGpuTexture(
-    D3D12Texture&               textureD3D,
-    const TextureRegion&        region,
-    const SrcImageDescriptor&   imageDesc,
-    ComPtr<ID3D12Resource>&     uploadBuffer)
-{
-    /* Validate subresource range */
-    const auto& subresource = region.subresource;
-    if (subresource.baseMipLevel + subresource.numMipLevels     > textureD3D.GetNumMipLevels() ||
-        subresource.baseArrayLayer + subresource.numArrayLayers > textureD3D.GetNumArrayLayers())
-    {
-        throw std::invalid_argument("texture subresource out of range for image upload");
-    }
-
-    /* Check if image data conversion is necessary */
-    auto format = textureD3D.GetFormat();
-    const auto& formatAttribs = GetFormatAttribs(format);
-    auto dataLayout = CalcSubresourceLayout(format, region.extent);
-
-    ByteBuffer intermediateData;
-    const void* initialData = imageDesc.data;
-
-    if ((formatAttribs.flags & FormatFlags::IsCompressed) == 0 &&
-        (formatAttribs.format != imageDesc.format || formatAttribs.dataType != imageDesc.dataType))
-    {
-        /* Convert image data (e.g. from RGB to RGBA), and redirect initial data to new buffer */
-        intermediateData    = ConvertImageBuffer(imageDesc, formatAttribs.format, formatAttribs.dataType, GetConfiguration().threadCount);
-        initialData         = intermediateData.get();
-    }
-    else
-    {
-        /* Validate input data is large enough */
-        if (imageDesc.dataSize < dataLayout.dataSize)
-        {
-            throw std::invalid_argument(
-                "image data size is too small to update subresource of D3D12 texture (" +
-                std::to_string(dataLayout.dataSize) + " is required but only " + std::to_string(imageDesc.dataSize) + " was specified)"
-            );
-        }
-    }
-
-    /* Upload image data to subresource */
-    D3D12_SUBRESOURCE_DATA subresourceData;
-    {
-        subresourceData.pData       = initialData;
-        subresourceData.RowPitch    = dataLayout.rowStride;
-        subresourceData.SlicePitch  = dataLayout.layerStride;
-    }
-    textureD3D.UpdateSubresource(
-        device_.GetNative(),
-        commandContext_->GetCommandList(),
-        uploadBuffer,
-        subresourceData,
-        region.subresource.baseMipLevel,
-        region.subresource.baseArrayLayer,
-        region.subresource.numArrayLayers
-    );
-}
-
 Texture* D3D12RenderSystem::CreateTexture(const TextureDescriptor& textureDesc, const SrcImageDescriptor* imageDesc)
 {
-    auto textureD3D = MakeUnique<D3D12Texture>(device_.GetNative(), textureDesc);
+    auto* textureD3D = textures_.emplace<D3D12Texture>(device_.GetNative(), textureDesc);
 
     if (imageDesc != nullptr)
     {
-        ComPtr<ID3D12Resource> uploadBuffer;
-
-        /* Update first MIP-map */
+        /* Update base MIP-map */
         TextureRegion region;
         {
             region.subresource.numArrayLayers   = textureDesc.arrayLayers;
             region.extent                       = textureDesc.extent;
         }
-        UpdateGpuTexture(*textureD3D, region, *imageDesc, uploadBuffer);
+        D3D12SubresourceContext subresourceContext{ *commandContext_ };
+        UpdateTextureSubresourceFromImage(*textureD3D, region, *imageDesc, subresourceContext);
 
         /* Generate MIP-maps if enabled */
         if (MustGenerateMipsOnCreate(textureDesc))
             D3D12MipGenerator::Get().GenerateMips(*commandContext_, *textureD3D, textureD3D->GetWholeSubresource());
-
-        /* Execute upload commands and wait for GPU to finish execution */
-        ExecuteCommandListAndSync();
     }
 
-    return TakeOwnership(textures_, std::move(textureD3D));
+    return textureD3D;
 }
 
 void D3D12RenderSystem::Release(Texture& texture)
 {
     SyncGPU();
-    RemoveFromUniqueSet(textures_, &texture);
+    textures_.erase(&texture);
 }
 
 void D3D12RenderSystem::WriteTexture(Texture& texture, const TextureRegion& textureRegion, const SrcImageDescriptor& imageDesc)
@@ -287,11 +207,8 @@ void D3D12RenderSystem::WriteTexture(Texture& texture, const TextureRegion& text
     auto& textureD3D = LLGL_CAST(D3D12Texture&, texture);
 
     /* Execute upload commands and wait for GPU to finish execution */
-    ComPtr<ID3D12Resource> uploadBuffer;
-    UpdateGpuTexture(textureD3D, textureRegion, imageDesc, uploadBuffer);
-
-    /* Execute upload commands and wait for GPU to finish execution */
-    ExecuteCommandListAndSync();
+    D3D12SubresourceContext subresourceContext{ *commandContext_ };
+    UpdateTextureSubresourceFromImage(textureD3D, textureRegion, imageDesc, subresourceContext);
 }
 
 void D3D12RenderSystem::ReadTexture(Texture& texture, const TextureRegion& textureRegion, const DstImageDescriptor& imageDesc)
@@ -301,9 +218,11 @@ void D3D12RenderSystem::ReadTexture(Texture& texture, const TextureRegion& textu
     /* Create CPU accessible readback buffer for texture and execute command list */
     ComPtr<ID3D12Resource> readbackBuffer;
     UINT rowStride = 0;
-
-    textureD3D.CreateSubresourceCopyAsReadbackBuffer(device_.GetNative(), *commandContext_, textureRegion, readbackBuffer, rowStride);
-    ExecuteCommandListAndSync();
+    {
+        D3D12SubresourceContext subresourceContext{ *commandContext_ };
+        textureD3D.CreateSubresourceCopyAsReadbackBuffer(subresourceContext, textureRegion, rowStride);
+        readbackBuffer = subresourceContext.TakeResource();
+    }
 
     /* Map readback buffer to CPU memory space */
     void* mappedData = nullptr;
@@ -324,91 +243,86 @@ void D3D12RenderSystem::ReadTexture(Texture& texture, const TextureRegion& textu
 
 /* ----- Sampler States ---- */
 
-Sampler* D3D12RenderSystem::CreateSampler(const SamplerDescriptor& desc)
+Sampler* D3D12RenderSystem::CreateSampler(const SamplerDescriptor& samplerDesc)
 {
-    return TakeOwnership(samplers_, MakeUnique<D3D12Sampler>(desc));
+    return samplers_.emplace<D3D12Sampler>(samplerDesc);
 }
 
 void D3D12RenderSystem::Release(Sampler& sampler)
 {
     SyncGPU();
-    RemoveFromUniqueSet(samplers_, &sampler);
+    samplers_.erase(&sampler);
 }
 
 /* ----- Resource Heaps ----- */
 
-ResourceHeap* D3D12RenderSystem::CreateResourceHeap(const ResourceHeapDescriptor& desc)
+ResourceHeap* D3D12RenderSystem::CreateResourceHeap(const ResourceHeapDescriptor& resourceHeapDesc, const ArrayView<ResourceViewDescriptor>& initialResourceViews)
 {
-    return TakeOwnership(resourceHeaps_, MakeUnique<D3D12ResourceHeap>(device_.GetNative(), desc));
+    return resourceHeaps_.emplace<D3D12ResourceHeap>(device_.GetNative(), resourceHeapDesc, initialResourceViews);
 }
 
 void D3D12RenderSystem::Release(ResourceHeap& resourceHeap)
 {
     SyncGPU();
-    RemoveFromUniqueSet(resourceHeaps_, &resourceHeap);
+    resourceHeaps_.erase(&resourceHeap);
+}
+
+std::uint32_t D3D12RenderSystem::WriteResourceHeap(ResourceHeap& resourceHeap, std::uint32_t firstDescriptor, const ArrayView<ResourceViewDescriptor>& resourceViews)
+{
+    auto& resourceHeapD3D = LLGL_CAST(D3D12ResourceHeap&, resourceHeap);
+    return resourceHeapD3D.CreateResourceViewHandles(device_.GetNative(), firstDescriptor, resourceViews);
 }
 
 /* ----- Render Passes ----- */
 
-RenderPass* D3D12RenderSystem::CreateRenderPass(const RenderPassDescriptor& desc)
+RenderPass* D3D12RenderSystem::CreateRenderPass(const RenderPassDescriptor& renderPassDesc)
 {
-    return TakeOwnership(renderPasses_, MakeUnique<D3D12RenderPass>(device_, desc));
+    return renderPasses_.emplace<D3D12RenderPass>(device_, renderPassDesc);
 }
 
 void D3D12RenderSystem::Release(RenderPass& renderPass)
 {
     SyncGPU();
-    RemoveFromUniqueSet(renderPasses_, &renderPass);
+    renderPasses_.erase(&renderPass);
 }
 
 /* ----- Render Targets ----- */
 
-RenderTarget* D3D12RenderSystem::CreateRenderTarget(const RenderTargetDescriptor& desc)
+RenderTarget* D3D12RenderSystem::CreateRenderTarget(const RenderTargetDescriptor& renderTargetDesc)
 {
-    return TakeOwnership(renderTargets_, MakeUnique<D3D12RenderTarget>(device_, desc));
+    return renderTargets_.emplace<D3D12RenderTarget>(device_, renderTargetDesc);
 }
 
 void D3D12RenderSystem::Release(RenderTarget& renderTarget)
 {
     SyncGPU();
-    RemoveFromUniqueSet(renderTargets_, &renderTarget);
+    renderTargets_.erase(&renderTarget);
 }
 
 /* ----- Shader ----- */
 
-Shader* D3D12RenderSystem::CreateShader(const ShaderDescriptor& desc)
+Shader* D3D12RenderSystem::CreateShader(const ShaderDescriptor& shaderDesc)
 {
-    AssertCreateShader(desc);
-    return TakeOwnership(shaders_, MakeUnique<D3D12Shader>(desc));
-}
-
-ShaderProgram* D3D12RenderSystem::CreateShaderProgram(const ShaderProgramDescriptor& desc)
-{
-    AssertCreateShaderProgram(desc);
-    return TakeOwnership(shaderPrograms_, MakeUnique<D3D12ShaderProgram>(desc));
+    AssertCreateShader(shaderDesc);
+    return shaders_.emplace<D3D12Shader>(shaderDesc);
 }
 
 void D3D12RenderSystem::Release(Shader& shader)
 {
-    RemoveFromUniqueSet(shaders_, &shader);
-}
-
-void D3D12RenderSystem::Release(ShaderProgram& shaderProgram)
-{
-    RemoveFromUniqueSet(shaderPrograms_, &shaderProgram);
+    shaders_.erase(&shader);
 }
 
 /* ----- Pipeline Layouts ----- */
 
-PipelineLayout* D3D12RenderSystem::CreatePipelineLayout(const PipelineLayoutDescriptor& desc)
+PipelineLayout* D3D12RenderSystem::CreatePipelineLayout(const PipelineLayoutDescriptor& pipelineLayoutDesc)
 {
-    return TakeOwnership(pipelineLayouts_, MakeUnique<D3D12PipelineLayout>(device_.GetNative(), desc));
+    return pipelineLayouts_.emplace<D3D12PipelineLayout>(device_.GetNative(), pipelineLayoutDesc);
 }
 
 void D3D12RenderSystem::Release(PipelineLayout& pipelineLayout)
 {
     SyncGPU();
-    RemoveFromUniqueSet(pipelineLayouts_, &pipelineLayout);
+    pipelineLayouts_.erase(&pipelineLayout);
 }
 
 /* ----- Pipeline States ----- */
@@ -422,32 +336,29 @@ PipelineState* D3D12RenderSystem::CreatePipelineState(const Blob& serializedCach
     if (seg.ident == Serialization::D3D12Ident_GraphicsPSOIdent)
     {
         /* Create graphics PSO from cache */
-        return TakeOwnership(pipelineStates_, MakeUnique<D3D12GraphicsPSO>(device_, reader));
+        return pipelineStates_.emplace<D3D12GraphicsPSO>(device_, reader);
     }
     #if 0//TODO
     else if (seg.ident == Serialization::D3D12Ident_ComputePSOIdent)
     {
         /* Create compute PSO from cache */
-        return TakeOwnership(pipelineStates_, MakeUnique<D3D12ComputePSO>(device_, reader));
+        return pipelineStates_.emplace<D3D12ComputePSO>(device_, reader);
     }
     #endif
 
-    throw std::runtime_error("serialized cache does not denote a D3D12 graphics or compute PSO");
+    LLGL_TRAP("serialized cache does not denote a D3D12 graphics or compute PSO");
 }
 
-PipelineState* D3D12RenderSystem::CreatePipelineState(const GraphicsPipelineDescriptor& desc, std::unique_ptr<Blob>* serializedCache)
+PipelineState* D3D12RenderSystem::CreatePipelineState(const GraphicsPipelineDescriptor& pipelineStateDesc, std::unique_ptr<Blob>* serializedCache)
 {
     Serialization::Serializer writer;
 
-    auto pipelineState = TakeOwnership(
-        pipelineStates_,
-        MakeUnique<D3D12GraphicsPSO>(
-            device_,
-            defaultPipelineLayout_,
-            desc,
-            GetDefaultRenderPass(),
-            (serializedCache != nullptr ? &writer : nullptr)
-        )
+    D3D12GraphicsPSO* pipelineState = pipelineStates_.emplace<D3D12GraphicsPSO>(
+        device_,
+        defaultPipelineLayout_,
+        pipelineStateDesc,
+        GetDefaultRenderPass(),
+        (serializedCache != nullptr ? &writer : nullptr)
     );
 
     if (serializedCache != nullptr)
@@ -456,74 +367,53 @@ PipelineState* D3D12RenderSystem::CreatePipelineState(const GraphicsPipelineDesc
     return pipelineState;
 }
 
-PipelineState* D3D12RenderSystem::CreatePipelineState(const ComputePipelineDescriptor& desc, std::unique_ptr<Blob>* /*serializedCache*/)
+PipelineState* D3D12RenderSystem::CreatePipelineState(const ComputePipelineDescriptor& pipelineStateDesc, std::unique_ptr<Blob>* /*serializedCache*/)
 {
-    return TakeOwnership(
-        pipelineStates_,
-        MakeUnique<D3D12ComputePSO>(device_, defaultPipelineLayout_, desc)
-    );
+    return pipelineStates_.emplace<D3D12ComputePSO>(device_, defaultPipelineLayout_, pipelineStateDesc);
 }
 
 void D3D12RenderSystem::Release(PipelineState& pipelineState)
 {
     SyncGPU();
-    RemoveFromUniqueSet(pipelineStates_, &pipelineState);
+    pipelineStates_.erase(&pipelineState);
 }
 
 /* ----- Queries ----- */
 
-QueryHeap* D3D12RenderSystem::CreateQueryHeap(const QueryHeapDescriptor& desc)
+QueryHeap* D3D12RenderSystem::CreateQueryHeap(const QueryHeapDescriptor& queryHeapDesc)
 {
-    return TakeOwnership(queryHeaps_, MakeUnique<D3D12QueryHeap>(device_, desc));
+    return queryHeaps_.emplace<D3D12QueryHeap>(device_, queryHeapDesc);
 }
 
 void D3D12RenderSystem::Release(QueryHeap& queryHeap)
 {
     SyncGPU();
-    RemoveFromUniqueSet(queryHeaps_, &queryHeap);
+    queryHeaps_.erase(&queryHeap);
 }
 
 /* ----- Fences ----- */
 
 Fence* D3D12RenderSystem::CreateFence()
 {
-    return TakeOwnership(fences_, MakeUnique<D3D12Fence>(device_.GetNative(), 0));
+    return fences_.emplace<D3D12Fence>(device_.GetNative(), 0);
 }
 
 void D3D12RenderSystem::Release(Fence& fence)
 {
     SyncGPU();
-    RemoveFromUniqueSet(fences_, &fence);
+    fences_.erase(&fence);
 }
 
 /* ----- Extended internal functions ----- */
 
-ComPtr<IDXGISwapChain1> D3D12RenderSystem::CreateDXSwapChain(const DXGI_SWAP_CHAIN_DESC1& desc, HWND wnd)
+ComPtr<IDXGISwapChain1> D3D12RenderSystem::CreateDXSwapChain(const DXGI_SWAP_CHAIN_DESC1& swapChainDescDXGI, HWND wnd)
 {
     ComPtr<IDXGISwapChain1> swapChain;
 
-    auto hr = factory_->CreateSwapChainForHwnd(commandQueue_->GetNative(), wnd, &desc, nullptr, nullptr, &swapChain);
+    auto hr = factory_->CreateSwapChainForHwnd(commandQueue_->GetNative(), wnd, &swapChainDescDXGI, nullptr, nullptr, &swapChain);
     DXThrowIfFailed(hr, "failed to create DXGI swap chain");
 
     return swapChain;
-}
-
-void D3D12RenderSystem::SignalFenceValue(UINT64& fenceValue)
-{
-    auto& fence = commandQueue_->GetGlobalFence();
-    fenceValue = fence.GetNextValue();
-    commandQueue_->SignalFence(fence, fenceValue);
-}
-
-void D3D12RenderSystem::WaitForFenceValue(UINT64 fenceValue)
-{
-    commandQueue_->GetGlobalFence().WaitForValue(fenceValue);
-}
-
-void D3D12RenderSystem::SyncGPU(UINT64& fenceValue)
-{
-    SignalFenceValue(fenceValue);
-    WaitForFenceValue(fenceValue);
 }
 
 void D3D12RenderSystem::SyncGPU()
@@ -579,14 +469,14 @@ void D3D12RenderSystem::QueryVideoAdapters()
 void D3D12RenderSystem::CreateDevice()
 {
     /* Use default adapter (null) and try all feature levels */
-    ComPtr<IDXGIAdapter> adapter;
     auto featureLevels = DXGetFeatureLevels(D3D_FEATURE_LEVEL_12_1);
 
     /* Try to create a feature level with an hardware adapter */
     HRESULT hr = 0;
-    if (!device_.CreateDXDevice(hr, adapter.Get(), featureLevels))
+    if (!device_.CreateDXDevice(hr, nullptr, featureLevels))
     {
         /* Use software adapter as fallback */
+        ComPtr<IDXGIAdapter> adapter;
         factory_->EnumWarpAdapter(IID_PPV_ARGS(adapter.ReleaseAndGetAddressOf()));
         if (!device_.CreateDXDevice(hr, adapter.Get(), featureLevels))
             DXThrowIfFailed(hr, "failed to create D3D12 device");
@@ -678,6 +568,86 @@ void D3D12RenderSystem::ExecuteCommandList()
 void D3D12RenderSystem::ExecuteCommandListAndSync()
 {
     commandContext_->Finish(true);
+}
+
+void D3D12RenderSystem::UpdateBufferAndSync(
+    D3D12Buffer&    bufferD3D,
+    std::uint64_t   offset,
+    const void*     data,
+    std::uint64_t   dataSize,
+    std::uint64_t   alignment)
+{
+    stagingBufferPool_.WriteImmediate(*commandContext_, bufferD3D.GetResource(), offset, data, dataSize, alignment);
+    ExecuteCommandListAndSync();
+}
+
+void* D3D12RenderSystem::MapBufferRange(D3D12Buffer& bufferD3D, const CPUAccess access, std::uint64_t offset, std::uint64_t size)
+{
+    void* mappedData = nullptr;
+    const D3D12_RANGE range{ static_cast<SIZE_T>(offset), static_cast<SIZE_T>(size) };
+
+    if (SUCCEEDED(bufferD3D.Map(*commandContext_, range, &mappedData, access)))
+        return mappedData;
+
+    return nullptr;
+}
+
+HRESULT D3D12RenderSystem::UpdateTextureSubresourceFromImage(
+    D3D12Texture&               textureD3D,
+    const TextureRegion&        region,
+    const SrcImageDescriptor&   imageDesc,
+    D3D12SubresourceContext&    subresourceContext)
+{
+    /* Validate subresource range */
+    const auto& subresource = region.subresource;
+    if (subresource.baseMipLevel + subresource.numMipLevels     > textureD3D.GetNumMipLevels() ||
+        subresource.baseArrayLayer + subresource.numArrayLayers > textureD3D.GetNumArrayLayers() ||
+        subresource.numMipLevels != 1)
+    {
+        return E_INVALIDARG;
+    }
+
+    /* Check if image data conversion is necessary */
+    const auto  format          = textureD3D.GetFormat();
+    const auto& formatAttribs   = GetFormatAttribs(format);
+
+    const auto  texExtent       = textureD3D.GetMipExtent(region.subresource.baseMipLevel);
+    const auto  srcExtent       = CalcTextureExtent(textureD3D.GetType(), region.extent, region.subresource.numArrayLayers);
+
+    const auto  dataLayout      = CalcSubresourceLayout(format, srcExtent);
+
+    ByteBuffer intermediateData;
+    const void* initialData = imageDesc.data;
+
+    if ((formatAttribs.flags & FormatFlags::IsCompressed) == 0 &&
+        (formatAttribs.format != imageDesc.format || formatAttribs.dataType != imageDesc.dataType))
+    {
+        /* Convert image data (e.g. from RGB to RGBA), and redirect initial data to new buffer */
+        intermediateData    = ConvertImageBuffer(imageDesc, formatAttribs.format, formatAttribs.dataType, Constants::maxThreadCount);
+        initialData         = intermediateData.get();
+    }
+    else
+    {
+        /* Validate input data is large enough */
+        if (imageDesc.dataSize < dataLayout.dataSize)
+            return E_INVALIDARG;
+    }
+
+    /* Upload image data to subresource */
+    D3D12_SUBRESOURCE_DATA subresourceData;
+    {
+        subresourceData.pData       = initialData;
+        subresourceData.RowPitch    = dataLayout.rowStride;
+        subresourceData.SlicePitch  = dataLayout.layerStride;
+    }
+
+    const bool isFullRegion = (region.offset == Offset3D{} && srcExtent == texExtent);
+    if (isFullRegion)
+        textureD3D.UpdateSubresource(subresourceContext, subresourceData, region.subresource);
+    else
+        textureD3D.UpdateSubresourceRegion(subresourceContext, subresourceData, region);
+
+    return S_OK;
 }
 
 const D3D12RenderPass* D3D12RenderSystem::GetDefaultRenderPass() const

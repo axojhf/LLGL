@@ -1,8 +1,8 @@
 /*
  * VKDeviceImage.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_VK_IMAGE_WRAPPER_H
@@ -28,7 +28,7 @@ class VKDeviceImage
 
     public:
 
-        VKDeviceImage(const VKPtr<VkDevice>& device);
+        VKDeviceImage(VkDevice device);
         virtual ~VKDeviceImage() = default;
 
         // Explicit default move constructors required for GCC (to be used in VKSwapChain c'tor)
@@ -55,15 +55,12 @@ class VKDeviceImage
         void ReleaseVkImage();
 
         void CreateVkImageView(
-            VkDevice            device,
-            VkImageViewType     viewType,
-            VkFormat            format,
-            VkImageAspectFlags  aspectFlags,
-            std::uint32_t       baseMipLevel,
-            std::uint32_t       numMipLevels,
-            std::uint32_t       baseArrayLayer,
-            std::uint32_t       numArrayLayers,
-            VkImageView*        imageViewRef
+            VkDevice                        device,
+            VkImageViewType                 viewType,
+            VkFormat                        format,
+            const VkImageSubresourceRange&  subresourceRange,
+            VKPtr<VkImageView>&             outImageView,
+            const VkComponentMapping*       components          = nullptr
         );
 
         // Returns the native VkImage handle.

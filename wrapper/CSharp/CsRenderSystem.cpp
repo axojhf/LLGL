@@ -8,7 +8,7 @@
 #include "CsRenderSystem.h"
 #include "CsHelper.h"
 #include <LLGL/ImageFlags.h>
-#include <LLGL/Utility.h>
+#include <LLGL/Misc/Utility.h>
 #include <algorithm>
 
 
@@ -235,24 +235,6 @@ RendererInfo^ RenderSystem::Info::get()
     return managedInfo;
 }
 
-#if 0
-
-RenderingCapabilities GetRenderingCaps()
-{
-    return caps_;
-}
-
-void SetConfiguration(const RenderSystemConfiguration& config)
-{
-}
-
-const RenderSystemConfiguration& GetConfiguration()
-{
-    return config_;
-}
-
-#endif
-
 /* ----- Swap-chain ----- */
 
 static void Convert(LLGL::RendererConfigurationOpenGL& dst, RendererConfigurationOpenGL^ src)
@@ -330,26 +312,29 @@ static void Convert(LLGL::VertexAttribute& dst, VertexAttribute^ src)
     }
 }
 
-static void Convert(LLGL::BufferDescriptor& dst, BufferDescriptor^ src)
+static void Convert(LLGL::BufferDescriptor& dst, BufferDescriptor^ src, std::vector<LLGL::VertexAttribute>& nativeVertexAttribs)
 {
     if (src)
     {
+        nativeVertexAttribs.resize(src->VertexAttribs->Count);
+        for (int i = 0; i < src->VertexAttribs->Count; ++i)
+            Convert(nativeVertexAttribs[i], src->VertexAttribs[i]);
+
         dst.size            = src->Size;
         dst.stride          = src->Stride;
         dst.format          = static_cast<LLGL::Format>(src->Format);
         dst.bindFlags       = static_cast<long>(src->BindFlags);
         dst.cpuAccessFlags  = static_cast<long>(src->CPUAccessFlags);
         dst.miscFlags       = static_cast<long>(src->MiscFlags);
-        dst.vertexAttribs.resize(src->VertexAttribs->Count);
-        for (int i = 0; i < src->VertexAttribs->Count; ++i)
-            Convert(dst.vertexAttribs[i], src->VertexAttribs[i]);
+        dst.vertexAttribs   = nativeVertexAttribs;
     }
 }
 
 Buffer^ RenderSystem::CreateBuffer(BufferDescriptor^ desc)
 {
     LLGL::BufferDescriptor nativeDesc;
-    Convert(nativeDesc, desc);
+    std::vector<LLGL::VertexAttribute> nativeVertexAttribs;
+    Convert(nativeDesc, desc, nativeVertexAttribs);
     return gcnew Buffer(native_->CreateBuffer(nativeDesc));
 }
 
@@ -357,7 +342,8 @@ generic <typename T>
 Buffer^ RenderSystem::CreateBuffer(BufferDescriptor^ desc, array<T>^ initialData)
 {
     LLGL::BufferDescriptor nativeDesc;
-    Convert(nativeDesc, desc);
+    std::vector<LLGL::VertexAttribute> nativeVertexAttribs;
+    Convert(nativeDesc, desc, nativeVertexAttribs);
     pin_ptr<T> initialDataPtr = &initialData[0];
     return gcnew Buffer(native_->CreateBuffer(nativeDesc, initialDataPtr));
 }
@@ -616,40 +602,9 @@ Shader^ RenderSystem::CreateShader(ShaderDescriptor^ desc)
     }
 }
 
-static void Convert(LLGL::ShaderProgramDescriptor& dst, ShaderProgramDescriptor^ src)
-{
-    if (src)
-    {
-        if (src->VertexShader)
-            dst.vertexShader = src->VertexShader->Native;
-        if (src->TessControlShader)
-            dst.tessControlShader = src->TessControlShader->Native;
-        if (src->TessEvaluationShader)
-            dst.tessEvaluationShader = src->TessEvaluationShader->Native;
-        if (src->GeometryShader)
-            dst.geometryShader = src->GeometryShader->Native;
-        if (src->FragmentShader)
-            dst.fragmentShader = src->FragmentShader->Native;
-        if (src->ComputeShader)
-            dst.computeShader = src->ComputeShader->Native;
-    }
-}
-
-ShaderProgram^ RenderSystem::CreateShaderProgram(ShaderProgramDescriptor^ desc)
-{
-    LLGL::ShaderProgramDescriptor nativeDesc;
-    Convert(nativeDesc, desc);
-    return gcnew ShaderProgram(native_->CreateShaderProgram(nativeDesc));
-}
-
 void RenderSystem::Release(Shader^ shader)
 {
     native_->Release(*shader->Native);
-}
-
-void RenderSystem::Release(ShaderProgram^ shaderProgram)
-{
-    native_->Release(*shaderProgram->Native);
 }
 
 /* ----- Pipeline Layouts ----- */
@@ -818,10 +773,14 @@ static void Convert(LLGL::GraphicsPipelineDescriptor& dst, GraphicsPipelineDescr
 {
     if (src)
     {
-        dst.shaderProgram       = (src->ShaderProgram != nullptr ? src->ShaderProgram->Native : nullptr);
-        dst.renderPass          = (src->RenderPass != nullptr ? src->RenderPass->Native : nullptr);
-        dst.pipelineLayout      = (src->PipelineLayout != nullptr ? src->PipelineLayout->Native : nullptr);
-        dst.primitiveTopology   = static_cast<LLGL::PrimitiveTopology>(src->PrimitiveTopology);
+        dst.vertexShader            = (src->VertexShader != nullptr ? src->VertexShader->Native : nullptr);
+        dst.tessControlShader       = (src->TessControlShader != nullptr ? src->TessControlShader->Native : nullptr);
+        dst.tessEvaluationShader    = (src->TessEvaluationShader != nullptr ? src->TessEvaluationShader->Native : nullptr);
+        dst.geometryShader          = (src->GeometryShader != nullptr ? src->GeometryShader->Native : nullptr);
+        dst.fragmentShader          = (src->FragmentShader != nullptr ? src->FragmentShader->Native : nullptr);
+        dst.renderPass              = (src->RenderPass != nullptr ? src->RenderPass->Native : nullptr);
+        dst.pipelineLayout          = (src->PipelineLayout != nullptr ? src->PipelineLayout->Native : nullptr);
+        dst.primitiveTopology       = static_cast<LLGL::PrimitiveTopology>(src->PrimitiveTopology);
 
         dst.viewports.resize(src->Viewports->Count);
         for (std::size_t i = 0; i < dst.viewports.size(); ++i)

@@ -1,8 +1,8 @@
 /*
  * GLESProfile.cpp
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "../GLProfile.h"
@@ -98,6 +98,11 @@ void* MapBuffer(GLenum target, GLenum access)
     GLint length = 0;
     glGetBufferParameteriv(target, GL_BUFFER_SIZE, &length);
     return glMapBufferRange(target, 0, length, flags);
+}
+
+void* MapBufferRange(GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access)
+{
+    return glMapBufferRange(target, offset, length, access);
 }
 
 void DrawBuffer(GLenum buf)

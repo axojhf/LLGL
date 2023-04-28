@@ -1,8 +1,8 @@
 /*
  * D3D12ObjectUtils.cpp
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D12ObjectUtils.h"
@@ -29,7 +29,7 @@ void D3D12SetObjectName(ID3D12Object* obj, const char* name)
         if (name != nullptr)
             D3D12SetObjectNameUTF8toUTF16(obj, name);
         else
-            obj->SetName(nullptr);
+            obj->SetName(L"");
     }
 }
 
@@ -44,20 +44,24 @@ void D3D12SetObjectNameSubscript(ID3D12Object* obj, const char* name, const char
             D3D12SetObjectNameUTF8toUTF16(obj, nameWithSubscript.c_str());
         }
         else
-            obj->SetName(nullptr);
+            obj->SetName(L"");
     }
 }
 
 void D3D12SetObjectNameIndexed(ID3D12Object* obj, const char* name, std::uint32_t index)
 {
-    if (name != nullptr)
+    if (obj != nullptr)
     {
-        /* Append subscript to label */
-        std::string subscript = std::to_string(index);
-        D3D12SetObjectNameSubscript(obj, name, subscript.c_str());
+        if (name != nullptr)
+        {
+            /* Append subscript to label */
+            std::string nameWithSubscript = name;
+            nameWithSubscript += std::to_string(index);
+            D3D12SetObjectNameUTF8toUTF16(obj, nameWithSubscript.c_str());
+        }
+        else
+            obj->SetName(L"");
     }
-    else
-        obj->SetName(nullptr);
 }
 
 

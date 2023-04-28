@@ -1,8 +1,8 @@
 /*
  * D3D12StagingBuffer.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D12_STAGING_BUFFER_H
@@ -52,7 +52,7 @@ class D3D12StagingBuffer
         bool Capacity(UINT64 dataSize) const;
 
         // Writes the specified data to the native D3D upload buffer.
-        void Write(
+        HRESULT Write(
             ID3D12GraphicsCommandList*  commandList,
             ID3D12Resource*             dstBuffer,
             UINT64                      dstOffset,
@@ -61,7 +61,7 @@ class D3D12StagingBuffer
         );
 
         // Writes the specified data to the native D3D upload buffer and increments the write offset.
-        void WriteAndIncrementOffset(
+        HRESULT WriteAndIncrementOffset(
             ID3D12GraphicsCommandList*  commandList,
             ID3D12Resource*             dstBuffer,
             UINT64                      dstOffset,

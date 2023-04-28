@@ -1,28 +1,28 @@
 /*
  * D3D12GraphicsPSO.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D12GraphicsPSO.h"
 #include "../D3D12RenderSystem.h"
 #include "../D3D12Types.h"
 #include "../D3D12ObjectUtils.h"
-#include "../Shader/D3D12ShaderProgram.h"
 #include "../Shader/D3D12Shader.h"
 #include "D3D12RenderPass.h"
 #include "D3D12PipelineLayout.h"
 #include "../Command/D3D12CommandContext.h"
-#include "../D3DX12/d3dx12.h"
 #include "../D3D12Serialization.h"
 #include "../../DXCommon/DXCore.h"
 #include "../../CheckedCast.h"
 #include "../../PipelineStateUtils.h"
-#include "../../../Core/Helper.h"
+#include "../../../Core/CoreUtils.h"
 #include "../../../Core/Assertion.h"
 #include "../../../Core/ByteBufferIterator.h"
 #include <LLGL/PipelineStateFlags.h>
+#include <LLGL/Container/SmallVector.h>
+#include <LLGL/Utils/ForRange.h>
 #include <algorithm>
 #include <limits>
 
@@ -39,31 +39,31 @@ D3D12GraphicsPSO::D3D12GraphicsPSO(
     const D3D12RenderPass*              defaultRenderPass,
     Serialization::Serializer*          writer)
 :
-    D3D12PipelineState { true, desc.pipelineLayout, defaultPipelineLayout }
+    D3D12PipelineState { /*isGraphicsPSO:*/ true, desc.pipelineLayout, GetShadersAsArray(desc), defaultPipelineLayout }
 {
     /* Validate pointers and get D3D shader program */
-    LLGL_ASSERT_PTR(desc.shaderProgram);
-    auto shaderProgramD3D = LLGL_CAST(const D3D12ShaderProgram*, desc.shaderProgram);
+    if (desc.vertexShader == nullptr)
+        throw std::invalid_argument("cannot create D3D graphics pipeline without vertex shader");
 
     /* Use either default render pass or from descriptor */
-    const D3D12RenderPass* renderPass = nullptr;
+    const D3D12RenderPass* renderPassD3D = nullptr;
     if (desc.renderPass != nullptr)
-        renderPass = LLGL_CAST(const D3D12RenderPass*, desc.renderPass);
+        renderPassD3D = LLGL_CAST(const D3D12RenderPass*, desc.renderPass);
     else
-        renderPass = defaultRenderPass;
+        renderPassD3D = defaultRenderPass;
 
     /* Store dynamic pipeline states */
-    primitiveTopology_  = D3D12Types::Map(desc.primitiveTopology);
+    primitiveTopology_  = DXTypes::ToD3DPrimitiveTopology(desc.primitiveTopology);
     scissorEnabled_     = desc.rasterizer.scissorTestEnabled;
 
     stencilRefEnabled_  = IsStaticStencilRefEnabled(desc.stencil);
     stencilRef_         = desc.stencil.front.reference;
 
     blendFactorEnabled_ = IsStaticBlendFactorEnabled(desc.blend);
-    blendFactor_[0]     = desc.blend.blendFactor.r;
-    blendFactor_[1]     = desc.blend.blendFactor.g;
-    blendFactor_[2]     = desc.blend.blendFactor.b;
-    blendFactor_[3]     = desc.blend.blendFactor.a;
+    blendFactor_[0]     = desc.blend.blendFactor[0];
+    blendFactor_[1]     = desc.blend.blendFactor[1];
+    blendFactor_[2]     = desc.blend.blendFactor[2];
+    blendFactor_[3]     = desc.blend.blendFactor[3];
 
     /* Build static state buffer for viewports and scissors */
     if (!desc.viewports.empty() || !desc.scissors.empty())
@@ -77,11 +77,11 @@ D3D12GraphicsPSO::D3D12GraphicsPSO(
         pipelineLayoutD3D = &defaultPipelineLayout;
 
     /* Create native graphics PSO */
-    CreateNativePSOFromDesc(device, *pipelineLayoutD3D, *shaderProgramD3D, renderPass, desc, writer);
+    CreateNativePSOFromDesc(device, *pipelineLayoutD3D, renderPassD3D, desc, writer);
 }
 
 D3D12GraphicsPSO::D3D12GraphicsPSO(D3D12Device& device, Serialization::Deserializer& reader) :
-    D3D12PipelineState { true, device.GetNative(), reader }
+    D3D12PipelineState { /*isGraphicsPSO:*/ true, device.GetNative(), reader }
 {
     CreateNativePSOFromCache(device, reader);
 }
@@ -116,24 +116,27 @@ static D3D12_CONSERVATIVE_RASTERIZATION_MODE GetConservativeRaster(bool enabled)
     return (enabled ? D3D12_CONSERVATIVE_RASTERIZATION_MODE_ON : D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF);
 }
 
-static D3D12_SHADER_BYTECODE GetShaderByteCode(D3D12Shader* shader)
+static D3D12_SHADER_BYTECODE GetD3DShaderByteCode(const Shader* shader)
 {
-    return (shader != nullptr ? shader->GetByteCode() : D3D12_SHADER_BYTECODE{ nullptr, 0 });
+    if (shader != nullptr)
+        return LLGL_CAST(const D3D12Shader*, shader)->GetByteCode();
+    else
+        return D3D12_SHADER_BYTECODE{ nullptr, 0 };
 }
 
-static UINT8 GetColorWriteMask(const ColorRGBAb& color)
+static UINT8 GetColorWriteMask(std::uint8_t colorMask)
 {
     UINT8 mask = 0;
 
-    if (color.r) { mask |= D3D12_COLOR_WRITE_ENABLE_RED;   }
-    if (color.g) { mask |= D3D12_COLOR_WRITE_ENABLE_GREEN; }
-    if (color.b) { mask |= D3D12_COLOR_WRITE_ENABLE_BLUE;  }
-    if (color.a) { mask |= D3D12_COLOR_WRITE_ENABLE_ALPHA; }
+    if ((colorMask & ColorMaskFlags::R) != 0) { mask |= D3D12_COLOR_WRITE_ENABLE_RED;   }
+    if ((colorMask & ColorMaskFlags::G) != 0) { mask |= D3D12_COLOR_WRITE_ENABLE_GREEN; }
+    if ((colorMask & ColorMaskFlags::B) != 0) { mask |= D3D12_COLOR_WRITE_ENABLE_BLUE;  }
+    if ((colorMask & ColorMaskFlags::A) != 0) { mask |= D3D12_COLOR_WRITE_ENABLE_ALPHA; }
 
     return mask;
 }
 
-static void Convert(D3D12_DEPTH_STENCILOP_DESC& dst, const StencilFaceDescriptor& src)
+static void ConvertStencilOpDesc(D3D12_DEPTH_STENCILOP_DESC& dst, const StencilFaceDescriptor& src)
 {
     dst.StencilFailOp       = D3D12Types::Map(src.stencilFailOp);
     dst.StencilDepthFailOp  = D3D12Types::Map(src.depthFailOp);
@@ -141,7 +144,7 @@ static void Convert(D3D12_DEPTH_STENCILOP_DESC& dst, const StencilFaceDescriptor
     dst.StencilFunc         = D3D12Types::Map(src.compareOp);
 }
 
-static void Convert(D3D12_DEPTH_STENCIL_DESC& dst, const DepthDescriptor& srcDepth, const StencilDescriptor& srcStencil)
+static void ConvertDepthStencilDesc(D3D12_DEPTH_STENCIL_DESC& dst, const DepthDescriptor& srcDepth, const StencilDescriptor& srcStencil)
 {
     dst.DepthEnable         = DXBoolean(srcDepth.testEnabled);
     dst.DepthWriteMask      = (srcDepth.writeEnabled ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO);
@@ -150,11 +153,11 @@ static void Convert(D3D12_DEPTH_STENCIL_DESC& dst, const DepthDescriptor& srcDep
     dst.StencilReadMask     = static_cast<UINT8>(srcStencil.front.readMask);
     dst.StencilWriteMask    = static_cast<UINT8>(srcStencil.front.writeMask);
 
-    Convert(dst.FrontFace, srcStencil.front);
-    Convert(dst.BackFace, srcStencil.back);
+    ConvertStencilOpDesc(dst.FrontFace, srcStencil.front);
+    ConvertStencilOpDesc(dst.BackFace, srcStencil.back);
 }
 
-static void Convert(D3D12_RENDER_TARGET_BLEND_DESC& dst, const BlendTargetDescriptor& src)
+static void ConvertTargetBlendDesc(D3D12_RENDER_TARGET_BLEND_DESC& dst, const BlendTargetDescriptor& src)
 {
     dst.BlendEnable             = DXBoolean(src.blendEnabled);
     dst.LogicOpEnable           = FALSE;
@@ -196,7 +199,11 @@ static void SetBlendDescToLogicOp(D3D12_RENDER_TARGET_BLEND_DESC& dst, D3D12_LOG
     dst.RenderTargetWriteMask   = D3D12_COLOR_WRITE_ENABLE_ALL;
 }
 
-static void Convert(D3D12_BLEND_DESC& dst, DXGI_FORMAT (&dstColorFormats)[8], const BlendDescriptor& src, UINT numAttachments)
+static void ConvertBlendDesc(
+    D3D12_BLEND_DESC&       dst,
+    DXGI_FORMAT             (&dstColorFormats)[LLGL_MAX_NUM_COLOR_ATTACHMENTS],
+    const BlendDescriptor&  src,
+    UINT                    numAttachments)
 {
     dst.AlphaToCoverageEnable = DXBoolean(src.alphaToCoverageEnabled);
 
@@ -205,12 +212,12 @@ static void Convert(D3D12_BLEND_DESC& dst, DXGI_FORMAT (&dstColorFormats)[8], co
         /* Enable independent blend states when multiple targets are specified */
         dst.IndependentBlendEnable = DXBoolean(src.independentBlendEnabled);
 
-        for (UINT i = 0; i < 8u; ++i)
+        for_range(i, LLGL_MAX_NUM_COLOR_ATTACHMENTS)
         {
             if (i < numAttachments)
             {
                 /* Convert blend target descriptor */
-                Convert(dst.RenderTarget[i], src.targets[i]);
+                ConvertTargetBlendDesc(dst.RenderTarget[i], src.targets[i]);
                 dstColorFormats[i] = DXGI_FORMAT_B8G8R8A8_UNORM;
             }
             else
@@ -234,7 +241,7 @@ static void Convert(D3D12_BLEND_DESC& dst, DXGI_FORMAT (&dstColorFormats)[8], co
         dstColorFormats[0] = DXGI_FORMAT_R8G8B8A8_UINT;
 
         /* Initialize remaining blend target to default values */
-        for (int i = 1; i < 8; ++i)
+        for_subrange(i, 1u, LLGL_MAX_NUM_COLOR_ATTACHMENTS)
         {
             SetBlendDescToDefault(dst.RenderTarget[i]);
             dstColorFormats[i] = DXGI_FORMAT_UNKNOWN;
@@ -242,7 +249,11 @@ static void Convert(D3D12_BLEND_DESC& dst, DXGI_FORMAT (&dstColorFormats)[8], co
     }
 }
 
-static void Convert(D3D12_BLEND_DESC& dst, DXGI_FORMAT (&dstColorFormats)[8], const BlendDescriptor& src, const D3D12RenderPass& renderPass)
+static void ConvertBlendDesc(
+    D3D12_BLEND_DESC&       dst,
+    DXGI_FORMAT             (&dstColorFormats)[LLGL_MAX_NUM_COLOR_ATTACHMENTS],
+    const BlendDescriptor&  src,
+    const D3D12RenderPass&  renderPass)
 {
     dst.AlphaToCoverageEnable = DXBoolean(src.alphaToCoverageEnabled);
 
@@ -251,12 +262,12 @@ static void Convert(D3D12_BLEND_DESC& dst, DXGI_FORMAT (&dstColorFormats)[8], co
         /* Enable independent blend states when multiple targets are specified */
         dst.IndependentBlendEnable = DXBoolean(src.independentBlendEnabled);
 
-        for (UINT i = 0; i < 8u; ++i)
+        for_range(i, LLGL_MAX_NUM_COLOR_ATTACHMENTS)
         {
             if (i < renderPass.GetNumColorAttachments())
             {
                 /* Convert blend target descriptor */
-                Convert(dst.RenderTarget[i], src.targets[i]);
+                ConvertTargetBlendDesc(dst.RenderTarget[i], src.targets[i]);
                 dstColorFormats[i] = renderPass.GetRTVFormats()[i];
             }
             else
@@ -279,12 +290,12 @@ static void Convert(D3D12_BLEND_DESC& dst, DXGI_FORMAT (&dstColorFormats)[8], co
         SetBlendDescToLogicOp(dst.RenderTarget[0], D3D12Types::Map(src.logicOp));
 
         if (renderPass.GetNumColorAttachments() > 0)
-            dstColorFormats[0] = D3D12Types::ToDXGIFormatUInt(renderPass.GetRTVFormats()[0]);
+            dstColorFormats[0] = DXTypes::ToDXGIFormatUInt(renderPass.GetRTVFormats()[0]);
         else
             dstColorFormats[0] = DXGI_FORMAT_UNKNOWN;
 
         /* Initialize remaining blend target to default values */
-        for (int i = 1; i < 8; ++i)
+        for_subrange(i, 1u, LLGL_MAX_NUM_COLOR_ATTACHMENTS)
         {
             SetBlendDescToDefault(dst.RenderTarget[i]);
             dstColorFormats[i] = DXGI_FORMAT_UNKNOWN;
@@ -292,7 +303,7 @@ static void Convert(D3D12_BLEND_DESC& dst, DXGI_FORMAT (&dstColorFormats)[8], co
     }
 }
 
-static void Convert(D3D12_RASTERIZER_DESC& dst, const RasterizerDescriptor& src)
+static void ConvertRasterizerDesc(D3D12_RASTERIZER_DESC& dst, const RasterizerDescriptor& src)
 {
     dst.FillMode                = D3D12Types::Map(src.polygonMode);
     dst.CullMode                = D3D12Types::Map(src.cullMode);
@@ -334,10 +345,26 @@ static D3D12_PRIMITIVE_TOPOLOGY_TYPE GetPrimitiveToplogyType(const PrimitiveTopo
     return D3D12_PRIMITIVE_TOPOLOGY_TYPE_UNDEFINED;
 }
 
+static D3D12_INPUT_LAYOUT_DESC GetD3DInputLayoutDesc(const Shader* vs)
+{
+    D3D12_INPUT_LAYOUT_DESC desc = {};
+    LLGL_CAST(const D3D12Shader*, vs)->GetInputLayoutDesc(desc);
+    return desc;
+}
+
+static D3D12_STREAM_OUTPUT_DESC GetD3DStreamOutputDesc(const Shader* vs, const Shader* gs)
+{
+    D3D12_STREAM_OUTPUT_DESC desc = {};
+    if (gs != nullptr)
+        LLGL_CAST(const D3D12Shader*, gs)->GetStreamOutputDesc(desc);
+    else if (vs != nullptr)
+        LLGL_CAST(const D3D12Shader*, vs)->GetStreamOutputDesc(desc);
+    return desc;
+}
+
 void D3D12GraphicsPSO::CreateNativePSOFromDesc(
     D3D12Device&                        device,
     const D3D12PipelineLayout&          pipelineLayout,
-    const D3D12ShaderProgram&           shaderProgram,
     const D3D12RenderPass*              renderPass,
     const GraphicsPipelineDescriptor&   desc,
     Serialization::Serializer*          writer)
@@ -350,33 +377,33 @@ void D3D12GraphicsPSO::CreateNativePSOFromDesc(
     stateDesc.pRootSignature = GetRootSignature();
 
     /* Get shader byte codes */
-    stateDesc.VS = GetShaderByteCode(shaderProgram.GetVS());
-    stateDesc.PS = GetShaderByteCode(shaderProgram.GetPS());
-    stateDesc.DS = GetShaderByteCode(shaderProgram.GetDS());
-    stateDesc.HS = GetShaderByteCode(shaderProgram.GetHS());
-    stateDesc.GS = GetShaderByteCode(shaderProgram.GetGS());
+    stateDesc.VS = GetD3DShaderByteCode(desc.vertexShader);
+    stateDesc.HS = GetD3DShaderByteCode(desc.tessControlShader);
+    stateDesc.DS = GetD3DShaderByteCode(desc.tessEvaluationShader);
+    stateDesc.GS = GetD3DShaderByteCode(desc.geometryShader);
+    stateDesc.PS = GetD3DShaderByteCode(desc.fragmentShader);
 
     /* Convert blend state and depth-stencil format */
     if (renderPass != nullptr)
     {
         stateDesc.DSVFormat = renderPass->GetDSVFormat();
-        Convert(stateDesc.BlendState, stateDesc.RTVFormats, desc.blend, *renderPass);
+        ConvertBlendDesc(stateDesc.BlendState, stateDesc.RTVFormats, desc.blend, *renderPass);
     }
     else
     {
         stateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-        Convert(stateDesc.BlendState, stateDesc.RTVFormats, desc.blend, numAttachments);
+        ConvertBlendDesc(stateDesc.BlendState, stateDesc.RTVFormats, desc.blend, numAttachments);
     }
 
     /* Convert rasterizer state */
-    Convert(stateDesc.RasterizerState, desc.rasterizer);
+    ConvertRasterizerDesc(stateDesc.RasterizerState, desc.rasterizer);
 
     /* Convert depth-stencil state */
-    Convert(stateDesc.DepthStencilState, desc.depth, desc.stencil);
+    ConvertDepthStencilDesc(stateDesc.DepthStencilState, desc.depth, desc.stencil);
 
     /* Convert other states */
-    stateDesc.InputLayout           = shaderProgram.GetInputLayoutDesc();
-    stateDesc.StreamOutput          = shaderProgram.GetStreamOutputDesc();
+    stateDesc.InputLayout           = GetD3DInputLayoutDesc(desc.vertexShader);
+    stateDesc.StreamOutput          = GetD3DStreamOutputDesc(desc.vertexShader, desc.geometryShader);
     stateDesc.IBStripCutValue       = (IsPrimitiveTopologyStrip(desc.primitiveTopology) ? D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFFFFFF : D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED);
     stateDesc.PrimitiveTopologyType = GetPrimitiveToplogyType(desc.primitiveTopology);
     stateDesc.SampleMask            = desc.blend.sampleMask;
@@ -471,7 +498,7 @@ void D3D12GraphicsPSO::SerializePSO(
         /* Write input semantic names */
         writer.Begin(Serialization::D3D12Ident_InputSemanticNames);
         {
-            for (UINT i = 0; i < stateDesc.InputLayout.NumElements; ++i)
+            for_range(i, stateDesc.InputLayout.NumElements)
                 writer.WriteCString(stateDesc.InputLayout.pInputElementDescs[i].SemanticName);
         }
         writer.End();
@@ -490,7 +517,7 @@ void D3D12GraphicsPSO::SerializePSO(
         /* Write output semantic names */
         writer.Begin(Serialization::D3D12Ident_SOSemanticNames);
         {
-            for (UINT i = 0; i < stateDesc.StreamOutput.NumEntries; ++i)
+            for_range(i, stateDesc.StreamOutput.NumEntries)
                 writer.WriteCString(stateDesc.StreamOutput.pSODeclaration[i].SemanticName);
         }
         writer.End();
@@ -559,7 +586,7 @@ void D3D12GraphicsPSO::DeserializePSO(
         /* Write input semantic names */
         reader.Begin(Serialization::D3D12Ident_InputSemanticNames);
         {
-            for (UINT i = 0; i < stateDesc.InputLayout.NumElements; ++i)
+            for_range(i, stateDesc.InputLayout.NumElements)
                 inputElements[i].SemanticName = reader.ReadCString();
         }
         reader.End();
@@ -583,7 +610,7 @@ void D3D12GraphicsPSO::DeserializePSO(
         /* Write semantic names */
         reader.Begin(Serialization::D3D12Ident_SOSemanticNames);
         {
-            for (UINT i = 0; i < stateDesc.StreamOutput.NumEntries; ++i)
+            for_range(i, stateDesc.StreamOutput.NumEntries)
                 soDeclEntries[i].SemanticName = reader.ReadCString();
         }
         reader.End();
@@ -635,7 +662,7 @@ void D3D12GraphicsPSO::BuildStaticStateBuffer(const GraphicsPipelineDescriptor& 
     const auto bufferSize = GetStaticStateBufferSize(desc.viewports.size(), desc.scissors.size());
     staticStateBuffer_ = MakeUniqueArray<char>(bufferSize);
 
-    ByteBufferIterator byteBufferIter { staticStateBuffer_.get() };
+    ByteBufferIterator byteBufferIter{ staticStateBuffer_.get() };
 
     /* Build static viewports in raw buffer */
     if (!desc.viewports.empty())
@@ -660,7 +687,7 @@ void D3D12GraphicsPSO::BuildStaticViewports(std::size_t numViewports, const View
     }
 
     /* Build <D3D12_VIEWPORT> entries */
-    for (std::size_t i = 0; i < numViewports; ++i)
+    for_range(i, numViewports)
     {
         auto dst = byteBufferIter.Next<D3D12_VIEWPORT>();
         {
@@ -688,7 +715,7 @@ void D3D12GraphicsPSO::BuildStaticScissors(std::size_t numScissors, const Scisso
     }
 
     /* Build <D3D12_RECT> entries */
-    for (std::size_t i = 0; i < numScissors; ++i)
+    for_range(i, numScissors)
     {
         auto dst = byteBufferIter.Next<D3D12_RECT>();
         {
@@ -704,7 +731,7 @@ void D3D12GraphicsPSO::SetStaticViewportsAndScissors(ID3D12GraphicsCommandList* 
 {
     if (staticStateBuffer_)
     {
-        ByteBufferIterator byteBufferIter { staticStateBuffer_.get() };
+        ByteBufferIterator byteBufferIter{ staticStateBuffer_.get() };
         if (numStaticViewports_ > 0)
         {
             commandList->RSSetViewports(

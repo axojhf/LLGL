@@ -1,20 +1,24 @@
 /*
  * VKShader.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "VKShader.h"
+#include "VKShaderModulePool.h"
 #include "../VKCore.h"
 #include "../VKTypes.h"
-#include "../../../Core/Helper.h"
-#include <LLGL/ShaderProgramFlags.h>
-#include <LLGL/Strings.h>
+#include "../../../Core/CoreUtils.h"
+#include "../../../Core/StringUtils.h"
+#include "../../PipelineStateUtils.h"
+#include <LLGL/Utils/TypeNames.h>
+#include <LLGL/Utils/ForRange.h>
+#include <string.h>
+#include <algorithm>
 
 #ifdef LLGL_ENABLE_SPIRV_REFLECT
-#   include "../../SPIRV/SPIRVReflect.h"
-#   include "../../SPIRV/SPIRVReflectExecutionMode.h"
+#   include "../../SPIRV/SpirvReflect.h"
 #endif
 
 
@@ -22,42 +26,40 @@ namespace LLGL
 {
 
 
-VKShader::VKShader(const VKPtr<VkDevice>& device, const ShaderDescriptor& desc) :
-    Shader        { desc.type                     },
-    device_       { device                        },
-    shaderModule_ { device, vkDestroyShaderModule }
+static VKPtr<VkShaderModule> CreateVkShaderModule(VkDevice device, const std::vector<std::uint32_t>& shaderCode)
+{
+    VkShaderModuleCreateInfo createInfo;
+    {
+        createInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        createInfo.pNext    = nullptr;
+        createInfo.flags    = 0;
+        createInfo.codeSize = shaderCode.size() * sizeof(std::uint32_t);
+        createInfo.pCode    = shaderCode.data();
+    }
+    VKPtr<VkShaderModule> shaderModule{ device, vkDestroyShaderModule };
+    auto result = vkCreateShaderModule(device, &createInfo, nullptr, shaderModule.ReleaseAndGetAddressOf());
+    VKThrowIfFailed(result, "failed to create Vulkan shader module");
+    return shaderModule;
+}
+
+VKShader::VKShader(VkDevice device, const ShaderDescriptor& desc) :
+    Shader  { desc.type },
+    device_ { device    }
 {
     BuildShader(desc);
     BuildInputLayout(desc.vertex.inputAttribs.size(), desc.vertex.inputAttribs.data());
+    BuildBindingLayout();
+    BuildReport();
 }
 
-bool VKShader::HasErrors() const
+VKShader::~VKShader()
 {
-    return (loadBinaryResult_ != LoadBinaryResult::Successful);
+    VKShaderModulePool::Get().NotifyReleaseShader(this);
 }
 
-std::string VKShader::GetReport() const
+const Report* VKShader::GetReport() const
 {
-    std::string s;
-
-    switch (loadBinaryResult_)
-    {
-        case LoadBinaryResult::Undefined:
-            s += ToString(GetType());
-            s += " shader: shader module is undefined";
-            break;
-        case LoadBinaryResult::InvalidCodeSize:
-            s += ToString(GetType());
-            s += " shader: shader module code size is not a multiple of four bytes";
-            break;
-        case LoadBinaryResult::ReflectFailed:
-            s = errorLog_;
-            break;
-        default:
-            break;
-    }
-
-    return s;
+    return (report_ ? &report_ : nullptr);
 }
 
 void VKShader::FillShaderStageCreateInfo(VkPipelineShaderStageCreateInfo& createInfo) const
@@ -100,6 +102,53 @@ void VKShader::FillVertexInputStateCreateInfo(VkPipelineVertexInputStateCreateIn
     }
 }
 
+bool VKShader::NeedsShaderModulePermutation(const PermutationBindingFunc& permutationBindingFunc) const
+{
+    if (!permutationBindingFunc)
+        return false;
+
+    /* Re-assign binding slots with a permutation of the binding layout */
+    ConstFieldRangeIterator<BindingSlot> bindingSlotIter;
+    std::uint32_t dstSet;
+
+    for (unsigned index = 0; permutationBindingFunc(index, bindingSlotIter, dstSet); ++index)
+    {
+        if (!bindingLayout_.MatchesBindingSlots(bindingSlotIter, dstSet))
+            return true;
+    }
+
+    return false;
+}
+
+VKPtr<VkShaderModule> VKShader::CreateVkShaderModulePermutation(const PermutationBindingFunc& permutationBindingFunc)
+{
+    if (!permutationBindingFunc)
+        return VK_NULL_HANDLE;
+
+    /* Re-assign binding slots with a permutation of the binding layout */
+    auto bindingLayoutPerm = bindingLayout_;
+
+    ConstFieldRangeIterator<BindingSlot> bindingSlotIter;
+    std::uint32_t dstSet;
+    bool modified = false;
+
+    for (unsigned index = 0; permutationBindingFunc(index, bindingSlotIter, dstSet); ++index)
+    {
+        if (bindingLayoutPerm.AssignBindingSlots(bindingSlotIter, dstSet) > 0)
+            modified = true;
+    }
+
+    /* Create shader module permuation if there is at least one modified binding slot */
+    if (modified)
+    {
+        auto shaderCodePerm = shaderCode_;
+        bindingLayoutPerm.UpdateSpirvModule(shaderCodePerm.data(), shaderCodePerm.size() * sizeof(std::uint32_t));
+        return CreateVkShaderModule(device_, shaderCodePerm);
+    }
+
+    return VK_NULL_HANDLE;
+}
+
 static const char* GetOptString(const char* s)
 {
     return (s != nullptr ? s : "");
@@ -121,11 +170,11 @@ static long ShaderTypeToStageFlags(const ShaderType type)
 
 #ifdef LLGL_ENABLE_SPIRV_REFLECT
 
-static Format SpvVectorTypeToFormat(const SPIRVReflect::SpvType* type, std::uint32_t count)
+static Format SpvVectorTypeToFormat(const SpirvReflect::SpvType* type, std::uint32_t count)
 {
     if (type->opcode == spv::Op::OpTypeFloat)
     {
-        if (type->size == 16)
+        if (type->size == 2)
         {
             switch (count)
             {
@@ -135,7 +184,7 @@ static Format SpvVectorTypeToFormat(const SPIRVReflect::SpvType* type, std::uint
                 case 4: return Format::RGBA16Float;
             }
         }
-        else if (type->size == 32)
+        else if (type->size == 4)
         {
             switch (count)
             {
@@ -145,7 +194,7 @@ static Format SpvVectorTypeToFormat(const SPIRVReflect::SpvType* type, std::uint
                 case 4: return Format::RGBA32Float;
             }
         }
-        else if (type->size == 64)
+        else if (type->size == 8)
         {
             switch (count)
             {
@@ -182,7 +231,7 @@ static Format SpvVectorTypeToFormat(const SPIRVReflect::SpvType* type, std::uint
     return Format::Undefined;
 }
 
-static Format SpvTypeToFormat(const SPIRVReflect::SpvType* type, std::uint32_t* count = nullptr)
+static Format SpvTypeToFormat(const SpirvReflect::SpvType* type, std::uint32_t* count = nullptr)
 {
     /* Return number of semantics to default value of 1 element */
     if (count != nullptr)
@@ -245,18 +294,24 @@ static SystemValue SpvBuiltinToSystemValue(spv::BuiltIn type)
     }
 }
 
+static SystemValue SpvBuiltinToFragmentOutputSV(spv::BuiltIn type)
+{
+    auto sv = SpvBuiltinToSystemValue(type);
+    return (sv == SystemValue::Undefined ? SystemValue::Color : sv);
+}
+
 // Reflects the SPIR-V type to the output binding descriptor and returns the dereferenced type
-static const SPIRVReflect::SpvType* ReflectSpvBinding(BindingDescriptor& binding, const SPIRVReflect::SpvType* varType)
+static const SpirvReflect::SpvType* ReflectSpvBinding(BindingDescriptor& binding, const SpirvReflect::SpvType* varType)
 {
     if (varType != nullptr)
     {
-        if (auto derefType = varType->DereferencePtr())
+        if (auto derefType = varType->Deref())
         {
             switch (derefType->opcode)
             {
                 case spv::Op::OpTypeArray:
                     /* Multiply array in case of multiple interleaved arrays, e.g. MultiArray[4][3] is equivalent to LinearArray[4*3] */
-                    binding.arraySize *= derefType->elements;
+                    binding.arraySize = (derefType->elements == 0 ? derefType->elements : binding.arraySize * derefType->elements);
                     return ReflectSpvBinding(binding, derefType->baseType);
 
                 case spv::Op::OpTypeImage:
@@ -286,17 +341,17 @@ static const SPIRVReflect::SpvType* ReflectSpvBinding(BindingDescriptor& binding
     return nullptr;
 }
 
-static ShaderResource* FindOrAppendShaderResource(ShaderReflection& reflection, const SPIRVReflect::SpvUniform& var)
+static ShaderResourceReflection* FindOrAppendShaderResource(ShaderReflection& reflection, const SpirvReflect::SpvUniform& var)
 {
     /* Check if there already is a resource at the specified binding slot */
     for (auto& resource : reflection.resources)
     {
-        if (resource.binding.slot == var.binding)
+        if (resource.binding.slot == BindingSlot{ var.binding, var.set })
             return &resource;
     }
 
     /* Append new resource entry */
-    ShaderResource resource;
+    ShaderResourceReflection resource;
     {
         resource.binding.name = GetOptString(var.name);
         resource.binding.slot = var.binding;
@@ -325,8 +380,9 @@ static ShaderResource* FindOrAppendShaderResource(ShaderReflection& reflection, 
 bool VKShader::Reflect(ShaderReflection& reflection) const
 {
     /* Parse shader module */
-    SPIRVReflect spvReflect;
-    spvReflect.Parse(shaderModuleData_.data(), shaderModuleData_.size());
+    SpirvReflect spvReflect;
+    if (spvReflect.Reflect(SpirvModuleView{ shaderCode_ }) != SpirvResult::Success)
+        return false;
 
     /* Gather input/output attributes */
     for (const auto& it : spvReflect.GetVaryings())
@@ -346,7 +402,7 @@ bool VKShader::Reflect(ShaderReflection& reflection) const
             }
 
             /* Append vertex attributes for each semantic index */
-            for (std::uint32_t i = 0; i < numVectors; ++i)
+            for_range(i, numVectors)
             {
                 attrib.semanticIndex = i;
                 if (var.input)
@@ -363,13 +419,13 @@ bool VKShader::Reflect(ShaderReflection& reflection) const
                 attrib.name         = GetOptString(var.name);
                 attrib.format       = SpvTypeToFormat(var.type);
                 attrib.location     = var.location;
-                attrib.systemValue  = SpvBuiltinToSystemValue(var.builtin);
+                attrib.systemValue  = SpvBuiltinToFragmentOutputSV(var.builtin);
             }
             reflection.fragment.outputAttribs.push_back(attrib);
         }
     }
 
-    /* Gather resources */
+    /* Gather shader resources */
     for (const auto& it : spvReflect.GetUniforms())
     {
         const auto& var = it.second;
@@ -377,26 +433,62 @@ bool VKShader::Reflect(ShaderReflection& reflection) const
             resource->binding.stageFlags |= ShaderTypeToStageFlags(GetType());
     }
 
+    /* Gather push constants */
+    //TODO
+
     return true;
 }
 
-bool VKShader::ReflectLocalSize(Extent3D& localSize) const
+bool VKShader::ReflectLocalSize(Extent3D& outLocalSize) const
 {
-    if (GetType() == ShaderType::Compute)
+    if (GetType() != ShaderType::Compute)
+        return false;
+
+    /* Parse shader module for execution mode */
+    SpirvReflect::SpvExecutionMode executionMode;
+    SpirvReflectExecutionMode(SpirvModuleView{ shaderCode_ }, executionMode);
+
+    /* Return local work group size */
+    outLocalSize.width  = executionMode.localSizeX;
+    outLocalSize.height = executionMode.localSizeY;
+    outLocalSize.depth  = executionMode.localSizeZ;
+
+    return true;
+}
+
+bool VKShader::ReflectPushConstants(
+    const ArrayView<UniformDescriptor>& inUniformDescs,
+    std::vector<VKUniformRange>&        outUniformRanges) const
+{
+    /* Initialize output container with zero-ranges */
+    outUniformRanges.resize(inUniformDescs.size());
+
+    /* Parse shader module for push-constants */
+    SpirvReflect::SpvBlock block;
+    auto result = SpirvReflectPushConstants(SpirvModuleView{ shaderCode_ }, block);
+    if (result != SpirvResult::Success)
+        return false;
+
+    /* Build push constant ranges */
+    for_range(i, inUniformDescs.size())
     {
-        /* Parse shader module */
-        SPIRVReflectExecutionMode spvReflect;
-        spvReflect.Parse(shaderModuleData_.data(), shaderModuleData_.size());
-
-        /* Return local work group size */
-        const auto& mode = spvReflect.GetMode();
-        localSize.width     = mode.localSizeX;
-        localSize.height    = mode.localSizeY;
-        localSize.depth     = mode.localSizeZ;
-
-        return true;
+        /* Find name of uniform descriptor in push-constant block fields */
+        const auto& uniformDesc = inUniformDescs[i];
+        for (const auto& field : block.fields)
+        {
+            if (field.name != nullptr && ::strcmp(field.name, uniformDesc.name.c_str()) == 0)
+            {
+                auto& range = outUniformRanges[i];
+                {
+                    range.offset    = field.offset;
+                    range.size      = GetUniformTypeSize(uniformDesc.type, uniformDesc.arraySize);
+                }
+                break;
+            }
+        }
     }
-    return false;
+
+    return true;
 }
 
 #else
@@ -406,7 +498,14 @@ bool VKShader::Reflect(ShaderReflection& /*reflection*/) const
     return false; // dummy
 }
 
-bool VKShader::ReflectLocalSize(Extent3D& /*workGroupSize*/) const
+bool VKShader::ReflectLocalSize(Extent3D& /*outLocalSize*/) const
+{
+    return false; // dummy
+}
+
+bool VKShader::ReflectPushConstants(
+    const ArrayView<UniformDescriptor>& inUniformDescs,
+    std::vector<VKUniformRange>&        outUniformRanges) const
 {
     return false; // dummy
 }
@@ -452,7 +551,7 @@ void VKShader::BuildInputLayout(std::size_t numVertexAttribs, const VertexAttrib
         {
             throw std::runtime_error(
                 "vertex instance divisor must be 0 or 1 for Vulkan, but " +
-                std::to_string(attr.instanceDivisor) + " was specified: " + attr.name
+                std::to_string(attr.instanceDivisor) + " was specified: " + std::string(attr.name.c_str())
             );
         }
 
@@ -478,6 +577,37 @@ void VKShader::BuildInputLayout(std::size_t numVertexAttribs, const VertexAttrib
 
     /* Store binding descriptor in vector */
     inputLayout_.bindingDescs.insert(inputLayout_.bindingDescs.end(), bindingDescSet.begin(), bindingDescSet.end());
+}
+
+void VKShader::BuildBindingLayout()
+{
+    bindingLayout_.BuildFromSpirvModule(shaderCode_.data(), shaderCode_.size() * sizeof(std::uint32_t));
+}
+
+void VKShader::BuildReport()
+{
+    std::string s;
+
+    switch (loadBinaryResult_)
+    {
+        case LoadBinaryResult::Undefined:
+            s += ToString(GetType());
+            s += " shader: shader module is undefined";
+            break;
+        case LoadBinaryResult::InvalidCodeSize:
+            s += ToString(GetType());
+            s += " shader: shader module code size is not a multiple of four bytes";
+            break;
+        case LoadBinaryResult::ReflectFailed:
+            //TODO
+            break;
+        default:
+            break;
+    }
+
+    const bool hasErrors = (loadBinaryResult_ != LoadBinaryResult::Successful);
+
+    report_.Reset(std::move(s), hasErrors);
 }
 
 bool VKShader::CompileSource(const ShaderDescriptor& shaderDesc)
@@ -510,11 +640,14 @@ bool VKShader::LoadBinary(const ShaderDescriptor& shaderDesc)
     if (binaryBuffer == nullptr || binaryLength % 4 != 0)
     {
         loadBinaryResult_ = LoadBinaryResult::InvalidCodeSize;
-        shaderModuleData_.clear();
+        shaderCode_.clear();
         return false;
     }
     else
-        shaderModuleData_ = std::vector<char>(binaryBuffer, binaryBuffer + binaryLength);
+    {
+        auto* words = reinterpret_cast<const std::uint32_t*>(binaryBuffer);
+        shaderCode_ = std::vector<std::uint32_t>(words, words + binaryLength/sizeof(std::uint32_t));
+    }
 
     /* Store shader entry point (by default "main" for GLSL) */
     if (shaderDesc.entryPoint == nullptr || *shaderDesc.entryPoint == '\0')
@@ -523,16 +656,7 @@ bool VKShader::LoadBinary(const ShaderDescriptor& shaderDesc)
         entryPoint_ = shaderDesc.entryPoint;
 
     /* Create shader module */
-    VkShaderModuleCreateInfo createInfo;
-    {
-        createInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        createInfo.pNext    = nullptr;
-        createInfo.flags    = 0;
-        createInfo.codeSize = binaryLength;
-        createInfo.pCode    = reinterpret_cast<const std::uint32_t*>(binaryBuffer);
-    }
-    auto result = vkCreateShaderModule(device_, &createInfo, nullptr, shaderModule_.ReleaseAndGetAddressOf());
-    VKThrowIfFailed(result, "failed to create Vulkan shader module");
+    shaderModule_ = CreateVkShaderModule(device_, shaderCode_);
 
     loadBinaryResult_ = LoadBinaryResult::Successful;
 

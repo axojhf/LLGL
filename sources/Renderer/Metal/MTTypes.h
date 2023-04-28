@@ -1,8 +1,8 @@
 /*
  * MTTypes.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_MT_TYPES_H
@@ -38,7 +38,7 @@ MTLTessellationControlPointIndexType    ToMTLPatchIndexType         ( const Form
 MTLTessellationPartitionMode            ToMTLPartitionMode          ( const TessellationPartition   partitionMode     );
 MTLTextureType                          ToMTLTextureType            ( const TextureType             textureType       );
 MTLPrimitiveType                        ToMTLPrimitiveType          ( const PrimitiveTopology       primitiveTopology );
-MTLPrimitiveTopologyClass               ToMTLPrimitiveTopologyClass ( const PrimitiveTopology       primitiveTopology );
+MTLPrimitiveTopologyClass               ToMTLPrimitiveTopologyClass ( const PrimitiveTopology       primitiveTopology ) API_AVAILABLE(macos(10.11), ios(12.0));
 MTLCullMode                             ToMTLCullMode               ( const CullMode                cullMode          );
 MTLCompareFunction                      ToMTLCompareFunction        ( const CompareOp               compareOp         );
 MTLSamplerAddressMode                   ToMTLSamplerAddressMode     ( const SamplerAddressMode      addressMode       );
@@ -50,6 +50,8 @@ MTLLoadAction                           ToMTLLoadAction             ( const Atta
 MTLStoreAction                          ToMTLStoreAction            ( const AttachmentStoreOp       storeOp           );
 MTLBlendOperation                       ToMTLBlendOperation         ( const BlendArithmetic         blendArithmetic   );
 MTLBlendFactor                          ToMTLBlendFactor            ( const BlendOp                 blendOp           );
+
+MTLClearColor                           ToMTLClearColor             ( const float                   color[4]          );
 
 API_AVAILABLE(macos(10.15), ios(13.0))
 MTLTextureSwizzle                       ToMTLTextureSwizzle         ( const TextureSwizzle          swizzle           );

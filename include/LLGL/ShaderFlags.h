@@ -1,8 +1,8 @@
 /*
  * ShaderFlags.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_SHADER_FLAGS_H
@@ -136,6 +136,15 @@ struct ShaderCompileFlags
         \see RenderingCapabilities::screenOrigin
         */
         PatchClippingOrigin     = (1 << 6),
+
+        /**
+        \brief Specifies whether to create separable or legacy shaders.
+        \remarks This is only used for the OpenGL backend. Separate and non-separate shaders (i.e. legacy shaders) must not be mixed and matched when a graphics PSO is created!
+        If specified, the GLSL vertex shader must contain a \c gl_PerVertex block and the GLSL fragment shader \e may contain a \c gl_PerFragment block.
+        \see https://registry.khronos.org/OpenGL/extensions/ARB/ARB_separate_shader_objects.txt
+        \note Only supported with: GLSL.
+        */
+        SeparateShader          = (1 << 7),
     };
 };
 
@@ -391,6 +400,14 @@ LLGL_EXPORT bool IsShaderSourceCode(const ShaderSourceType type);
 \see ShaderSourceType
 */
 LLGL_EXPORT bool IsShaderSourceBinary(const ShaderSourceType type);
+
+/**
+\brief Returns the StageFlags bitmask for the specified shader type.
+\return Bitmask of the StageFlags enumeration entries for the specified input shader type, e.g. StageFlags::VertexStage for the input ShaderType::Vertex.
+\see StageFlags
+\see ShaderType
+*/
+LLGL_EXPORT long GetStageFlags(const ShaderType type);
 
 
 } // /namespace LLGL

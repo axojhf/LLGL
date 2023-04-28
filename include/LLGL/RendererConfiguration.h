@@ -1,16 +1,15 @@
 /*
  * RendererConfiguration.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_RENDERER_CONFIGURATION_H
 #define LLGL_RENDERER_CONFIGURATION_H
 
 
-#include <string>
-#include <vector>
+#include <LLGL/Container/ArrayView.h>
 #include <cstdint>
 
 
@@ -50,16 +49,16 @@ enum class OpenGLContextProfile
 struct ApplicationDescriptor
 {
     //! Descriptive string of the application.
-    std::string     applicationName;
+    const char*     applicationName     = nullptr;
 
     //! Version number of the application.
-    std::uint32_t   applicationVersion;
+    std::uint32_t   applicationVersion  = 0;
 
     //! Descriptive string of the engine or middleware.
-    std::string     engineName;
+    const char*     engineName          = nullptr;
 
     //! Version number of the engine or middleware.
-    std::uint32_t   engineVersion;
+    std::uint32_t   engineVersion       = 0;
 };
 
 /**
@@ -79,7 +78,7 @@ struct RendererConfigurationVulkan
     \brief List of Vulkan layers to enable. The ones that are not supported, will be ignored.
     \remarks For example, the layer \c "VK_LAYER_KHRONOS_validation" can be used for a stronger validation.
     */
-    std::vector<std::string>    enabledLayers;
+    ArrayView<const char*>      enabledLayers;
 
     /**
     \brief Minimal allocation size for a device memory chunk. By default 1024*1024, i.e. 1 MB of VRAM.

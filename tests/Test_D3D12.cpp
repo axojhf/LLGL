@@ -1,18 +1,22 @@
 /*
  * Test_Direct3D12.cpp
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <LLGL/LLGL.h>
+#include <LLGL/Utils/VertexFormat.h>
+#include <LLGL/Timer.h>
 #include <Gauss/Gauss.h>
+#include <iostream>
+
 
 int main()
 {
     try
     {
-        LLGL::Log::SetReportCallbackStd();
+        LLGL::Log::SetReportCallbackStd(&(std::cerr));
 
         // Setup profiler and debugger
         std::shared_ptr<LLGL::RenderingProfiler> profiler;
@@ -37,8 +41,8 @@ int main()
 
         auto& window = LLGL::CastTo<LLGL::Window>(swapChain->GetSurface());
 
-        auto title = "LLGL Test 3 ( " + renderer->GetName() + " )";
-        window.SetTitle(std::wstring(title.begin(), title.end()));
+        auto title = "LLGL Test 3 ( " + std::string(renderer->GetName()) + " )";
+        window.SetTitle(title);
         window.Show();
 
         auto renderCaps = renderer->GetRenderingCaps();
@@ -110,30 +114,16 @@ int main()
         auto vertShader = renderer->CreateShader(vertShaderDesc);
         auto fragShader = renderer->CreateShader(fragShaderDesc);
 
-        if (vertShader->HasErrors())
-            std::cerr << vertShader->GetReport() << std::endl;
-
-        if (fragShader->HasErrors())
-            std::cerr << fragShader->GetReport() << std::endl;
-
-        // Create shader program
-        LLGL::ShaderProgramDescriptor shaderProgramDesc;
+        for (auto shader : { vertShader, fragShader })
         {
-            shaderProgramDesc.vertexShader      = vertShader;
-            shaderProgramDesc.fragmentShader    = fragShader;
+            if (auto report = shader->GetReport())
+                std::cerr << report->GetText() << std::endl;
         }
-        auto shaderProgram = renderer->CreateShaderProgram(shaderProgramDesc);
-
-        if (shaderProgram->HasErrors())
-            std::cerr << shaderProgram->GetReport() << std::endl;
-
-        LLGL::ShaderReflection reflection;
-        shaderProgram->Reflect(reflection);
 
         // Create pipeline layout
         LLGL::PipelineLayoutDescriptor layoutDesc;
         {
-            layoutDesc.bindings =
+            layoutDesc.heapBindings =
             {
                 LLGL::BindingDescriptor{ LLGL::ResourceType::Buffer, LLGL::BindFlags::ConstantBuffer, LLGL::StageFlags::VertexStage, 0 }
             };
@@ -141,17 +131,13 @@ int main()
         auto pipelineLayout = renderer->CreatePipelineLayout(layoutDesc);
 
         // Create resource heap
-        LLGL::ResourceHeapDescriptor resourceHeapDesc;
-        {
-            resourceHeapDesc.pipelineLayout = pipelineLayout;
-            resourceHeapDesc.resourceViews  = { constantBuffer };
-        }
-        auto resourceHeap = renderer->CreateResourceHeap(resourceHeapDesc);
+        auto resourceHeap = renderer->CreateResourceHeap(pipelineLayout, { constantBuffer });
 
         // Create graphics pipeline
         LLGL::GraphicsPipelineDescriptor pipelineDesc;
         {
-            pipelineDesc.shaderProgram              = shaderProgram;
+            pipelineDesc.vertexShader               = vertShader;
+            pipelineDesc.fragmentShader             = fragShader;
             pipelineDesc.pipelineLayout             = pipelineLayout;
 
             #if 0
@@ -161,7 +147,7 @@ int main()
             #endif
 
             #if 0
-            pipelineDesc.rasterizer.multiSampling    = swapChainDesc.multiSampling;
+            pipelineDesc.rasterizer.multiSampling   = swapChainDesc.multiSampling;
             #endif
         }
         auto pipeline = renderer->CreatePipelineState(pipelineDesc);
@@ -202,7 +188,7 @@ int main()
             {
                 commands->BeginRenderPass(*swapChain);
                 {
-                    commands->Clear(LLGL::ClearFlags::Color, { LLGL::ColorRGBAf{ 0.1f, 0.1f, 0.4f } });
+                    commands->Clear(LLGL::ClearFlags::Color, { 0.1f, 0.1f, 0.4f, 1.0f });
                     commands->SetViewport(swapChain->GetResolution());
 
                     commands->SetPipelineState(*pipeline);

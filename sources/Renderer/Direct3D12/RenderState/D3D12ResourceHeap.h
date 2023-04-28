@@ -1,8 +1,8 @@
 /*
  * D3D12ResourceHeap.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D12_RESOURCE_HEAP_H
@@ -10,6 +10,9 @@
 
 
 #include <LLGL/ResourceHeap.h>
+#include <LLGL/ResourceHeapFlags.h>
+#include <LLGL/Container/ArrayView.h>
+#include "D3D12PipelineLayout.h"
 #include "../../DXCommon/ComPtr.h"
 #include <d3d12.h>
 #include <vector>
@@ -21,7 +24,6 @@ namespace LLGL
 
 
 struct ResourceHeapDescriptor;
-struct D3D12RootParameterLayout;
 
 class D3D12ResourceHeap final : public ResourceHeap
 {
@@ -34,104 +36,89 @@ class D3D12ResourceHeap final : public ResourceHeap
 
     public:
 
-        D3D12ResourceHeap(ID3D12Device* device, const ResourceHeapDescriptor& desc);
+        D3D12ResourceHeap(
+            ID3D12Device*                               device,
+            const ResourceHeapDescriptor&               desc,
+            const ArrayView<ResourceViewDescriptor>&    initialResourceViews = {}
+        );
+
+        // Creates resource view handles (SRV/UAV/CBV/Sampler) for the specified resource views in the D3D12 descriptor heaps.
+        std::uint32_t CreateResourceViewHandles(
+            ID3D12Device*                               device,
+            std::uint32_t                               firstDescriptor,
+            const ArrayView<ResourceViewDescriptor>&    resourceViews
+        );
 
         // Inserts the resource barriers for the specified descritpor set into the command list.
-        void InsertResourceBarriers(ID3D12GraphicsCommandList* commandList, UINT firstSet);
+        void InsertResourceBarriers(ID3D12GraphicsCommandList* commandList, std::uint32_t descriptorSet);
 
-        // Returns the array of D3D descriptor heaps.
-        inline ID3D12DescriptorHeap* const* GetDescriptorHeaps() const
-        {
-            return descriptorHeaps_;
-        }
+        // Returns the CPU descriptor handle for heap start of the specified descriptor set.
+        D3D12_CPU_DESCRIPTOR_HANDLE GetCPUDescriptorHandleForHeapStart(D3D12_DESCRIPTOR_HEAP_TYPE heapType, std::uint32_t descriptorSet) const;
 
-        // Returns the strides of GPU descriptor handles.
-        inline const UINT* GetDescriptorHandleStrides() const
-        {
-            return descriptorHandleStrides_;
-        }
+        // Returns the number of descriptors in the respective heap per set.
+        UINT GetNumDescriptorsPerSet(D3D12_DESCRIPTOR_HEAP_TYPE heapType) const;
 
-        // Returns the number of D3D descriptor heap (either 1 or 2).
-        inline UINT GetNumDescriptorHeaps() const
-        {
-            return numDescriptorHeaps_;
-        }
+        // Returns the native D3D descriptor heap for the specified heap type.
+        ID3D12DescriptorHeap* GetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE heapType) const;
 
-        // Returns true if this resource heap has graphics root descriptors.
-        inline bool HasGraphicsDescriptors() const
-        {
-            return hasGraphicsDescriptors_;
-        }
+    private:
 
-        // Returns true if this resource heap has compute root descriptors.
-        inline bool HasComputeDescriptors() const
+        struct BindingHandleLocation
         {
-            return hasComputeDescriptors_;
+            UINT heapIndex      :  1;
+            UINT handleOffset   : 31;
+        };
+
+    private:
+
+        void CreateDescriptorHeap(
+            ID3D12Device*                   device,
+            D3D12_DESCRIPTOR_HEAP_TYPE      heapType,
+            UINT                            numDescriptors
+        );
+
+        bool CreateShaderResourceView(ID3D12Device* device, D3D12_CPU_DESCRIPTOR_HANDLE cpuDescHandle, const ResourceViewDescriptor& desc);
+        bool CreateUnorderedAccessView(ID3D12Device* device, D3D12_CPU_DESCRIPTOR_HANDLE cpuDescHandle, const ResourceViewDescriptor& desc);
+        bool CreateConstantBufferView(ID3D12Device* device, D3D12_CPU_DESCRIPTOR_HANDLE cpuDescHandle, const ResourceViewDescriptor& desc);
+        bool CreateSampler(ID3D12Device* device, D3D12_CPU_DESCRIPTOR_HANDLE cpuDescHandle, const ResourceViewDescriptor& desc);
+
+        void ExchangeUAVResource(
+            const D3D12DescriptorHeapLocation&  descriptorLocation,
+            std::uint32_t                       descriptorSet,
+            Resource&                           resource,
+            std::uint32_t                       (&setRange)[2]
+        );
+
+        void EmplaceD3DUAVResource(
+            const D3D12DescriptorHeapLocation&  descriptorLocation,
+            std::uint32_t                       descriptorSet,
+            ID3D12Resource*                     resource,
+            std::uint32_t                       (&setRange)[2]
+        );
+
+        void UpdateBarriers(std::uint32_t descriptorSet);
+
+        inline bool HasBarriers() const
+        {
+            return (barrierStride_ > 0);
         }
 
     private:
 
-        D3D12_CPU_DESCRIPTOR_HANDLE CreateHeapTypeCbvSrvUav(ID3D12Device* device, const ResourceHeapDescriptor& desc);
-        D3D12_CPU_DESCRIPTOR_HANDLE CreateHeapTypeSampler(ID3D12Device* device, const ResourceHeapDescriptor& desc);
+        ComPtr<ID3D12DescriptorHeap>                descriptorHeaps_[2];
 
-        void CreateConstantBufferViews(
-            ID3D12Device*                   device,
-            const ResourceHeapDescriptor&   desc,
-            D3D12_CPU_DESCRIPTOR_HANDLE&    cpuDescHandle,
-            std::size_t&                    bindingIndex,
-            std::size_t                     firstResourceIndex,
-            const D3D12RootParameterLayout& rootParameterLayout
-        );
+        UINT                                        descriptorHandleStrides_[2] = {};
+        UINT                                        descriptorSetStrides_[2]    = {};
+        UINT                                        numDescriptorsPerSet_[2]    = {};
+        UINT                                        numDescriptorSets_          = 0;    // Only used for 'GetNumDescriptorSets'
 
-        void CreateShaderResourceViews(
-            ID3D12Device*                   device,
-            const ResourceHeapDescriptor&   desc,
-            D3D12_CPU_DESCRIPTOR_HANDLE&    cpuDescHandle,
-            std::size_t&                    bindingIndex,
-            std::size_t                     firstResourceIndex,
-            const D3D12RootParameterLayout& rootParameterLayout
-        );
+        SmallVector<D3D12DescriptorHeapLocation>    descriptorMap_;
 
-        void CreateUnorderedAccessViews(
-            ID3D12Device*                   device,
-            const ResourceHeapDescriptor&   desc,
-            D3D12_CPU_DESCRIPTOR_HANDLE&    cpuDescHandle,
-            std::size_t&                    bindingIndex,
-            std::size_t                     firstResourceIndex,
-            const D3D12RootParameterLayout& rootParameterLayout
-        );
-
-        void CreateSamplers(
-            ID3D12Device*                   device,
-            const ResourceHeapDescriptor&   desc,
-            D3D12_CPU_DESCRIPTOR_HANDLE&    cpuDescHandle,
-            std::size_t&                    bindingIndex,
-            std::size_t                     firstResourceIndex,
-            const D3D12RootParameterLayout& rootParameterLayout
-        );
-
-        void AppendDescriptorHeapToArray(ID3D12DescriptorHeap* descriptorHeap);
-
-        void AppendUAVBarrier(ID3D12Resource* resource);
-
-        UINT GetBarrierOffset(UINT firstSet) const;
-        UINT GetBarrierCount(UINT firstSet) const;
-
-    private:
-
-        ComPtr<ID3D12DescriptorHeap>        heapTypeCbvSrvUav_;
-        ComPtr<ID3D12DescriptorHeap>        heapTypeSampler_;
-
-        ID3D12DescriptorHeap*               descriptorHeaps_[2]         = {};   // References to the ComPtr objects
-        UINT                                descriptorHandleStrides_[2] = {};
-        UINT                                numDescriptorHeaps_         = 0;    // Sizes of descriptor heaps array
-        UINT                                numDescriptorSets_          = 0;    // Only used for 'GetNumDescriptorSets'
-
-        std::vector<D3D12_RESOURCE_BARRIER> barriers_;                          // UAV barriers (TODO: also transition barriers)
-        std::vector<UINT>                   barrierOffsets_;                    // Offsets into the barrier array for each descriptor set; array is either empty or has N+1 elements
-
-        bool                                hasGraphicsDescriptors_     = false;
-        bool                                hasComputeDescriptors_      = false;
+        std::vector<ID3D12Resource*>                uavResourceHeap_;                   // Heap of UAV resources that require a barrier
+        UINT                                        uavResourceSetStride_       = 0;    // Number of (potential) UAV resources per descriptor set
+        UINT                                        uavResourceIndexOffset_     = 0;    // Subtracted offset for 'D3D12DescriptorHeapLocation::index'
+        std::vector<char>                           barriers_;                          // Packed buffer for dyanmic struct { UINT N; D3D12_RESOURCE_BARRIER[N]; }
+        UINT                                        barrierStride_              = 0;
 
 };
 

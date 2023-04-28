@@ -1,14 +1,16 @@
 /*
  * Test_Vulkan.cpp
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <LLGL/LLGL.h>
-#include <LLGL/Utility.h>
+#include <LLGL/Utils/Utility.h>
+#include <LLGL/Utils/VertexFormat.h>
 #include <Gauss/Gauss.h>
 #include <chrono>
+#include <iostream>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
@@ -53,7 +55,7 @@ int main()
         }
         auto window = std::shared_ptr<LLGL::Window>(std::move(LLGL::Window::Create(windowDesc)));
 
-        window->SetTitle(L"LLGL Vulkan Test");
+        window->SetTitle("LLGL Vulkan Test");
 
         auto swapChain = renderer->CreateSwapChain(swapChainDesc, window);
 
@@ -125,16 +127,6 @@ int main()
 
         vertShaderDesc.vertex.inputAttribs = vertexFormat.attributes;
 
-        LLGL::ShaderProgramDescriptor shaderProgramDesc;
-        {
-            shaderProgramDesc.vertexShader      = renderer->CreateShader(vertShaderDesc);
-            shaderProgramDesc.fragmentShader    = renderer->CreateShader(fragShaderDesc);
-        }
-        auto shaderProgram = renderer->CreateShaderProgram(shaderProgramDesc);
-
-        if (shaderProgram->HasErrors())
-            std::cerr << shaderProgram->GetReport() << std::endl;
-
         // Create constant buffers
         struct Matrices
         {
@@ -163,7 +155,7 @@ int main()
         // Create sampler
         LLGL::SamplerDescriptor samplerDesc;
         {
-            //samplerDesc.mipMapping = false;
+            //samplerDesc.mipMapEnabled = false;
             #if 0
             samplerDesc.minFilter = LLGL::TextureFilter::Nearest;
             samplerDesc.magFilter = LLGL::TextureFilter::Nearest;
@@ -193,26 +185,22 @@ int main()
 
         layoutDesc.bindings =
         {
-            LLGL::BindingDescriptor { LLGL::ResourceType::Buffer,  LLGL::BindFlags::ConstantBuffer, LLGL::StageFlags::VertexStage  , 2 },
-            LLGL::BindingDescriptor { LLGL::ResourceType::Buffer,  LLGL::BindFlags::ConstantBuffer, LLGL::StageFlags::FragmentStage, 5 },
-            LLGL::BindingDescriptor { LLGL::ResourceType::Sampler, 0,                               LLGL::StageFlags::FragmentStage, 3 },
-            LLGL::BindingDescriptor { LLGL::ResourceType::Texture, 0,                               LLGL::StageFlags::FragmentStage, 4 },
+            LLGL::BindingDescriptor{ LLGL::ResourceType::Buffer,  LLGL::BindFlags::ConstantBuffer, LLGL::StageFlags::VertexStage  , 2 },
+            LLGL::BindingDescriptor{ LLGL::ResourceType::Buffer,  LLGL::BindFlags::ConstantBuffer, LLGL::StageFlags::FragmentStage, 5 },
+            LLGL::BindingDescriptor{ LLGL::ResourceType::Sampler, 0,                               LLGL::StageFlags::FragmentStage, 3 },
+            LLGL::BindingDescriptor{ LLGL::ResourceType::Texture, 0,                               LLGL::StageFlags::FragmentStage, 4 },
         };
 
         auto pipelineLayout = renderer->CreatePipelineLayout(layoutDesc);
 
         // Create resource view heap
-        LLGL::ResourceHeapDescriptor rsvHeapDesc;
-        {
-            rsvHeapDesc.pipelineLayout  = pipelineLayout;
-            rsvHeapDesc.resourceViews   = { constBufferMatrices, constBufferColors, sampler, texture };
-        }
-        auto resourceViewHeap = renderer->CreateResourceHeap(rsvHeapDesc);
+        auto resourceViewHeap = renderer->CreateResourceHeap(pipelineLayout, { constBufferMatrices, constBufferColors, sampler, texture });
 
         // Create graphics pipeline
         LLGL::GraphicsPipelineDescriptor pipelineDesc;
         {
-            pipelineDesc.shaderProgram      = shaderProgram;
+            pipelineDesc.vertexShader       = renderer->CreateShader(vertShaderDesc);
+            pipelineDesc.fragmentShader     = renderer->CreateShader(fragShaderDesc);
             pipelineDesc.renderPass         = swapChain->GetRenderPass();
             pipelineDesc.pipelineLayout     = pipelineLayout;
             pipelineDesc.primitiveTopology  = LLGL::PrimitiveTopology::TriangleStrip;
@@ -223,6 +211,9 @@ int main()
         }
         auto pipeline = renderer->CreatePipelineState(pipelineDesc);
 
+        if (auto report = pipeline->GetReport())
+            std::cerr << report->GetText() << std::endl;
+
         // Create query
         #ifdef TEST_QUERY
         auto query = renderer->CreateQueryHeap(LLGL::QueryType::PipelineStatistics);
@@ -230,11 +221,6 @@ int main()
 
         // Add input event listener
         LLGL::Input input{ *window };
-
-        auto frameTimer = LLGL::Timer::Create();
-        auto printTime = std::chrono::system_clock::now();
-
-        //auto fence = renderer->CreateFence();
 
         int vsyncInterval = 1;
         swapChain->SetVsyncInterval(vsyncInterval);
@@ -263,7 +249,7 @@ int main()
                 commands->BeginRenderPass(*swapChain);
                 {
                     commands->SetViewport(swapChain->GetResolution());
-                    commands->Clear(LLGL::ClearFlags::ColorDepth, { LLGL::ColorRGBAf{ 0.2f, 0.2f, 0.4f, 1.0f } });
+                    commands->Clear(LLGL::ClearFlags::ColorDepth, { 0.2f, 0.2f, 0.4f, 1.0f });
 
                     // Draw scene
                     #ifdef TEST_QUERY

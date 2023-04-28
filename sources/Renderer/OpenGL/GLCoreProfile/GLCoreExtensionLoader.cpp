@@ -1,20 +1,27 @@
 /*
  * GLCoreExtensionLoader.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "../Ext/GLExtensionLoader.h"
+#include "../Ext/GLExtensionRegistry.h"
 #include "GLCoreExtensions.h"
 #include "GLCoreExtensionsProxy.h"
 #include <LLGL/Log.h>
+#include <LLGL/Utils/ForRange.h>
 #include <functional>
+#include <string>
+#include <map>
 
 
 namespace LLGL
 {
 
+
+// OpenGL extension map type: Maps the extension name to boolean indicating whether or not the extension was loaded successully.
+using GLExtensionMap = std::map<std::string, bool>;
 
 /* --- Internal functions --- */
 
@@ -44,7 +51,7 @@ bool LoadGLProc(T& procAddr, const char* procName)
     return true;
 }
 
-static void ExtractExtensionsFromString(GLExtensionList& extensions, const std::string& extString)
+static void ExtractExtensionsFromString(GLExtensionMap& extensions, const std::string& extString)
 {
     size_t first = 0, last = 0;
 
@@ -138,6 +145,13 @@ static bool Load_GL_ARB_vertex_buffer_object(bool usePlaceholder)
     LOAD_GLPROC( glUnmapBuffer          );
     LOAD_GLPROC( glGetBufferParameteriv );
     LOAD_GLPROC( glGetBufferPointerv    );
+    return true;
+}
+
+static bool Load_GL_ARB_map_buffer_range(bool usePlaceholder)
+{
+    LOAD_GLPROC( glMapBufferRange );
+    LOAD_GLPROC( glFlushMappedBufferRange );
     return true;
 }
 
@@ -338,7 +352,7 @@ static bool Load_GL_ARB_get_program_binary(bool usePlaceholder)
 {
     LOAD_GLPROC( glGetProgramBinary  );
     LOAD_GLPROC( glProgramBinary     );
-    LOAD_GLPROC( glProgramParameteri );
+    LOAD_GLPROC( glProgramParameteri ); // Duplicate in GL_ARB_separate_shader_objects
     return true;
 }
 
@@ -350,6 +364,72 @@ static bool Load_GL_ARB_program_interface_query(bool usePlaceholder)
     LOAD_GLPROC( glGetProgramResourceiv            );
     LOAD_GLPROC( glGetProgramResourceLocation      );
     LOAD_GLPROC( glGetProgramResourceLocationIndex );
+    return true;
+}
+
+static bool Load_GL_ARB_separate_shader_objects(bool usePlaceholder)
+{
+    LOAD_GLPROC( glUseProgramStages          );
+    LOAD_GLPROC( glActiveShaderProgram       );
+    LOAD_GLPROC( glCreateShaderProgramv      );
+    LOAD_GLPROC( glBindProgramPipeline       );
+    LOAD_GLPROC( glDeleteProgramPipelines    );
+    LOAD_GLPROC( glGenProgramPipelines       );
+    LOAD_GLPROC( glIsProgramPipeline         );
+    LOAD_GLPROC( glProgramParameteri         ); // Duplicate in GL_ARB_get_program_binary
+    LOAD_GLPROC( glGetProgramPipelineiv      );
+    LOAD_GLPROC( glProgramUniform1i          );
+    LOAD_GLPROC( glProgramUniform2i          );
+    LOAD_GLPROC( glProgramUniform3i          );
+    LOAD_GLPROC( glProgramUniform4i          );
+    LOAD_GLPROC( glProgramUniform1ui         );
+    LOAD_GLPROC( glProgramUniform2ui         );
+    LOAD_GLPROC( glProgramUniform3ui         );
+    LOAD_GLPROC( glProgramUniform4ui         );
+    LOAD_GLPROC( glProgramUniform1f          );
+    LOAD_GLPROC( glProgramUniform2f          );
+    LOAD_GLPROC( glProgramUniform3f          );
+    LOAD_GLPROC( glProgramUniform4f          );
+    LOAD_GLPROC( glProgramUniform1d          );
+    LOAD_GLPROC( glProgramUniform2d          );
+    LOAD_GLPROC( glProgramUniform3d          );
+    LOAD_GLPROC( glProgramUniform4d          );
+    LOAD_GLPROC( glProgramUniform1iv         );
+    LOAD_GLPROC( glProgramUniform2iv         );
+    LOAD_GLPROC( glProgramUniform3iv         );
+    LOAD_GLPROC( glProgramUniform4iv         );
+    LOAD_GLPROC( glProgramUniform1uiv        );
+    LOAD_GLPROC( glProgramUniform2uiv        );
+    LOAD_GLPROC( glProgramUniform3uiv        );
+    LOAD_GLPROC( glProgramUniform4uiv        );
+    LOAD_GLPROC( glProgramUniform1fv         );
+    LOAD_GLPROC( glProgramUniform2fv         );
+    LOAD_GLPROC( glProgramUniform3fv         );
+    LOAD_GLPROC( glProgramUniform4fv         );
+    LOAD_GLPROC( glProgramUniform1dv         );
+    LOAD_GLPROC( glProgramUniform2dv         );
+    LOAD_GLPROC( glProgramUniform3dv         );
+    LOAD_GLPROC( glProgramUniform4dv         );
+    LOAD_GLPROC( glProgramUniformMatrix2fv   );
+    LOAD_GLPROC( glProgramUniformMatrix3fv   );
+    LOAD_GLPROC( glProgramUniformMatrix4fv   );
+    LOAD_GLPROC( glProgramUniformMatrix2dv   );
+    LOAD_GLPROC( glProgramUniformMatrix3dv   );
+    LOAD_GLPROC( glProgramUniformMatrix4dv   );
+    LOAD_GLPROC( glProgramUniformMatrix2x3fv );
+    LOAD_GLPROC( glProgramUniformMatrix3x2fv );
+    LOAD_GLPROC( glProgramUniformMatrix2x4fv );
+    LOAD_GLPROC( glProgramUniformMatrix4x2fv );
+    LOAD_GLPROC( glProgramUniformMatrix3x4fv );
+    LOAD_GLPROC( glProgramUniformMatrix4x3fv );
+    LOAD_GLPROC( glProgramUniformMatrix2x3dv );
+    LOAD_GLPROC( glProgramUniformMatrix3x2dv );
+    LOAD_GLPROC( glProgramUniformMatrix2x4dv );
+    LOAD_GLPROC( glProgramUniformMatrix4x2dv );
+    LOAD_GLPROC( glProgramUniformMatrix3x4dv );
+    LOAD_GLPROC( glProgramUniformMatrix4x3dv );
+    LOAD_GLPROC( glValidateProgramPipeline   );
+    LOAD_GLPROC( glGetProgramPipelineInfoLog );
     return true;
 }
 
@@ -808,14 +888,14 @@ static bool Load_GL_ARB_direct_state_access(bool usePlaceholder)
 
 /* --- Common extension loading functions --- */
 
-GLExtensionList QueryExtensions(bool coreProfile)
+static GLExtensionMap QuerySupportedOpenGLExtensions(bool isCoreProfile)
 {
-    GLExtensionList extensions;
+    GLExtensionMap extensions;
 
     const char* extString = nullptr;
 
     /* Filter standard GL extensions */
-    if (coreProfile)
+    if (isCoreProfile)
     {
         #if defined(GL_VERSION_3_0) && !defined(GL_GLEXT_PROTOTYPES)
 
@@ -827,7 +907,7 @@ GLExtensionList QueryExtensions(bool coreProfile)
             GLint numExtensions = 0;
             glGetIntegerv(GL_NUM_EXTENSIONS, &numExtensions);
 
-            for (int i = 0; i < numExtensions; ++i)
+            for_range(i, numExtensions)
             {
                 /* Get current extension string */
                 extString = reinterpret_cast<const char*>(glGetStringi(GL_EXTENSIONS, i));
@@ -864,7 +944,7 @@ GLExtensionList QueryExtensions(bool coreProfile)
 #ifndef __APPLE__
 
 // Includes all GL extensions that are considered default for core profiles
-static void IncludeDefaultCoreProfileExtensions(GLExtensionList& extensions)
+static void IncludeDefaultCoreProfileExtensions(GLExtensionMap& extensions)
 {
     static const std::string coreProfileDefaultExtenions[] =
     {
@@ -884,7 +964,7 @@ static void IncludeDefaultCoreProfileExtensions(GLExtensionList& extensions)
 }
 
 // Includes all GL extensions that are implied by other extensions
-static void IncludeImpliedExtensions(GLExtensionList& extensions)
+static void IncludeImpliedExtensions(GLExtensionMap& extensions)
 {
     auto ImplyExtension = [&extensions](const char* originExtension, const std::initializer_list<const char*>& impliedExtensions)
     {
@@ -901,13 +981,15 @@ static void IncludeImpliedExtensions(GLExtensionList& extensions)
 #endif // /__APPLE__
 
 // Global member to store if the extension have already been loaded
-static bool g_extAlreadyLoaded = false;
+static bool g_OpenGLExtensionsLoaded = false;
 
-void LoadAllExtensions(GLExtensionList& extensions, bool coreProfile)
+bool LoadSupportedOpenGLExtensions(bool isCoreProfile)
 {
     /* Only load GL extensions once */
-    if (g_extAlreadyLoaded)
-        return;
+    if (g_OpenGLExtensionsLoaded)
+        return true;
+
+    GLExtensionMap extensions = QuerySupportedOpenGLExtensions(isCoreProfile);
 
     #ifdef __APPLE__
 
@@ -924,6 +1006,7 @@ void LoadAllExtensions(GLExtensionList& extensions, bool coreProfile)
     ENABLE_GLEXT( ARB_vertex_shader                );
     ENABLE_GLEXT( ARB_framebuffer_object           );
     ENABLE_GLEXT( ARB_uniform_buffer_object        );
+    ENABLE_GLEXT( ARB_map_buffer_range             );
 
     /* Enable drawing extensions */
     ENABLE_GLEXT( ARB_draw_instanced               );
@@ -935,6 +1018,7 @@ void LoadAllExtensions(GLExtensionList& extensions, bool coreProfile)
     ENABLE_GLEXT( ARB_tessellation_shader          );
     ENABLE_GLEXT( ARB_get_program_binary           );
     ENABLE_GLEXT( ARB_program_interface_query      );
+    ENABLE_GLEXT( ARB_separate_shader_objects      );
     ENABLE_GLEXT( EXT_gpu_shader4                  );
 
     /* Enable texture extensions */
@@ -1019,7 +1103,7 @@ void LoadAllExtensions(GLExtensionList& extensions, bool coreProfile)
         EnableExtension("GL_" + std::string(#NAME), GLExt::NAME)
 
     /* Add standard extensions */
-    if (coreProfile)
+    if (isCoreProfile)
         IncludeDefaultCoreProfileExtensions(extensions);
 
     IncludeImpliedExtensions(extensions);
@@ -1035,6 +1119,7 @@ void LoadAllExtensions(GLExtensionList& extensions, bool coreProfile)
     LOAD_GLEXT( ARB_framebuffer_object           );
     LOAD_GLEXT( ARB_uniform_buffer_object        );
     LOAD_GLEXT( ARB_shader_storage_buffer_object );
+    LOAD_GLEXT( ARB_map_buffer_range             );
 
     /* Load drawing extensions */
     LOAD_GLEXT( ARB_draw_instanced               );
@@ -1051,6 +1136,7 @@ void LoadAllExtensions(GLExtensionList& extensions, bool coreProfile)
     LOAD_GLEXT( ARB_compute_shader               );
     LOAD_GLEXT( ARB_get_program_binary           );
     LOAD_GLEXT( ARB_program_interface_query      );
+    LOAD_GLEXT( ARB_separate_shader_objects      );
     LOAD_GLEXT( EXT_gpu_shader4                  );
 
     /* Load texture extensions */
@@ -1108,25 +1194,29 @@ void LoadAllExtensions(GLExtensionList& extensions, bool coreProfile)
     ENABLE_GLEXT( ARB_transform_feedback3 );
 
     /* Enable extensions without procedures */
-    ENABLE_GLEXT( ARB_texture_cube_map             );
-    ENABLE_GLEXT( EXT_texture_array                );
-    ENABLE_GLEXT( ARB_texture_cube_map_array       );
     ENABLE_GLEXT( ARB_geometry_shader4             );
-    ENABLE_GLEXT( NV_conservative_raster           );
-    ENABLE_GLEXT( INTEL_conservative_rasterization );
+    ENABLE_GLEXT( ARB_texture_cube_map             );
+    ENABLE_GLEXT( ARB_texture_cube_map_array       );
     ENABLE_GLEXT( ARB_pipeline_statistics_query    );
+    ENABLE_GLEXT( ARB_seamless_cubemap_per_texture );
+    ENABLE_GLEXT( ARB_ES3_compatibility            );
+    ENABLE_GLEXT( EXT_texture_array                );
+    ENABLE_GLEXT( INTEL_conservative_rasterization );
+    ENABLE_GLEXT( NV_conservative_raster           );
 
     #undef LOAD_GLEXT
     #undef ENABLE_GLEXT
 
     #endif // /__APPLE__
 
-    g_extAlreadyLoaded = true;
+    g_OpenGLExtensionsLoaded = true;
+
+    return true;
 }
 
-bool AreExtensionsLoaded()
+bool AreOpenGLExtensionsLoaded()
 {
-    return g_extAlreadyLoaded;
+    return g_OpenGLExtensionsLoaded;
 }
 
 

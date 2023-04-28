@@ -1,14 +1,14 @@
 /*
  * TextureUtils.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "TextureUtils.h"
 #include <LLGL/StaticLimits.h>
-#include "../Core/Helper.h"
-#include "../Core/HelperMacros.h"
+#include "../Core/CoreUtils.h"
+#include "../Core/MacroUtils.h"
 
 
 namespace LLGL
@@ -69,8 +69,9 @@ LLGL_EXPORT Extent3D CalcTextureExtent(const TextureType type, const Extent3D& e
 
 LLGL_EXPORT SubresourceLayout CalcSubresourceLayout(const Format format, const Extent3D& extent)
 {
-    const auto& formatDesc = GetFormatAttribs(format);
     SubresourceLayout layout;
+    const auto& formatDesc = GetFormatAttribs(format);
+    if (formatDesc.blockWidth > 0 && formatDesc.blockHeight > 0)
     {
         layout.rowStride    = (extent.width * formatDesc.bitSize) / formatDesc.blockWidth / 8;
         layout.layerStride  = (extent.height * layout.rowStride) / formatDesc.blockHeight;
@@ -90,7 +91,7 @@ LLGL_EXPORT bool MustGenerateMipsOnCreate(const TextureDescriptor& textureDesc)
 
 LLGL_EXPORT std::uint32_t GetClampedSamples(std::uint32_t samples)
 {
-    return Clamp(samples, 1u, LLGL_MAX_NUM_SAMPLES);
+    return std::max(1u, std::min(samples, LLGL_MAX_NUM_SAMPLES));
 }
 
 // Compresses the specified texture swizzle parameter into 3 bits

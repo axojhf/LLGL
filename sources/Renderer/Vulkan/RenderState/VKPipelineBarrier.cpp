@@ -1,11 +1,15 @@
 /*
  * VKPipelineBarrier.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "VKPipelineBarrier.h"
+#include "../Buffer/VKBuffer.h"
+//#include "../Texture/VKTexture.h"
+#include "../../CheckedCast.h"
+#include "../../../Core/CoreUtils.h"
 #include <LLGL/ShaderFlags.h>
 
 
@@ -13,7 +17,7 @@ namespace LLGL
 {
 
 
-bool VKPipelineBarrier::IsEnabled() const
+bool VKPipelineBarrier::IsActive() const
 {
     return (srcStageMask_ != 0 && dstStageMask_ != 0);
 }
@@ -34,32 +38,97 @@ void VKPipelineBarrier::Submit(VkCommandBuffer commandBuffer)
     );
 }
 
-static VkPipelineStageFlags ToVkStageFlags(long stageFlags)
+bool VKPipelineBarrier::Emplace(std::uint32_t slot, Resource* resource, VkPipelineStageFlags stageFlags)
 {
-    VkPipelineStageFlags bitmask = 0;
-
-    if ((stageFlags & StageFlags::VertexStage) != 0)
-        bitmask |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-    if ((stageFlags & StageFlags::TessControlStage) != 0)
-        bitmask |= VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT;
-    if ((stageFlags & StageFlags::TessEvaluationStage) != 0)
-        bitmask |= VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT;
-    if ((stageFlags & StageFlags::GeometryStage) != 0)
-        bitmask |= VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT;
-    if ((stageFlags & StageFlags::FragmentStage) != 0)
-        bitmask |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    if ((stageFlags & StageFlags::ComputeStage) != 0)
-        bitmask |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-
-    return bitmask;
+    /* Emplace resource binding into sorted array */
+    std::size_t index = 0;
+    auto* entry = FindInSortedArray<ResourceBinding>(
+        bindings_.data(),
+        bindings_.size(),
+        [slot](const ResourceBinding& binding) -> int
+        {
+            return (static_cast<int>(binding.slot) - static_cast<int>(slot));
+        },
+        &index
+    );
+    if (entry != nullptr)
+    {
+        /* Replace previous entry */
+        if (entry->resource != resource)
+        {
+            entry->resource     = resource;
+            entry->stageFlags   = stageFlags;
+            return true;
+        }
+    }
+    else
+    {
+        /* Insert entry with new binding slot */
+        ResourceBinding binding;
+        {
+            binding.slot        = slot;
+            binding.resource    = resource;
+            binding.stageFlags  = stageFlags;
+        }
+        bindings_.insert(bindings_.begin() + index, binding);
+        return true;
+    }
+    return false;
 }
 
-void VKPipelineBarrier::InsertMemoryBarrier(long stageFlags, VkAccessFlags srcAccess, VkAccessFlags dstAccess)
+bool VKPipelineBarrier::Remove(std::uint32_t slot)
 {
-    auto stagesBitmask = ToVkStageFlags(stageFlags);
+    /* Only clear resource entry, don't reallocate array */
+    auto* entry = FindInSortedArray<ResourceBinding>(
+        bindings_.data(),
+        bindings_.size(),
+        [slot](const ResourceBinding& binding) -> int
+        {
+            return (static_cast<int>(binding.slot) - static_cast<int>(slot));
+        }
+    );
+    if (entry != nullptr && entry->resource != nullptr)
+    {
+        entry->resource = nullptr;
+        return true;
+    }
+    return false;
+}
 
-    srcStageMask_ |= stagesBitmask;
-    dstStageMask_ |= stagesBitmask;
+bool VKPipelineBarrier::Update()
+{
+    /* Reset bitmasks and barriers */
+    srcStageMask_ = 0;
+    dstStageMask_ = 0;
+    memoryBarrier_.clear();
+
+    /* Iterate over all bindings and re-generate all barriers */
+    for (const auto& binding : bindings_)
+    {
+        if (auto resource = binding.resource)
+        {
+            if (resource->GetResourceType() == ResourceType::Buffer)
+            {
+                auto bufferVK = LLGL_CAST(VKBuffer*, resource);
+                InsertBufferMemoryBarrier(binding.stageFlags, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, bufferVK->GetVkBuffer());
+            }
+            else
+                InsertMemoryBarrier(binding.stageFlags, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+        }
+    }
+
+    return IsActive();
+}
+
+
+/*
+ * ======= Private: =======
+ */
+
+void VKPipelineBarrier::InsertMemoryBarrier(VkPipelineStageFlags stageFlags, VkAccessFlags srcAccess, VkAccessFlags dstAccess)
+{
+    srcStageMask_ |= stageFlags;
+    dstStageMask_ |= stageFlags;
 
     /* Check if a memory barrier alread exists */
     for (const auto& barrier : memoryBarrier_)
@@ -77,6 +146,26 @@ void VKPipelineBarrier::InsertMemoryBarrier(long stageFlags, VkAccessFlags srcAc
         barrier.dstAccessMask   = dstAccess;
     }
     memoryBarrier_.push_back(barrier);
+}
+
+void VKPipelineBarrier::InsertBufferMemoryBarrier(VkPipelineStageFlags stageFlags, VkAccessFlags srcAccess, VkAccessFlags dstAccess, VkBuffer buffer)
+{
+    srcStageMask_ |= stageFlags;
+    dstStageMask_ |= stageFlags;
+
+    VkBufferMemoryBarrier barrier;
+    {
+        barrier.sType                   = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        barrier.pNext                   = nullptr;
+        barrier.srcAccessMask           = srcAccess;
+        barrier.dstAccessMask           = dstAccess;
+        barrier.srcQueueFamilyIndex     = 0;
+        barrier.dstQueueFamilyIndex     = 0;
+        barrier.buffer                  = buffer;
+        barrier.offset                  = 0;
+        barrier.size                    = VK_WHOLE_SIZE;
+    }
+    bufferBarriers_.push_back(barrier);
 }
 
 

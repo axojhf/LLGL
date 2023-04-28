@@ -1,8 +1,8 @@
 /*
  * VKSwapChain.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_VK_SWAP_CHAIN_H
@@ -33,9 +33,9 @@ class VKSwapChain final : public SwapChain
     public:
 
         VKSwapChain(
-            const VKPtr<VkInstance>&        instance,
+            VkInstance                      instance,
             VkPhysicalDevice                physicalDevice,
-            const VKPtr<VkDevice>&          device,
+            VkDevice                        device,
             VKDeviceMemoryManager&          deviceMemoryMngr,
             const SwapChainDescriptor&      desc,
             const std::shared_ptr<Surface>& surface
@@ -69,7 +69,7 @@ class VKSwapChain final : public SwapChain
         // Returns the native VkFramebuffer object that is currently used from swap-chain.
         inline VkFramebuffer GetVkFramebuffer() const
         {
-            return swapChainFramebuffers_[presentImageIndex_].Get();
+            return swapChainFramebuffers_[currentColorBuffer_].Get();
         }
 
         // Returns the swap-chain resolution as VkExtent2D.
@@ -112,15 +112,13 @@ class VKSwapChain final : public SwapChain
         VkFormat PickDepthStencilFormat(int depthBits, int stencilBits) const;
         std::uint32_t PickSwapChainSize(std::uint32_t swapBuffers) const;
 
-        void AcquireNextPresentImage();
-
     private:
 
         static const std::uint32_t maxNumColorBuffers = 3;
 
         VkInstance              instance_                                   = VK_NULL_HANDLE;
         VkPhysicalDevice        physicalDevice_                             = VK_NULL_HANDLE;
-        const VKPtr<VkDevice>&  device_;
+        VkDevice                device_;
 
         VKDeviceMemoryManager&  deviceMemoryMngr_;
 
@@ -136,8 +134,8 @@ class VKSwapChain final : public SwapChain
         VKPtr<VkImageView>      swapChainImageViews_[maxNumColorBuffers];
         VKPtr<VkFramebuffer>    swapChainFramebuffers_[maxNumColorBuffers];
 
-        std::uint32_t           numSwapChainBuffers_                        = 1;
-        std::uint32_t           presentImageIndex_                          = 0;
+        std::uint32_t           numColorBuffers_                            = 2;
+        std::uint32_t           currentColorBuffer_                         = 0;
         std::uint32_t           vsyncInterval_                              = 0;
 
         VKRenderPass            secondaryRenderPass_;
@@ -148,8 +146,8 @@ class VKSwapChain final : public SwapChain
         VkQueue                 graphicsQueue_                              = VK_NULL_HANDLE;
         VkQueue                 presentQueue_                               = VK_NULL_HANDLE;
 
-        VKPtr<VkSemaphore>      imageAvailableSemaphore_;
-        VKPtr<VkSemaphore>      renderFinishedSemaphore_;
+        VKPtr<VkSemaphore>      imageAvailableSemaphore_[maxNumColorBuffers];
+        VKPtr<VkSemaphore>      renderFinishedSemaphore_[maxNumColorBuffers];
 
 };
 

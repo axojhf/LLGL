@@ -1,12 +1,12 @@
 /*
  * AndroidDisplay.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "AndroidDisplay.h"
-#include "../../Core/Helper.h"
+#include "../../Core/CoreUtils.h"
 
 
 namespace LLGL
@@ -65,10 +65,10 @@ bool AndroidDisplay::IsPrimary() const
     return true;
 }
 
-std::wstring AndroidDisplay::GetDeviceName() const
+UTF8String AndroidDisplay::GetDeviceName() const
 {
     //TODO
-    return L"";
+    return UTF8String{};
 }
 
 Offset2D AndroidDisplay::GetOffset() const

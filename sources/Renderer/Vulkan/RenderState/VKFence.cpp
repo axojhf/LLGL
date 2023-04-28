@@ -1,8 +1,8 @@
 /*
  * VKFence.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "VKFence.h"
@@ -13,7 +13,7 @@ namespace LLGL
 {
 
 
-VKFence::VKFence(const VKPtr<VkDevice>& device) :
+VKFence::VKFence(VkDevice device) :
     fence_ { device, vkDestroyFence }
 {
     VkFenceCreateInfo createInfo;
@@ -28,12 +28,12 @@ VKFence::VKFence(const VKPtr<VkDevice>& device) :
 
 void VKFence::Reset(VkDevice device)
 {
-    vkResetFences(device, 1, &fence_);
+    vkResetFences(device, 1, fence_.GetAddressOf());
 }
 
 bool VKFence::Wait(VkDevice device, std::uint64_t timeout)
 {
-    return (vkWaitForFences(device, 1, &fence_, VK_TRUE, timeout) == VK_SUCCESS);
+    return (vkWaitForFences(device, 1, fence_.GetAddressOf(), VK_TRUE, timeout) == VK_SUCCESS);
 }
 
 

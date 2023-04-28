@@ -1,20 +1,22 @@
 /*
  * MTGraphicsPSO.mm
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "MTGraphicsPSO.h"
 #include "MTRenderPass.h"
-#include "../Shader/MTShaderProgram.h"
-#include "../MTEncoderScheduler.h"
+#include "MTPipelineLayout.h"
+#include "../Shader/MTShader.h"
+#include "../MTCommandContext.h"
 #include "../MTTypes.h"
 #include "../MTCore.h"
 #include "../../CheckedCast.h"
 #include "../../PipelineStateUtils.h"
 #include <LLGL/PipelineStateFlags.h>
 #include <LLGL/Platform/Platform.h>
+#include <LLGL/Utils/ForRange.h>
 
 
 namespace LLGL
@@ -46,7 +48,7 @@ MTGraphicsPSO::MTGraphicsPSO(
     const GraphicsPipelineDescriptor&   desc,
     const MTRenderPass*                 defaultRenderPass)
 :
-    MTPipelineState { true }
+    MTPipelineState { /*isGraphicsPSO:*/ true, desc.pipelineLayout }
 {
     /* Convert standalone parameters */
     cullMode_       	= MTTypes::ToMTLCullMode(desc.rasterizer.cullMode);
@@ -61,10 +63,10 @@ MTGraphicsPSO::MTGraphicsPSO(
 
     blendColorDynamic_  = desc.blend.blendFactorDynamic;
     blendColorEnabled_  = IsStaticBlendFactorEnabled(desc.blend);
-    blendColor_[0]      = desc.blend.blendFactor.r;
-    blendColor_[1]      = desc.blend.blendFactor.g;
-    blendColor_[2]      = desc.blend.blendFactor.b;
-    blendColor_[3]      = desc.blend.blendFactor.a;
+    blendColor_[0]      = desc.blend.blendFactor[0];
+    blendColor_[1]      = desc.blend.blendFactor[1];
+    blendColor_[2]      = desc.blend.blendFactor[2];
+    blendColor_[3]      = desc.blend.blendFactor[3];
 
     /* Create render pipeline and depth-stencil states */
     CreateRenderPipelineState(device, desc, defaultRenderPass);
@@ -103,6 +105,12 @@ void MTGraphicsPSO::Bind(id<MTLRenderCommandEncoder> renderEncoder)
             alpha:              blendColor_[3]
         ];
     }
+
+    if (auto* pipelineLayout = GetPipelineLayout())
+    {
+        pipelineLayout->SetStaticVertexSamplers(renderEncoder);
+        pipelineLayout->SetStaticFragmentSamplers(renderEncoder);
+    }
 }
 
 
@@ -110,20 +118,16 @@ void MTGraphicsPSO::Bind(id<MTLRenderCommandEncoder> renderEncoder)
  * ======= Private: =======
  */
 
-static MTLColorWriteMask ToMTLColorWriteMask(const ColorRGBAb& color)
+static MTLColorWriteMask ToMTLColorWriteMask(std::uint8_t colorMask)
 {
-    MTLColorWriteMask mask = MTLColorWriteMaskNone;
+    MTLColorWriteMask writeMask = MTLColorWriteMaskNone;
 
-    if (color.r)
-        mask |= MTLColorWriteMaskRed;
-    if (color.g)
-        mask |= MTLColorWriteMaskGreen;
-    if (color.b)
-        mask |= MTLColorWriteMaskBlue;
-    if (color.a)
-        mask |= MTLColorWriteMaskAlpha;
+    if ((colorMask & ColorMaskFlags::R) != 0) { writeMask |= MTLColorWriteMaskRed;   }
+    if ((colorMask & ColorMaskFlags::G) != 0) { writeMask |= MTLColorWriteMaskGreen; }
+    if ((colorMask & ColorMaskFlags::B) != 0) { writeMask |= MTLColorWriteMaskBlue;  }
+    if ((colorMask & ColorMaskFlags::A) != 0) { writeMask |= MTLColorWriteMaskAlpha; }
 
-    return mask;
+    return writeMask;
 }
 
 static void FillColorAttachmentDesc(
@@ -148,20 +152,43 @@ static void FillColorAttachmentDesc(
     dst.sourceRGBBlendFactor        = MTTypes::ToMTLBlendFactor(targetDesc.srcColor);
 }
 
+static id<MTLFunction> GetNativeMTShader(const Shader* shader)
+{
+    return (shader != nullptr ? LLGL_CAST(const MTShader*, shader)->GetNative() : nil);
+}
+
+static const MTShader* GetVertexOrPostTessVertexShader(const GraphicsPipelineDescriptor& desc)
+{
+    /* For tessellation PSOs, the vertex shader must be a post-tesselation vertex shader and is expected in the tessEvaluationShader field */
+    const bool hasTessellationStage = (desc.tessControlShader != nullptr && desc.tessControlShader->GetType() == ShaderType::Compute);
+    const MTShader* vertexShaderMT = nullptr;
+    if (hasTessellationStage)
+    {
+        vertexShaderMT = LLGL_CAST(const MTShader*, desc.tessEvaluationShader);
+        if (vertexShaderMT == nullptr || !vertexShaderMT->IsPostTessellationVertex())
+            throw std::invalid_argument("cannot create Metal tessellation pipeline without post-tessellation vertex shader (in 'tessEvaluationShader')");
+    }
+    else
+    {
+        vertexShaderMT = LLGL_CAST(const MTShader*, desc.vertexShader);
+        if (vertexShaderMT == nullptr)
+            throw std::invalid_argument("cannot create Metal pipeline without vertex shader");
+    }
+    return vertexShaderMT;
+}
+
 void MTGraphicsPSO::CreateRenderPipelineState(
     id<MTLDevice>                       device,
     const GraphicsPipelineDescriptor&   desc,
     const MTRenderPass*                 defaultRenderPass)
 {
     /* Get native shader functions */
-    auto shaderProgramMT = LLGL_CAST(const MTShaderProgram*, desc.shaderProgram);
-    if (!shaderProgramMT)
-        throw std::invalid_argument("failed to create graphics pipeline due to missing shader program");
+    auto vertexShaderMT = GetVertexOrPostTessVertexShader(desc);
 
     /* Get number of patch control points if a post-tessellation vertex function is specified */
-    numPatchControlPoints_ = shaderProgramMT->GetNumPatchControlPoints();
+    numPatchControlPoints_ = vertexShaderMT->GetNumPatchControlPoints();
 
-    if (id<MTLFunction> vertexFunc = shaderProgramMT->GetVertexMTLFunction())
+    if (id<MTLFunction> vertexFunc = vertexShaderMT->GetNative())
         patchType_ = [vertexFunc patchType];
 
     /* Get render pass object */
@@ -176,18 +203,18 @@ void MTGraphicsPSO::CreateRenderPipelineState(
     /* Create render pipeline state */
     MTLRenderPipelineDescriptor* psoDesc = [[MTLRenderPipelineDescriptor alloc] init];
     {
-        psoDesc.vertexDescriptor        = shaderProgramMT->GetMTLVertexDesc();
+        psoDesc.vertexDescriptor        = vertexShaderMT->GetMTLVertexDesc();
         psoDesc.alphaToCoverageEnabled  = MTBoolean(desc.blend.alphaToCoverageEnabled);
         psoDesc.alphaToOneEnabled       = NO;
-        psoDesc.fragmentFunction        = shaderProgramMT->GetFragmentMTLFunction();
-        psoDesc.vertexFunction          = shaderProgramMT->GetVertexMTLFunction();
+        psoDesc.fragmentFunction        = GetNativeMTShader(desc.fragmentShader);
+        psoDesc.vertexFunction          = vertexShaderMT->GetNative();
 
         if (@available(iOS 12.0, *))
             psoDesc.inputPrimitiveTopology = MTTypes::ToMTLPrimitiveTopologyClass(desc.primitiveTopology);
 
         /* Initialize pixel formats from render pass */
         const auto& colorAttachments = renderPassMT->GetColorAttachments();
-        for (std::size_t i = 0, n = std::min(colorAttachments.size(), std::size_t(8u)); i < n; ++i)
+        for_range(i, std::min(colorAttachments.size(), std::size_t(8u)))
         {
             FillColorAttachmentDesc(
                 psoDesc.colorAttachments[i],
@@ -219,19 +246,45 @@ void MTGraphicsPSO::CreateRenderPipelineState(
         }
     }
     NSError* error = nullptr;
-    renderPipelineState_ = [device newRenderPipelineStateWithDescriptor:psoDesc error:&error];
-    [psoDesc release];
-
+    renderPipelineState_ = CreateNativeRenderPipelineState(device, psoDesc, error);
     if (!renderPipelineState_)
         MTThrowIfCreateFailed(error, "MTLRenderPipelineState");
+    [psoDesc release];
 
     /* Create compute PSO for tessellation stage */
     if (numPatchControlPoints_ > 0)
     {
-        tessPipelineState_ = [device newComputePipelineStateWithFunction:shaderProgramMT->GetKernelMTLFunction() error:&error];
-        if (!tessPipelineState_)
-            MTThrowIfCreateFailed(error, "MTLComputePipelineState");
+        if (auto tessComputeShaderMT = LLGL_CAST(const MTShader*, desc.tessControlShader))
+        {
+            tessPipelineState_ = [device newComputePipelineStateWithFunction:tessComputeShaderMT->GetNative() error:&error];
+            if (!tessPipelineState_)
+                MTThrowIfCreateFailed(error, "MTLComputePipelineState");
+        }
+        else
+            throw std::invalid_argument("cannot create Metal tessellation pipeline without tessellation compute shader");
     }
+}
+
+id<MTLRenderPipelineState> MTGraphicsPSO::CreateNativeRenderPipelineState(
+    id<MTLDevice>                   device,
+    MTLRenderPipelineDescriptor*    desc,
+    NSError*&                       error)
+{
+    if (NeedsConstantsCache())
+    {
+        /* Create PSO with reflection to generate constants cache */
+        MTLAutoreleasedRenderPipelineReflection reflection = nil;
+        id<MTLRenderPipelineState> pso = [device
+            newRenderPipelineStateWithDescriptor:   desc
+            options:                                (MTLPipelineOptionArgumentInfo | MTLPipelineOptionBufferTypeInfo)
+            reflection:                             &reflection
+            error:                                  &error
+        ];
+        CreateConstantsCacheForRenderPipeline(reflection);
+        return pso;
+    }
+    else
+        return [device newRenderPipelineStateWithDescriptor:desc error:&error];
 }
 
 void MTGraphicsPSO::CreateDepthStencilState(

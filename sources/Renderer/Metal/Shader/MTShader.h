@@ -1,8 +1,8 @@
 /*
  * MTShader.h
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_MT_SHADER_H
@@ -12,6 +12,7 @@
 #import <Metal/Metal.h>
 
 #include <LLGL/Shader.h>
+#include "../../../Core/BasicReport.h"
 
 
 namespace LLGL
@@ -26,13 +27,20 @@ class MTShader final : public Shader
         MTShader(id<MTLDevice> device, const ShaderDescriptor& desc);
         ~MTShader();
 
-        bool HasErrors() const override;
+        const Report* GetReport() const override;
 
-        std::string GetReport() const override;
-
-        bool IsPostTessellationVertex() const override;
+        bool Reflect(ShaderReflection& reflection) const override;
 
     public:
+
+        /*
+        Returns true if the MTLFunction is a vertex shader with a valid patch type (i.e. other than MTLPatchTypeNone).
+        Such a shader is used as a post-tessellation vertex shader in conjunction with a compute kernel.
+        */
+        bool IsPostTessellationVertex() const;
+
+        // Returns the number of patch control points for a post-tessellation vertex shader or 0 if this is not a vertex shader.
+        NSUInteger GetNumPatchControlPoints() const;
 
         // Returns the native MTLFunction object.
         inline id<MTLFunction> GetNative() const
@@ -60,17 +68,17 @@ class MTShader final : public Shader
 
         void BuildInputLayout(std::size_t numVertexAttribs, const VertexAttribute* vertexAttribs);
 
-        void ReleaseError();
-
         bool LoadFunction(const char* entryPoint);
+
+        bool ReflectComputePipeline(ShaderReflection& reflection) const;
 
     private:
 
+        id<MTLDevice>           device_             = nil;
         id<MTLLibrary>          library_            = nil;
         id<MTLFunction>         native_             = nil;
 
-        NSError*                error_              = nullptr;
-        bool                    hasErrors_          = false;
+        BasicReport             report_;
         MTLSize                 numThreadsPerGroup_ = {};
 
         MTLVertexDescriptor*    vertexDesc_         = nullptr;

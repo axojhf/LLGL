@@ -1,8 +1,8 @@
 /*
  * VKCommandBuffer.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_VK_COMMAND_BUFFER_H
@@ -13,7 +13,8 @@
 #include "Vulkan.h"
 #include "VKPtr.h"
 #include "VKCore.h"
-
+#include "RenderState/VKStagingDescriptorSetPool.h"
+#include "RenderState/VKDescriptorCache.h"
 #include <vector>
 
 
@@ -26,6 +27,7 @@ class VKPhysicalDevice;
 class VKResourceHeap;
 class VKRenderPass;
 class VKQueryHeap;
+class VKPipelineState;
 
 class VKCommandBuffer final : public CommandBuffer
 {
@@ -121,18 +123,9 @@ class VKCommandBuffer final : public CommandBuffer
 
         /* ----- Resources ----- */
 
-        void SetResourceHeap(
-            ResourceHeap&           resourceHeap,
-            std::uint32_t           firstSet        = 0,
-            const PipelineBindPoint bindPoint       = PipelineBindPoint::Undefined
-        ) override;
+        void SetResourceHeap(ResourceHeap& resourceHeap, std::uint32_t descriptorSet = 0) override;
 
-        void SetResource(
-            Resource&       resource,
-            std::uint32_t   slot,
-            long            bindFlags,
-            long            stageFlags = StageFlags::AllStages
-        ) override;
+        void SetResource(std::uint32_t descriptor, Resource& resource) override;
 
         void ResetResourceSlots(
             const ResourceType  resourceType,
@@ -159,21 +152,9 @@ class VKCommandBuffer final : public CommandBuffer
         /* ----- Pipeline States ----- */
 
         void SetPipelineState(PipelineState& pipelineState) override;
-        void SetBlendFactor(const ColorRGBAf& color) override;
+        void SetBlendFactor(const float color[4]) override;
         void SetStencilReference(std::uint32_t reference, const StencilFace stencilFace = StencilFace::FrontAndBack) override;
-
-        void SetUniform(
-            UniformLocation location,
-            const void*     data,
-            std::uint32_t   dataSize
-        ) override;
-
-        void SetUniforms(
-            UniformLocation location,
-            std::uint32_t   count,
-            const void*     data,
-            std::uint32_t   dataSize
-        ) override;
+        void SetUniforms(std::uint32_t first, const void* data, std::uint16_t dataSize) override;
 
         /* ----- Queries ----- */
 
@@ -256,9 +237,9 @@ class VKCommandBuffer final : public CommandBuffer
 
     private:
 
-        void CreateCommandPool(std::uint32_t queueFamilyIndex);
-        void CreateCommandBuffers(std::uint32_t bufferCount);
-        void CreateRecordingFences(VkQueue commandQueue, std::uint32_t numFences);
+        void CreateVkCommandPool(std::uint32_t queueFamilyIndex);
+        void CreateVkCommandBuffers();
+        void CreateVkRecordingFences();
 
         void ClearFramebufferAttachments(std::uint32_t numAttachments, const VkClearAttachment* attachments);
 
@@ -275,10 +256,22 @@ class VKCommandBuffer final : public CommandBuffer
 
         bool IsInsideRenderPass() const;
 
-        void BindResourceHeap(VKResourceHeap& resourceHeapVK, VkPipelineBindPoint bindingPoint, std::uint32_t firstSet);
+        void BufferPipelineBarrier(
+            VkBuffer                buffer,
+            VkDeviceSize            offset,
+            VkDeviceSize            size,
+            VkAccessFlags           srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT,
+            VkAccessFlags           dstAccessMask   = VK_ACCESS_SHADER_READ_BIT,
+            VkPipelineStageFlags    srcStageMask    = VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VkPipelineStageFlags    dstStageMask    = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
+        );
+
+        void FlushDescriptorCache();
 
         // Acquires the next native VkCommandBuffer object.
         void AcquireNextBuffer();
+
+        void ResetBindingStates();
 
         #if 1//TODO: optimize
         void ResetQueryPoolsInFlight();
@@ -287,18 +280,20 @@ class VKCommandBuffer final : public CommandBuffer
 
     private:
 
+        static const std::uint32_t maxNumCommandBuffers = 3;
+
         VKDevice&                       device_;
 
         VkQueue                         commandQueue_               = VK_NULL_HANDLE;
 
         VKPtr<VkCommandPool>            commandPool_;
 
-        std::vector<VkCommandBuffer>    commandBufferList_;
-        VkCommandBuffer                 commandBuffer_;
-        std::size_t                     commandBufferIndex_         = 0;
-
-        std::vector<VKPtr<VkFence>>     recordingFenceList_;
-        VkFence                         recordingFence_;
+        VKPtr<VkFence>                  recordingFenceArray_[maxNumCommandBuffers];
+        VkFence                         recordingFence_             = VK_NULL_HANDLE;
+        VkCommandBuffer                 commandBufferArray_[maxNumCommandBuffers];
+        VkCommandBuffer                 commandBuffer_              = VK_NULL_HANDLE;
+        std::uint32_t                   commandBufferIndex_         = 0;
+        std::uint32_t                   numCommandBuffers_          = 2;
 
         RecordState                     recordState_                = RecordState::Undefined;
 
@@ -311,14 +306,21 @@ class VKCommandBuffer final : public CommandBuffer
         VkFramebuffer                   framebuffer_                = VK_NULL_HANDLE; // active framebuffer handle
         VkRect2D                        framebufferRenderArea_      = { { 0, 0 }, { 0, 0 } };
         std::uint32_t                   numColorAttachments_        = 0;
-        bool                            hasDSVAttachment_           = false;
+        bool                            hasDepthStencilAttachment_  = false;
 
         std::uint32_t                   queuePresentFamily_         = 0;
 
         bool                            scissorEnabled_             = false;
         bool                            scissorRectInvalidated_     = true;
+        VkPipelineBindPoint             pipelineBindPoint_          = VK_PIPELINE_BIND_POINT_MAX_ENUM;
+        const VKPipelineLayout*         boundPipelineLayout_        = nullptr;
+        VKPipelineState*                boundPipelineState_         = nullptr;
 
         std::uint32_t                   maxDrawIndirectCount_       = 0;
+
+        VKStagingDescriptorSetPool      descriptorSetPoolArray_[maxNumCommandBuffers];
+        VKStagingDescriptorSetPool*     descriptorSetPool_          = nullptr;
+        VKDescriptorCache*              descriptorCache_            = nullptr;
 
         #if 1//TODO: optimize usage of query pools
         std::vector<VKQueryHeap*>       queryHeapsInFlight_;

@@ -1,8 +1,8 @@
 /*
  * D3D12Device.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D12_DEVICE_H
@@ -34,7 +34,6 @@ class D3D12Device
         ComPtr<ID3D12GraphicsCommandList>   CreateDXCommandList             (D3D12_COMMAND_LIST_TYPE type, ID3D12CommandAllocator* commandAllocator);
         ComPtr<ID3D12PipelineState>         CreateDXGraphicsPipelineState   (const D3D12_GRAPHICS_PIPELINE_STATE_DESC& desc);
         ComPtr<ID3D12PipelineState>         CreateDXComputePipelineState    (const D3D12_COMPUTE_PIPELINE_STATE_DESC& desc);
-        ComPtr<ID3D12DescriptorHeap>        CreateDXDescriptorHeap          (const D3D12_DESCRIPTOR_HEAP_DESC& desc);
         ComPtr<ID3D12QueryHeap>             CreateDXQueryHeap               (const D3D12_QUERY_HEAP_DESC& desc);
 
         /* ----- Data queries ----- */

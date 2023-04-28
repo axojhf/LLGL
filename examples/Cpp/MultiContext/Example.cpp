@@ -1,11 +1,12 @@
 /*
  * Example.cpp (Example_MultiContext)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
+#include <iostream>
 
 
 int main(int argc, char* argv[])
@@ -13,22 +14,30 @@ int main(int argc, char* argv[])
     try
     {
         // Set report callback to standard output
-        LLGL::Log::SetReportCallbackStd();
+        LLGL::Log::SetReportCallbackStd(&std::cerr);
 
         // Load render system module
         LLGL::RenderingDebugger debugger;
-        auto renderer = LLGL::RenderSystem::Load(GetSelectedRendererModule(argc, argv), nullptr, &debugger);
+        auto renderer = LLGL::RenderSystem::Load(GetSelectedRendererModule(argc, argv));//, nullptr, &debugger);
 
         std::cout << "LLGL Renderer: " << renderer->GetName() << std::endl;
 
         // Create two swap-chains
-        LLGL::SwapChainDescriptor swapChainDesc;
+        LLGL::SwapChainDescriptor swapChainDesc[2];
         {
-            swapChainDesc.resolution    = { 640, 480 };
-            swapChainDesc.samples       = 8;
+            swapChainDesc[0].resolution     = { 640, 480 };
+            swapChainDesc[0].samples        = 8;
+            swapChainDesc[0].depthBits      = 0;
+            swapChainDesc[0].stencilBits    = 0;
         }
-        auto swapChain1 = renderer->CreateSwapChain(swapChainDesc);
-        auto swapChain2 = renderer->CreateSwapChain(swapChainDesc);
+        auto swapChain1 = renderer->CreateSwapChain(swapChainDesc[0]);
+        {
+            swapChainDesc[1].resolution     = { 640, 480 };
+            swapChainDesc[1].samples        = 8;//8;
+            swapChainDesc[1].depthBits      = 0;
+            swapChainDesc[1].stencilBits    = 0;
+        }
+        auto swapChain2 = renderer->CreateSwapChain(swapChainDesc[1]);
 
         // Enable V-sync
         swapChain1->SetVsyncInterval(1);
@@ -71,8 +80,8 @@ int main(int argc, char* argv[])
         // Vertex data structure
         struct Vertex
         {
-            Gs::Vector2f    position;
-            LLGL::ColorRGBf color;
+            float position[2];
+            float color[3];
         };
 
         // Vertex data
@@ -93,7 +102,7 @@ int main(int argc, char* argv[])
 
         // Vertex format
         LLGL::VertexFormat vertexFormat;
-        vertexFormat.AppendAttribute({ "position", LLGL::Format::RG32Float }); // position has 2 float components
+        vertexFormat.AppendAttribute({ "position", LLGL::Format::RG32Float  }); // position has 2 float components
         vertexFormat.AppendAttribute({ "color",    LLGL::Format::RGB32Float }); // color has 3 float components
 
         // Create vertex buffer
@@ -160,23 +169,13 @@ int main(int argc, char* argv[])
         {
             if (shader)
             {
-                std::string log = shader->GetReport();
-                if (!log.empty())
-                    std::cerr << log << std::endl;
+                if (auto report = shader->GetReport())
+                {
+                    if (*report->GetText() != '\0')
+                        std::cerr << report->GetText() << std::endl;
+                }
             }
         }
-
-        // Create shader program which is used as composite
-        LLGL::ShaderProgramDescriptor shaderProgramDesc;
-        {
-            shaderProgramDesc.vertexShader      = vertShader;
-            shaderProgramDesc.geometryShader    = geomShader;
-            shaderProgramDesc.fragmentShader    = fragShader;
-        }
-        auto shaderProgram = renderer->CreateShaderProgram(shaderProgramDesc);
-
-        if (shaderProgram->HasErrors())
-            throw std::runtime_error(shaderProgram->GetReport());
 
         // Create graphics pipeline
         LLGL::PipelineState* pipeline[2] = {};
@@ -184,15 +183,18 @@ int main(int argc, char* argv[])
 
         LLGL::GraphicsPipelineDescriptor pipelineDesc;
         {
-            pipelineDesc.shaderProgram                  = shaderProgram;
+            pipelineDesc.vertexShader                   = vertShader;
+            pipelineDesc.geometryShader                 = geomShader;
+            pipelineDesc.fragmentShader                 = fragShader;
             pipelineDesc.renderPass                     = swapChain1->GetRenderPass();
             pipelineDesc.primitiveTopology              = LLGL::PrimitiveTopology::TriangleStrip;
-            pipelineDesc.rasterizer.multiSampleEnabled  = (swapChainDesc.samples > 1);
+            pipelineDesc.rasterizer.multiSampleEnabled  = (swapChainDesc[0].samples > 1);
         }
         pipeline[0] = renderer->CreatePipelineState(pipelineDesc);
 
         {
             pipelineDesc.renderPass                     = swapChain2->GetRenderPass();
+            pipelineDesc.rasterizer.multiSampleEnabled  = (swapChainDesc[1].samples > 1);
 
             // Only enable logic operations if it's supported, otherwise an exception is thrown
             if (logicOpSupported)
@@ -200,11 +202,26 @@ int main(int argc, char* argv[])
         }
         pipeline[1] = renderer->CreatePipelineState(pipelineDesc);
 
+        for (auto p : pipeline)
+        {
+            if (auto report = p->GetReport())
+            {
+                if (report->HasErrors())
+                    throw std::runtime_error(report->GetText());
+            }
+        }
+
         // Initialize viewport array
         LLGL::Viewport viewports[2] =
         {
             LLGL::Viewport {   0.0f, 0.0f, 320.0f, 480.0f },
             LLGL::Viewport { 320.0f, 0.0f, 320.0f, 480.0f },
+        };
+
+        const float backgroundColor[2][4] =
+        {
+            { 0.2f, 0.2f, 0.5f, 1 },
+            { 0.5f, 0.2f, 0.2f, 1 },
         };
 
         bool enableLogicOp[2] = { false, false };
@@ -250,15 +267,17 @@ int main(int argc, char* argv[])
             commands->Begin();
             {
                 // Set global render states: viewports, vertex buffer, and graphics pipeline
-                commands->SetViewports(2, viewports);
-                commands->SetVertexBuffer(*vertexBuffer);
+                //commands->SetVertexBuffer(*vertexBuffer);
 
                 // Draw triangle with 3 vertices in 1st swap-chain
                 if (window1.IsShown())
                 {
-                    commands->SetPipelineState(*pipeline[enableLogicOp[0] ? 1 : 0]);
                     commands->BeginRenderPass(*swapChain1);
                     {
+                        commands->Clear(LLGL::ClearFlags::Color, backgroundColor[0]);
+                        commands->SetPipelineState(*pipeline[0]);//[enableLogicOp[0] ? 1 : 0]);
+                        commands->SetViewports(2, viewports);
+                        commands->SetVertexBuffer(*vertexBuffer);
                         commands->DrawInstanced(3, 0, numInstances);
                     }
                     commands->EndRenderPass();
@@ -267,10 +286,14 @@ int main(int argc, char* argv[])
                 // Draw quad with 4 vertices in 2nd swap-chain
                 if (window2.IsShown())
                 {
-                    commands->SetPipelineState(*pipeline[enableLogicOp[1] ? 1 : 0]);
                     commands->BeginRenderPass(*swapChain2);
                     {
-                        commands->DrawInstanced(4, 3, numInstances);
+                        commands->Clear(LLGL::ClearFlags::Color, backgroundColor[1]);
+                        commands->SetPipelineState(*pipeline[1]);//[enableLogicOp[1] ? 1 : 0]);
+                        commands->SetViewports(2, viewports);
+                        commands->SetVertexBuffer(*vertexBuffer);
+                        commands->DrawInstanced(3, 0, numInstances);
+                        //commands->DrawInstanced(4, 3, numInstances);
                     }
                     commands->EndRenderPass();
                 }

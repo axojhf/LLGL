@@ -1,13 +1,16 @@
 /*
  * MTRenderTarget.mm
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "MTRenderTarget.h"
 #include "MTTexture.h"
+#include "../MTTypes.h"
 #include "../../CheckedCast.h"
+#include "../../RenderTargetUtils.h"
+#include <LLGL/Utils/ForRange.h>
 #include <string>
 
 
@@ -15,7 +18,7 @@ namespace LLGL
 {
 
 
-static void Copy(MTLRenderPassAttachmentDescriptor* dst, const MTLRenderPassAttachmentDescriptor* src)
+static void CopyMTLAttachmentDesc(MTLRenderPassAttachmentDescriptor* dst, const MTLRenderPassAttachmentDescriptor* src)
 {
     dst.texture 	= src.texture;
     dst.level       = src.level;
@@ -31,57 +34,56 @@ MTRenderTarget::MTRenderTarget(id<MTLDevice> device, const RenderTargetDescripto
     renderPass_ { desc            }
 {
     /* Allocate native render pass descriptor */
-    native_ = [[MTLRenderPassDescriptor alloc] init];
+    nativeRenderPass_ = [[MTLRenderPassDescriptor alloc] init];
 
     for (const auto& attachment : desc.attachments)
     {
-        switch (attachment.type)
+        const Format format = GetAttachmentFormat(attachment);
+        if (IsColorFormat(format))
         {
-            case AttachmentType::Color:
-                /* Create color attachment */
-                CreateAttachment(
-                    device,
-                    native_.colorAttachments[numColorAttachments_],
-                    attachment,
-                    renderPass_.GetColorAttachments()[numColorAttachments_],
-                    numColorAttachments_
-                );
-                ++numColorAttachments_;
-                break;
-
-            case AttachmentType::Depth:
-                /* Create depth attachment */
-                CreateAttachment(
-                    device,
-                    native_.depthAttachment,
-                    attachment,
-                    renderPass_.GetDepthAttachment(),
-                    0
-                );
-                break;
-
-            case AttachmentType::DepthStencil:
-                /* Create depth-stencil attachment */
-                CreateAttachment(
-                    device,
-                    native_.depthAttachment,
-                    attachment,
-                    renderPass_.GetDepthAttachment(),
-                    0
-                );
-                Copy(native_.stencilAttachment, native_.depthAttachment);
-                break;
-
-            case AttachmentType::Stencil:
-                /* Create stencil attachment */
-                CreateAttachment(
-                    device,
-                    native_.stencilAttachment,
-                    attachment,
-                    renderPass_.GetStencilAttachment(),
-                    0
-                );
-                break;
+            /* Create color attachment */
+            CreateAttachment(
+                device,
+                nativeRenderPass_.colorAttachments[numColorAttachments_],
+                attachment,
+                renderPass_.GetColorAttachments()[numColorAttachments_],
+                numColorAttachments_
+            );
+            ++numColorAttachments_;
+        }
+        else if (IsDepthAndStencilFormat(format))
+        {
+            /* Create depth-stencil attachment */
+            CreateAttachment(
+                device,
+                nativeRenderPass_.depthAttachment,
+                attachment,
+                renderPass_.GetDepthAttachment(),
+                0
+            );
+            CopyMTLAttachmentDesc(nativeRenderPass_.stencilAttachment, nativeRenderPass_.depthAttachment);
+        }
+        else if (IsDepthFormat(format))
+        {
+            /* Create depth attachment */
+            CreateAttachment(
+                device,
+                nativeRenderPass_.depthAttachment,
+                attachment,
+                renderPass_.GetDepthAttachment(),
+                0
+            );
+        }
+        else if (IsStencilFormat(format))
+        {
+            /* Create stencil attachment */
+            CreateAttachment(
+                device,
+                nativeRenderPass_.stencilAttachment,
+                attachment,
+                renderPass_.GetStencilAttachment(),
+                0
+            );
         }
     }
 }
@@ -90,14 +92,14 @@ MTRenderTarget::~MTRenderTarget()
 {
     #if 0//TODO: code analysis warns about invalid reference counting
     /* Release all textures */
-    for (std::uint32_t i = 0; i < numColorAttachments_; ++i)
-        [native_.colorAttachments[i] release];
-    if (auto attachment = native_.depthAttachment)
+    for_range(i, numColorAttachments_)
+        [nativeRenderPass_.colorAttachments[i] release];
+    if (auto attachment = nativeRenderPass_.depthAttachment)
         [attachment.texture release];
-    if (auto attachment = native_.stencilAttachment)
+    if (auto attachment = nativeRenderPass_.stencilAttachment)
         [attachment.texture release];
 
-    //[native_ release];
+    //[nativeRenderPass_ release];
     #endif
 }
 
@@ -118,17 +120,33 @@ std::uint32_t MTRenderTarget::GetNumColorAttachments() const
 
 bool MTRenderTarget::HasDepthAttachment() const
 {
-    return (native_.depthAttachment.texture != nil);
+    return (nativeRenderPass_.depthAttachment.texture != nil);
 }
 
 bool MTRenderTarget::HasStencilAttachment() const
 {
-    return (native_.stencilAttachment.texture != nil);
+    return (nativeRenderPass_.stencilAttachment.texture != nil);
 }
 
 const RenderPass* MTRenderTarget::GetRenderPass() const
 {
     return (&renderPass_);
+}
+
+MTLRenderPassDescriptor* MTRenderTarget::GetAndUpdateNativeRenderPass(
+    const MTRenderPass& renderPass,
+    std::uint32_t       numClearValues,
+    const ClearValue*   clearValues)
+{
+    /* Create copy of native render pass descriptor for the first time */
+    if (nativeMutableRenderPass_ == nil)
+        nativeMutableRenderPass_ = [nativeRenderPass_ copy];
+
+    /* Update mutable render pass with clear values */
+    if (renderPass.GetColorAttachments().size() == numColorAttachments_)
+        renderPass.UpdateNativeRenderPass(nativeMutableRenderPass_, numClearValues, clearValues);
+
+    return nativeMutableRenderPass_;
 }
 
 
@@ -153,7 +171,7 @@ void MTRenderTarget::CreateAttachment(
         if (renderPass_.GetSampleCount() > 1)
         {
             /* Create resolve texture if multi-sampling is enabled */
-            attachment.texture          = CreateRenderTargetTexture(device, desc.type, tex);
+            attachment.texture          = CreateAttachmentTexture(device, [tex pixelFormat]);
             attachment.resolveTexture   = tex;
         }
         else
@@ -162,10 +180,10 @@ void MTRenderTarget::CreateAttachment(
             attachment.texture = tex;
         }
     }
-    else if (desc.type != AttachmentType::Color)
+    else if (IsDepthOrStencilFormat(desc.format))
     {
         /* Create native texture for depth-stencil attachments */
-        attachment.texture = CreateRenderTargetTexture(device, desc.type);
+        attachment.texture = CreateAttachmentTexture(device, MTTypes::ToMTLPixelFormat(desc.format));
     }
     else
     {
@@ -186,18 +204,6 @@ void MTRenderTarget::CreateAttachment(
         attachment.storeAction = MTLStoreActionStoreAndMultisampleResolve;
 }
 
-static MTLPixelFormat SelectPixelFormat(const AttachmentType type)
-{
-    switch (type)
-    {
-        case AttachmentType::Color:         return MTLPixelFormatRGBA8Unorm;
-        case AttachmentType::Depth:         return MTLPixelFormatDepth32Float;
-        case AttachmentType::DepthStencil:  return MTLPixelFormatDepth32Float_Stencil8;
-        case AttachmentType::Stencil:       return MTLPixelFormatStencil8;
-    }
-    return MTLPixelFormatInvalid;
-}
-
 MTLTextureDescriptor* MTRenderTarget::CreateTextureDesc(
     id<MTLDevice>   device,
     MTLPixelFormat  pixelFormat,
@@ -216,16 +222,9 @@ MTLTextureDescriptor* MTRenderTarget::CreateTextureDesc(
     return texDesc;
 }
 
-id<MTLTexture> MTRenderTarget::CreateRenderTargetTexture(
-    id<MTLDevice>                   device,
-    const AttachmentType            type,
-    id<MTLTexture>                  resolveTexture)
+id<MTLTexture> MTRenderTarget::CreateAttachmentTexture(id<MTLDevice> device, MTLPixelFormat pixelFormat)
 {
-    auto texDesc = CreateTextureDesc(
-        device,
-        (resolveTexture != nil ? [resolveTexture pixelFormat] : SelectPixelFormat(type)),
-        renderPass_.GetSampleCount()
-    );
+    auto texDesc = CreateTextureDesc(device, pixelFormat, renderPass_.GetSampleCount());
 
     id<MTLTexture> texture = [device newTextureWithDescriptor:texDesc];
     [texDesc release];

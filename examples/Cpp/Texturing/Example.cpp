@@ -1,12 +1,12 @@
 /*
  * Example.cpp (Example_Texturing)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
-#include <LLGL/Strings.h>
+#include <LLGL/Utils/TypeNames.h>
 #include <DDSImageReader.h>
 #include <stb/stb_image.h>
 
@@ -14,13 +14,13 @@
 class Example_Texturing : public ExampleBase
 {
 
-    LLGL::ShaderProgram*        shaderProgram   = nullptr;
+    ShaderPipeline              shaderPipeline;
     LLGL::PipelineLayout*       pipelineLayout  = nullptr;
     LLGL::PipelineState*        pipeline        = nullptr;
     LLGL::Buffer*               vertexBuffer    = nullptr;
     LLGL::Texture*              colorMaps[2]    = {};
     LLGL::Sampler*              sampler[5]      = {};
-    LLGL::ResourceHeap*         resourceHeap    = {};
+    LLGL::ResourceHeap*         resourceHeap    = nullptr;
 
     unsigned                    resourceIndex   = 0;
 
@@ -41,7 +41,7 @@ public:
     {
         // Create all graphics objects
         auto vertexFormat = CreateBuffers();
-        shaderProgram = LoadStandardShaderProgram({ vertexFormat });
+        shaderPipeline = LoadStandardShaderPipeline({ vertexFormat });
         CreatePipelines();
         CreateTextures();
         CreateSamplers();
@@ -93,7 +93,7 @@ public:
         // Create pipeline layout
         LLGL::PipelineLayoutDescriptor layoutDesc;
         {
-            layoutDesc.bindings =
+            layoutDesc.heapBindings =
             {
                 LLGL::BindingDescriptor{ LLGL::ResourceType::Sampler, 0,                        LLGL::StageFlags::FragmentStage, 0 },
                 LLGL::BindingDescriptor{ LLGL::ResourceType::Texture, LLGL::BindFlags::Sampled, LLGL::StageFlags::FragmentStage, (IsOpenGL() ? 0u : 1u) },
@@ -104,7 +104,8 @@ public:
         // Create graphics pipeline
         LLGL::GraphicsPipelineDescriptor pipelineDesc;
         {
-            pipelineDesc.shaderProgram                  = shaderProgram;
+            pipelineDesc.vertexShader                   = shaderPipeline.vs;
+            pipelineDesc.fragmentShader                 = shaderPipeline.ps;
             pipelineDesc.pipelineLayout                 = pipelineLayout;
             pipelineDesc.primitiveTopology              = LLGL::PrimitiveTopology::TriangleStrip;
             pipelineDesc.rasterizer.multiSampleEnabled  = (GetSampleCount() > 1);
@@ -138,7 +139,7 @@ public:
         }
 
         // Upload image data onto hardware texture and stop the time
-        timer->Start();
+        timer.Start();
         {
             // Create texture
             LLGL::TextureDescriptor texDesc;
@@ -157,7 +158,7 @@ public:
             }
             colorMaps[1] = renderer->CreateTexture(texDesc, &imageDesc);
         }
-        auto texCreationTime = static_cast<double>(timer->Stop()) / static_cast<double>(timer->GetFrequency());
+        auto texCreationTime = static_cast<double>(timer.Stop()) / static_cast<double>(timer.GetFrequency());
         std::cout << "texture creation time: " << (texCreationTime * 1000.0) << " ms" << std::endl;
 
         // Release image data
@@ -257,17 +258,17 @@ public:
         texUint->SetName("texUint");
         #endif
 
+        // Create resource heap with two resources: a sampler-state and a texture to sample from
+        const LLGL::ResourceViewDescriptor resourceViews[2] =
+        {
+            sampler[0], colorMaps[0]
+        };
         LLGL::ResourceHeapDescriptor resourceHeapDesc;
         {
-            resourceHeapDesc.pipelineLayout = pipelineLayout;
-            resourceHeapDesc.resourceViews.reserve(6 * 2);
-            for (int i = 0; i < 6; ++i)
-            {
-                resourceHeapDesc.resourceViews.push_back(sampler[i > 0 ? i - 1 : 0]);
-                resourceHeapDesc.resourceViews.push_back(/*i == 0 ? texUint : */colorMaps[i == 0 ? 0 : 1]);
-            }
+            resourceHeapDesc.pipelineLayout     = pipelineLayout;
+            resourceHeapDesc.numResourceViews   = 2;
         }
-        resourceHeap = renderer->CreateResourceHeap(resourceHeapDesc);
+        resourceHeap = renderer->CreateResourceHeap(resourceHeapDesc, resourceViews);
     }
 
 private:
@@ -277,12 +278,18 @@ private:
         // Examine user input
         if (input.KeyDown(LLGL::Key::Tab))
         {
+            // Switch to next resource we want to present
             if (input.KeyPressed(LLGL::Key::Shift))
                 resourceIndex = ((resourceIndex - 1) % 6 + 6) % 6;
             else
                 resourceIndex = (resourceIndex + 1) % 6;
             std::cout << "texture attributes: " << resourceLabels[resourceIndex] << std::string(30, ' ') << "\r";
             std::flush(std::cout);
+
+            // Update resource heap with new selected sampler state and texture resources
+            LLGL::Sampler* selectedSampler = sampler[resourceIndex > 0 ? resourceIndex - 1 : 0];
+            LLGL::Texture* selectedTexture = colorMaps[resourceIndex == 0 ? 0 : 1];
+            renderer->WriteResourceHeap(*resourceHeap, 0, { selectedSampler, selectedTexture });
         }
 
         // Set render target
@@ -303,7 +310,7 @@ private:
                 commands->SetPipelineState(*pipeline);
 
                 // Set graphics shader resources
-                commands->SetResourceHeap(*resourceHeap, resourceIndex);
+                commands->SetResourceHeap(*resourceHeap);
 
                 // Draw fullscreen quad
                 commands->Draw(4, 0);

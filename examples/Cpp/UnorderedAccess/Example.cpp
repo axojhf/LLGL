@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_UnorderedAccess)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
@@ -12,12 +12,13 @@
 class Example_UnorderedAccess : public ExampleBase
 {
 
-    LLGL::ShaderProgram*    computeShaderProgram    = nullptr;
+    LLGL::Shader*           csCompute               = nullptr;
     LLGL::PipelineLayout*   computePipelineLayout   = nullptr;
     LLGL::PipelineState*    computePipeline         = nullptr;
     LLGL::ResourceHeap*     computeResourceHeap     = nullptr;
 
-    LLGL::ShaderProgram*    graphicsShaderProgram   = nullptr;
+    LLGL::Shader*           vsGraphics              = nullptr;
+    LLGL::Shader*           fsGraphics              = nullptr;
     LLGL::PipelineLayout*   graphicsPipelineLayout  = nullptr;
     LLGL::PipelineState*    graphicsPipeline        = nullptr;
     LLGL::ResourceHeap*     graphicsResourceHeap    = nullptr;
@@ -90,48 +91,21 @@ public:
     {
         if (Supported(LLGL::ShadingLanguage::HLSL))
         {
-            computeShaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Compute,    "Example.hlsl", "CS", "cs_5_0" }
-                }
-            );
-            graphicsShaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,     "Example.hlsl", "VS", "vs_5_0" },
-                    { LLGL::ShaderType::Fragment,   "Example.hlsl", "PS", "ps_5_0" }
-                },
-                { vertexFormat }
-            );
+            csCompute  = LoadShader({ LLGL::ShaderType::Compute,    "Example.hlsl", "CS", "cs_5_0" });
+            vsGraphics = LoadShader({ LLGL::ShaderType::Vertex,     "Example.hlsl", "VS", "vs_5_0" }, { vertexFormat });
+            fsGraphics = LoadShader({ LLGL::ShaderType::Fragment,   "Example.hlsl", "PS", "ps_5_0" });
         }
         else if (Supported(LLGL::ShadingLanguage::GLSL))
         {
-            computeShaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Compute,    "Example.comp" }
-                }
-            );
-            graphicsShaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,     "Example.vert" },
-                    { LLGL::ShaderType::Fragment,   "Example.frag" }
-                },
-                { vertexFormat }
-            );
+            csCompute  = LoadShader({ LLGL::ShaderType::Compute,    "Example.comp" });
+            vsGraphics = LoadShader({ LLGL::ShaderType::Vertex,     "Example.vert" }, { vertexFormat });
+            fsGraphics = LoadShader({ LLGL::ShaderType::Fragment,   "Example.frag" });
         }
         else if (Supported(LLGL::ShadingLanguage::SPIRV))
         {
-            computeShaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Compute,    "Example.450core.comp.spv" }
-                }
-            );
-            graphicsShaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,     "Example.450core.vert.spv" },
-                    { LLGL::ShaderType::Fragment,   "Example.450core.frag.spv" }
-                },
-                { vertexFormat }
-            );
+            csCompute  = LoadShader({ LLGL::ShaderType::Compute,    "Example.450core.comp.spv" });
+            vsGraphics = LoadShader({ LLGL::ShaderType::Vertex,     "Example.450core.vert.spv" }, { vertexFormat });
+            fsGraphics = LoadShader({ LLGL::ShaderType::Fragment,   "Example.450core.frag.spv" });
         }
         else
             throw std::runtime_error("shaders not available for selected renderer in this example");
@@ -141,13 +115,13 @@ public:
     {
         // Create compute pipeline layout
         computePipelineLayout = renderer->CreatePipelineLayout(
-            LLGL::PipelineLayoutDesc("texture(tex@0):comp, rwtexture(texOut@1):comp")
+            LLGL::PipelineLayoutDesc("heap{texture(tex@0):comp, rwtexture(texOut@1):comp}")
         );
 
         // Create compute pipeline
         LLGL::ComputePipelineDescriptor computePipelineDesc;
         {
-            computePipelineDesc.shaderProgram   = computeShaderProgram;
+            computePipelineDesc.computeShader   = csCompute;
             computePipelineDesc.pipelineLayout  = computePipelineLayout;
         }
         computePipeline = renderer->CreatePipelineState(computePipelineDesc);
@@ -155,14 +129,15 @@ public:
         // Create graphics pipeline layout
         graphicsPipelineLayout = renderer->CreatePipelineLayout(
             IsVulkan()
-                ? LLGL::PipelineLayoutDesc("texture(tex@0):frag, sampler(texSampler@1):frag")
-                : LLGL::PipelineLayoutDesc("texture(tex@0):frag, sampler(texSampler@0):frag")
+                ? LLGL::PipelineLayoutDesc("heap{texture(tex@0):frag, sampler(texSampler@1):frag}")
+                : LLGL::PipelineLayoutDesc("heap{texture(tex@0):frag, sampler(texSampler@0):frag}")
         );
 
         // Create graphics pipeline
         LLGL::GraphicsPipelineDescriptor graphicsPipelineDesc;
         {
-            graphicsPipelineDesc.shaderProgram      = graphicsShaderProgram;
+            graphicsPipelineDesc.vertexShader       = vsGraphics;
+            graphicsPipelineDesc.fragmentShader     = fsGraphics;
             graphicsPipelineDesc.pipelineLayout     = graphicsPipelineLayout;
             graphicsPipelineDesc.primitiveTopology  = LLGL::PrimitiveTopology::TriangleStrip;
         }
@@ -193,7 +168,7 @@ public:
         // Create default sampler state
         LLGL::SamplerDescriptor samplerDesc;
         {
-            samplerDesc.mipMapping = false;
+            samplerDesc.mipMapEnabled = false;
         }
         sampler = renderer->CreateSampler(samplerDesc);
     }
@@ -201,19 +176,10 @@ public:
     void CreateResourceHeaps()
     {
         // Create compute resource heap
-        LLGL::ResourceHeapDescriptor resourceHeapDesc;
-        {
-            resourceHeapDesc.pipelineLayout = computePipelineLayout;
-            resourceHeapDesc.resourceViews  = { inputTexture, outputTexture };
-        }
-        computeResourceHeap = renderer->CreateResourceHeap(resourceHeapDesc);
+        computeResourceHeap = renderer->CreateResourceHeap(computePipelineLayout, { inputTexture, outputTexture });
 
         // Create graphics resource heap
-        {
-            resourceHeapDesc.pipelineLayout = graphicsPipelineLayout;
-            resourceHeapDesc.resourceViews  = { outputTexture, sampler };
-        }
-        graphicsResourceHeap = renderer->CreateResourceHeap(resourceHeapDesc);
+        graphicsResourceHeap = renderer->CreateResourceHeap(graphicsPipelineLayout, { outputTexture, sampler });
     }
 
 private:

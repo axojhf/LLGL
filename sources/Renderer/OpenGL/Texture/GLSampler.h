@@ -1,16 +1,17 @@
 /*
  * GLSampler.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_GL_SAMPLER_H
 #define LLGL_GL_SAMPLER_H
 
 
-#include "../OpenGL.h"
 #include <LLGL/Sampler.h>
+#include "../OpenGL.h"
+#include <memory>
 
 
 namespace LLGL
@@ -29,9 +30,10 @@ class GLSampler final : public Sampler
         GLSampler();
         ~GLSampler();
 
-        void SetDesc(const SamplerDescriptor& desc);
+        // Sets the GL sampler parameters with the specified descriptor, i.e. glSamplerParameter*.
+        void SamplerParameters(const SamplerDescriptor& desc);
 
-        //! Returns the hardware sampler ID.
+        // Returns the hardware sampler ID.
         inline GLuint GetID() const
         {
             return id_;
@@ -42,6 +44,8 @@ class GLSampler final : public Sampler
         GLuint id_ = 0;
 
 };
+
+using GLSamplerPtr = std::unique_ptr<GLSampler>;
 
 
 } // /namespace LLGL

@@ -1,20 +1,19 @@
 /*
  * ImageFlags.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_IMAGE_FLAGS_H
 #define LLGL_IMAGE_FLAGS_H
 
 
-#include "Export.h"
-#include "Format.h"
-#include "Tags.h"
-#include "RenderSystemFlags.h"
-#include "TextureFlags.h"
-#include "ColorRGBA.h"
+#include <LLGL/Export.h>
+#include <LLGL/Format.h>
+#include <LLGL/Tags.h>
+#include <LLGL/RenderSystemFlags.h>
+#include <LLGL/TextureFlags.h>
 #include <memory>
 #include <cstdint>
 
@@ -138,7 +137,7 @@ the maximal count of threads the system supports will be used (e.g. 4 on a quad-
 LLGL_EXPORT bool ConvertImageBuffer(
     const SrcImageDescriptor&   srcImageDesc,
     const DstImageDescriptor&   dstImageDesc,
-    std::size_t                 threadCount = 0
+    unsigned                    threadCount = 0
 );
 
 /**
@@ -165,7 +164,22 @@ LLGL_EXPORT ByteBuffer ConvertImageBuffer(
     const SrcImageDescriptor&   srcImageDesc,
     ImageFormat                 dstFormat,
     DataType                    dstDataType,
-    std::size_t                 threadCount = 0
+    unsigned                    threadCount = 0
+);
+
+/**
+\brief Decompresses the specified image buffer to RGBA format with 8-bit unsigned normalized integers.
+\param[in] srcImageDesc Specifies the source image descriptor.
+\param[in] extent Specifies the image extent. This is required as most compression formats work in block sizes.
+\param[in] threadCount Specifies the number of threads to use for decompression.
+If this is less than 2, no multi-threading is used. If this is 'Constants::maxThreadCount',
+the maximal count of threads the system supports will be used (e.g. 4 on a quad-core processor). By default 0.
+\return Byte buffer with the decompressed image data or null if the compression format is not supported for decompression.
+*/
+LLGL_EXPORT ByteBuffer DecompressImageBufferToRGBA8UNorm(
+    const SrcImageDescriptor&   srcImageDesc,
+    const Extent2D&             extent,
+    unsigned                    threadCount = 0
 );
 
 /**
@@ -173,11 +187,11 @@ LLGL_EXPORT ByteBuffer ConvertImageBuffer(
 \param[out] dstImageDesc Specifies the destination image descriptor.
 \param[in] dstOffset Specifies the 3D offset of the destination image.
 \param[in] dstRowStride Specifies the number of pixels for each row in the destination image.
-\param[in] dstSliceStride Specifies the number of pixels for each slice in the destination image.
+\param[in] dstLayerStride Specifies the number of pixels for each slice in the destination image.
 \param[in] srcImageDesc Specifies the source image descriptor.
 \param[in] srcOffset Specifies the 3D offset of the source image.
 \param[in] srcRowStride Specifies the number of pixels for each row in the source image.
-\param[in] srcSliceStride Specifies the number of pixels for each slice in the source image.
+\param[in] srcLayerStride Specifies the number of pixels for each slice in the source image.
 \param[in] extent Specifies the region extent to be copied.
 \remarks Only performs a bitwise copy. No blending or other operation is performed.
 \throw std::invalid_argument If the destination buffer is a null pointer.
@@ -193,13 +207,13 @@ LLGL_EXPORT void CopyImageBufferRegion(
     const DstImageDescriptor&   dstImageDesc,
     const Offset3D&             dstOffset,
     std::uint32_t               dstRowStride,
-    std::uint32_t               dstSliceStride,
+    std::uint32_t               dstLayerStride,
 
     // Source
     const SrcImageDescriptor&   srcImageDesc,
     const Offset3D&             srcOffset,
     std::uint32_t               srcRowStride,
-    std::uint32_t               srcSliceStride,
+    std::uint32_t               srcLayerStride,
 
     // Region
     const Extent3D&             extent
@@ -216,19 +230,20 @@ LLGL_EXPORT void CopyImageBufferRegion(
 Usage example for a 2D image:
 \code
 // Generate 2D image of size 512 x 512 with a half-transparent yellow color
+const float fillColor[4] = { 1.0f, 1.0f, 0.0f, 0.5f };
 auto imageBuffer = LLGL::GenerateImageBuffer(
     LLGL::ImageFormat::RGBA,
     LLGL::DataType::UInt8,
     512 * 512,
-    LLGL::ColorRGBAd{ 1.0, 1.0, 0.0, 0.5 }
+    fillColor
 );
 \endcode
 */
 LLGL_EXPORT ByteBuffer GenerateImageBuffer(
-    ImageFormat         format,
-    DataType            dataType,
-    std::size_t         imageSize,
-    const ColorRGBAd&   fillColor
+    ImageFormat format,
+    DataType    dataType,
+    std::size_t imageSize,
+    const float fillColor[4]
 );
 
 /**

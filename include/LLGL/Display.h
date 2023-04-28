@@ -1,19 +1,18 @@
 /*
  * Display.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_DISPLAY_H
 #define LLGL_DISPLAY_H
 
 
-#include "Interface.h"
-#include "DisplayFlags.h"
+#include <LLGL/Interface.h>
+#include <LLGL/DisplayFlags.h>
+#include <LLGL/Container/Strings.h>
 #include <vector>
-#include <memory>
-#include <string>
 
 
 namespace LLGL
@@ -102,8 +101,8 @@ class LLGL_EXPORT Display : public Interface
         //! Returns true if this is the primary display, as configured by the host system.
         virtual bool IsPrimary() const = 0;
 
-        //! Returns the device name of this display. This may also be empty, if the platform does not support display names.
-        virtual std::wstring GetDeviceName() const = 0;
+        //! Returns the device name of this display in UTF-8 encoding. This may also be empty, if the platform does not support display names.
+        virtual UTF8String GetDeviceName() const = 0;
 
         /**
         \brief Returns the 2D offset relative to the primary display.

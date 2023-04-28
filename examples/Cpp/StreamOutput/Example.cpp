@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_StreamOutput)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
@@ -12,7 +12,9 @@
 class Example_StreamOutput : public ExampleBase
 {
 
-    LLGL::ShaderProgram*    shaderProgram       = nullptr;
+    LLGL::Shader*           vsScene             = nullptr;
+    LLGL::Shader*           gsScene             = nullptr;
+    LLGL::Shader*           fsScene             = nullptr;
 
     LLGL::PipelineLayout*   pipelineLayout      = nullptr;
     LLGL::PipelineState*    pipeline            = nullptr;
@@ -81,39 +83,22 @@ public:
         // Load shader program
         if (Supported(LLGL::ShadingLanguage::HLSL))
         {
-            shaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.hlsl", "VS", "vs_5_0" },
-                    { LLGL::ShaderType::Geometry, "Example.hlsl", "GS", "gs_5_0" },
-                    { LLGL::ShaderType::Fragment, "Example.hlsl", "PS", "ps_5_0" }
-                },
-                { vertexFormat },
-                streamOutputFormat
-            );
-        }
-        else if (Supported(LLGL::ShadingLanguage::SPIRV))
-        {
-            shaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.450core.vert.spv" },
-                    { LLGL::ShaderType::Geometry, "Example.450core.geom.spv" },
-                    { LLGL::ShaderType::Fragment, "Example.450core.frag.spv" }
-                },
-                { vertexFormat },
-                streamOutputFormat
-            );
+            vsScene = LoadShader({ LLGL::ShaderType::Vertex,   "Example.hlsl", "VS", "vs_5_0" }, { vertexFormat });
+            gsScene = LoadShader({ LLGL::ShaderType::Geometry, "Example.hlsl", "GS", "gs_5_0" }, {}, streamOutputFormat);
+            fsScene = LoadShader({ LLGL::ShaderType::Fragment, "Example.hlsl", "PS", "ps_5_0" });
         }
         else if (Supported(LLGL::ShadingLanguage::GLSL))
         {
-            shaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.vert" },
-                    { LLGL::ShaderType::Geometry, "Example.geom" },
-                    { LLGL::ShaderType::Fragment, "Example.frag" }
-                },
-                { vertexFormat },
-                streamOutputFormat
-            );
+            vsScene = LoadShader({ LLGL::ShaderType::Vertex,   "Example.vert" }, { vertexFormat });
+            gsScene = LoadShader({ LLGL::ShaderType::Geometry, "Example.geom" }, {}, streamOutputFormat);
+            fsScene = LoadShader({ LLGL::ShaderType::Fragment, "Example.frag" });
+        }
+        else if (Supported(LLGL::ShadingLanguage::SPIRV))
+        {
+            // Note: OpenGL might support SPIR-V but transform-feedback doesn't work properly with the GL_NV_transform_feedback extension with SPIR-V shaders.
+            vsScene = LoadShader({ LLGL::ShaderType::Vertex,   "Example.450core.vert.spv" }, { vertexFormat });
+            gsScene = LoadShader({ LLGL::ShaderType::Geometry, "Example.450core.geom.spv" }, {}, streamOutputFormat);
+            fsScene = LoadShader({ LLGL::ShaderType::Fragment, "Example.450core.frag.spv" });
         }
         else
             throw std::runtime_error("shaders not available for selected renderer in this example");
@@ -123,13 +108,15 @@ public:
     {
         // Create graphics pipeline layout
         pipelineLayout = renderer->CreatePipelineLayout(
-            LLGL::PipelineLayoutDesc("cbuffer(Settings@2):vert")
+            LLGL::PipelineLayoutDesc("heap{cbuffer(Settings@2):vert}")
         );
 
         // Create common graphics pipeline for scene rendering
         LLGL::GraphicsPipelineDescriptor pipelineDesc;
         {
-            pipelineDesc.shaderProgram                  = shaderProgram;
+            pipelineDesc.vertexShader                   = vsScene;
+            pipelineDesc.geometryShader                 = gsScene;
+            pipelineDesc.fragmentShader                 = fsScene;
             pipelineDesc.pipelineLayout                 = pipelineLayout;
             pipelineDesc.rasterizer.multiSampleEnabled  = (GetSampleCount() > 1);
         }
@@ -138,12 +125,7 @@ public:
 
     void CreateResourceHeaps()
     {
-        LLGL::ResourceHeapDescriptor heapDesc;
-        {
-            heapDesc.pipelineLayout = pipelineLayout;
-            heapDesc.resourceViews  = { constantBuffer };
-        }
-        resourceHeap = renderer->CreateResourceHeap(heapDesc);
+        resourceHeap = renderer->CreateResourceHeap(pipelineLayout, { constantBuffer });
     }
 
 private:
@@ -157,11 +139,11 @@ private:
 
     void OnDrawFrame() override
     {
-        timer->MeasureTime();
+        timer.MeasureTime();
 
         // Update constant buffer
         static float rotation;
-        rotation += static_cast<float>(timer->GetDeltaTime()) * 0.5f;
+        rotation += static_cast<float>(timer.GetDeltaTime()) * 0.5f;
 
         settings.wvpMatrix = projection;
         Gs::Translate(settings.wvpMatrix, { 0, 0, 7 });
@@ -182,7 +164,7 @@ private:
             commands->BeginRenderPass(*swapChain);
             {
                 // Clear color and depth buffers
-                commands->Clear(LLGL::ClearFlags::ColorDepth);
+                commands->Clear(LLGL::ClearFlags::ColorDepth, backgroundColor);
 
                 // Set viewport to swap-chain resolution
                 commands->SetViewport(swapChain->GetResolution());

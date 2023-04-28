@@ -1,12 +1,13 @@
 /*
  * Test_ShaderReflect.cpp
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <LLGL/LLGL.h>
-#include <LLGL/Utility.h>
+#include <LLGL/Utils/Utility.h>
+#include <iostream>
 
 int main()
 {
@@ -32,33 +33,23 @@ int main()
         // Load shader
         auto computeShader = renderer->CreateShader(LLGL::ShaderDescFromFile(LLGL::ShaderType::Compute, "Shaders/SpirvReflectTest.comp.spv"));
 
-        if (computeShader->HasErrors())
-            std::cerr << computeShader->GetReport() << std::endl;
-
-        // Create shader program
-        LLGL::ShaderProgramDescriptor shaderProgramDesc;
-        {
-            shaderProgramDesc.computeShader = computeShader;
-        }
-        auto shaderProgram = renderer->CreateShaderProgram(shaderProgramDesc);
-
-        if (shaderProgram->HasErrors())
-            std::cerr << shaderProgram->GetReport() << std::endl;
-
         // Reflect shader
         LLGL::ShaderReflection reflect;
-        shaderProgram->Reflect(reflect);
+        computeShader->Reflect(reflect);
 
         std::cout << "Resources:" << std::endl;
-        for (const LLGL::ShaderResource& resc : reflect.resources)
+        for (const LLGL::ShaderResourceReflection& resc : reflect.resources)
         {
-            std::cout << "  " << resc.binding.name << " @ " << resc.binding.slot << std::endl;
+            std::cout << "  " << resc.binding.name << " @ " << resc.binding.slot.index << std::endl;
         }
 
         std::cout << "Uniforms:" << std::endl;
-        for (const LLGL::ShaderUniform& unif : reflect.uniforms)
+        for (const LLGL::UniformDescriptor& unif : reflect.uniforms)
         {
-            std::cout << "  " << unif.name << " @ " << unif.location << std::endl;
+            std::cout << "  " << unif.name;
+            if (unif.arraySize > 0)
+                std::cout << '[' << unif.arraySize << ']';
+            std::cout << std::endl;
         }
 
         std::cout << "Vertex Input Attributes:" << std::endl;

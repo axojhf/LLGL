@@ -1,8 +1,8 @@
 /*
  * ImageUtils.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_IMAGE_UTILS_H
@@ -26,10 +26,10 @@ void BitBlit(
     std::uint32_t   bpp,
     char*           dst,
     std::uint32_t   dstRowStride,
-    std::uint32_t   dstDepthStride,
+    std::uint32_t   dstLayerStride,
     const char*     src,
     std::uint32_t   srcRowStride,
-    std::uint32_t   srcDepthStride
+    std::uint32_t   srcLayerStride
 );
 
 

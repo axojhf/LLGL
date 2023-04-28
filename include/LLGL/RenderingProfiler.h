@@ -1,17 +1,16 @@
 /*
  * RenderingProfiler.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_RENDERING_PROFILER_H
 #define LLGL_RENDERING_PROFILER_H
 
 
-#include "Export.h"
-#include "SwapChainFlags.h"
-#include "PipelineStateFlags.h"
+#include <LLGL/SwapChainFlags.h>
+#include <LLGL/PipelineStateFlags.h>
 #include <cstdint>
 #include <string.h>
 
@@ -282,7 +281,7 @@ struct FrameProfile
 \remarks This can be used to profile the renderer draw calls and buffer updates.
 \todo Refactor this for the new ResourceHeap and RenderPass interfaces.
 */
-class LLGL_EXPORT RenderingProfiler
+class RenderingProfiler
 {
 
     public:
@@ -291,14 +290,25 @@ class LLGL_EXPORT RenderingProfiler
         \brief Returns the current frame profile and resets the counters for the next frame.
         \param[out] outputProfile Optional pointer to an output profile to retrieve the current values. By default null.
         */
-        void NextProfile(FrameProfile* outputProfile = nullptr);
+        inline void NextProfile(FrameProfile* outputProfile = nullptr)
+        {
+            /* Copy current counters to the output profile (if set) */
+            if (outputProfile)
+                *outputProfile = frameProfile;
+
+            /* Clear values */
+            frameProfile.Clear();
+        }
 
         /**
         \brief Accumulates the specified profile with the current values.
         \param[in] profile Specifies the input profile whose values are to be merged with the current values.
         \see FrameProfile::Accumulate
         */
-        void Accumulate(const FrameProfile& profile);
+        inline void Accumulate(const FrameProfile& profile)
+        {
+            frameProfile.Accumulate(profile);
+        }
 
     public:
 

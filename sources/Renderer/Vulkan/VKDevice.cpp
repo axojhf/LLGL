@@ -1,8 +1,8 @@
 /*
  * VKDevice.cpp
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "VKDevice.h"
@@ -188,7 +188,7 @@ void VKDevice::FlushCommandBuffer(VkCommandBuffer cmdBuffer, bool release)
 static VkImageAspectFlags GetImageAspectForVkFormat(VkFormat format)
 {
     const Format fmt = VKTypes::Unmap(format);
-    if (IsDepthStencilFormat(fmt))
+    if (IsDepthOrStencilFormat(fmt))
     {
         if (IsStencilFormat(fmt))
             return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
@@ -513,8 +513,23 @@ void VKDevice::WriteBuffer(VKDeviceBuffer& buffer, const void* data, VkDeviceSiz
         auto deviceMemory = region->GetParentChunk();
         if (auto memory = deviceMemory->Map(device_, region->GetOffset() + offset, size))
         {
-            /* Copy data to buffer object */
+            /* Copy input data to buffer memory */
             ::memcpy(memory, data, static_cast<std::size_t>(size));
+            deviceMemory->Unmap(device_);
+        }
+    }
+}
+
+void VKDevice::ReadBuffer(VKDeviceBuffer& buffer, void* data, VkDeviceSize size, VkDeviceSize offset)
+{
+    if (auto region = buffer.GetMemoryRegion())
+    {
+        /* Map buffer memory to host memory */
+        auto deviceMemory = region->GetParentChunk();
+        if (auto memory = deviceMemory->Map(device_, region->GetOffset() + offset, size))
+        {
+            /* Copy buffer memory to output data */
+            ::memcpy(data, memory, static_cast<std::size_t>(size));
             deviceMemory->Unmap(device_);
         }
     }

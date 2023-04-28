@@ -1,13 +1,13 @@
 /*
  * D3D12StagingBuffer.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D12StagingBuffer.h"
 #include "../../DXCommon/DXCore.h"
-#include "../../../Core/Helper.h"
+#include "../../../Core/CoreUtils.h"
 #include "../D3DX12/d3dx12.h"
 #include <string.h>
 
@@ -58,6 +58,9 @@ void D3D12StagingBuffer::Create(
     );
     DXThrowIfCreateFailed(hr, "ID3D12Resource", "for staging buffer");
 
+    /* Set name for debugging/diagnostics */
+    native_->SetName(L"LLGL::D3D12StagingBuffer");
+
     /* Store new size and reset write offset */
     size_   = size;
     offset_ = 0;
@@ -73,7 +76,7 @@ bool D3D12StagingBuffer::Capacity(UINT64 dataSize) const
     return (offset_ + dataSize <= size_);
 }
 
-void D3D12StagingBuffer::Write(
+HRESULT D3D12StagingBuffer::Write(
     ID3D12GraphicsCommandList*  commandList,
     ID3D12Resource*             dstBuffer,
     UINT64                      dstOffset,
@@ -86,7 +89,7 @@ void D3D12StagingBuffer::Write(
 
     HRESULT hr = native_->Map(0, &readRange, reinterpret_cast<void**>(&mappedData));
     if (FAILED(hr))
-        return;
+        return hr;
 
     /* Copy input data to staging buffer */
     ::memcpy(mappedData + offset_, data, static_cast<std::size_t>(dataSize));
@@ -101,17 +104,20 @@ void D3D12StagingBuffer::Write(
 
     /* Encode copy buffer command */
     commandList->CopyBufferRegion(dstBuffer, dstOffset, native_.Get(), offset_, dataSize);
+
+    return S_OK;
 }
 
-void D3D12StagingBuffer::WriteAndIncrementOffset(
+HRESULT D3D12StagingBuffer::WriteAndIncrementOffset(
     ID3D12GraphicsCommandList*  commandList,
     ID3D12Resource*             dstBuffer,
     UINT64                      dstOffset,
     const void*                 data,
     UINT64                      dataSize)
 {
-    Write(commandList, dstBuffer, dstOffset, data, dataSize);
+    HRESULT hr = Write(commandList, dstBuffer, dstOffset, data, dataSize);
     offset_ += dataSize;
+    return hr;
 }
 
 

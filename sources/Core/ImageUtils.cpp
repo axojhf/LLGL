@@ -1,14 +1,16 @@
 /*
  * ImageUtils.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "ImageUtils.h"
 #include <LLGL/Types.h>
+#include <LLGL/Utils/ForRange.h>
 #include <cstdint>
-#include <cstring>
+#include <algorithm>
+#include <string.h>
 
 
 namespace LLGL
@@ -20,48 +22,55 @@ void BitBlit(
     std::uint32_t   bpp,
     char*           dst,
     std::uint32_t   dstRowStride,
-    std::uint32_t   dstDepthStride,
+    std::uint32_t   dstLayerStride,
     const char*     src,
     std::uint32_t   srcRowStride,
-    std::uint32_t   srcDepthStride)
+    std::uint32_t   srcLayerStride)
 {
-    const auto rowStride    = bpp * extent.width;
-    const auto depthStride  = rowStride * extent.height;
+    const auto rowLength    = bpp * extent.width;
+    const auto layerLength  = rowLength * extent.height;
 
-    if (srcRowStride == dstRowStride && rowStride == dstRowStride)
+    /* Clamp strides to tightly packed lengths */
+    dstRowStride = std::max(dstRowStride, rowLength);
+    srcRowStride = std::max(srcRowStride, rowLength);
+
+    dstLayerStride = std::max(dstLayerStride, layerLength);
+    srcLayerStride = std::max(srcLayerStride, layerLength);
+
+    if (srcRowStride == dstRowStride && rowLength == dstRowStride)
     {
-        if (srcDepthStride == dstDepthStride && depthStride == dstDepthStride)
+        if (srcLayerStride == dstLayerStride && layerLength == dstLayerStride)
         {
             /* Copy region directly into output data */
-            ::memcpy(dst, src, depthStride * extent.depth);
+            ::memcpy(dst, src, layerLength * extent.depth);
         }
         else
         {
             /* Copy region directly into output data */
-            for (std::uint32_t z = 0; z < extent.depth; ++z)
+            for_range(z, extent.depth)
             {
                 /* Copy current slice */
-                ::memcpy(dst, src, depthStride);
+                ::memcpy(dst, src, layerLength);
 
                 /* Move pointers to next slice */
-                dst += dstDepthStride;
-                src += srcDepthStride;
+                dst += dstLayerStride;
+                src += srcLayerStride;
             }
         }
     }
     else
     {
         /* Adjust depth stride */
-        srcDepthStride -= srcRowStride * extent.height;
+        srcLayerStride -= srcRowStride * extent.height;
 
         /* Copy region directly into output data */
-        for (std::uint32_t z = 0; z < extent.depth; ++z)
+        for_range(z, extent.depth)
         {
             /* Copy current slice */
-            for (std::uint32_t y = 0; y < extent.height; ++y)
+            for_range(y, extent.height)
             {
                 /* Copy current row */
-                ::memcpy(dst, src, rowStride);
+                ::memcpy(dst, src, rowLength);
 
                 /* Move pointers to next row */
                 dst += dstRowStride;
@@ -69,7 +78,7 @@ void BitBlit(
             }
 
             /* Move pointers to next slice */
-            src += srcDepthStride;
+            src += srcLayerStride;
         }
     }
 }

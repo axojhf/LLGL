@@ -1,8 +1,8 @@
 /*
  * VKTypes.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_VK_TYPES_H
@@ -15,6 +15,7 @@
 #include <LLGL/ResourceHeapFlags.h>
 #include <LLGL/PipelineStateFlags.h>
 #include <LLGL/RenderPassFlags.h>
+#include <LLGL/TextureFlags.h>
 #include <LLGL/Format.h>
 #include <LLGL/SamplerFlags.h>
 #include <LLGL/QueryHeapFlags.h>
@@ -48,14 +49,19 @@ VkQueryType             Map( const QueryType            queryType         );
 VkAttachmentLoadOp      Map( const AttachmentLoadOp     loadOp            );
 VkAttachmentStoreOp     Map( const AttachmentStoreOp    storeOp           );
 VkStencilFaceFlags      Map( const StencilFace          stencilFace       );
-VkPipelineBindPoint     Map( const PipelineBindPoint    pipelineBindPoint );
 
 VkIndexType             ToVkIndexType(const Format format);
 VkSampleCountFlagBits   ToVkSampleCountBits(std::uint32_t samples);
 VkOffset3D              ToVkOffset(const Offset3D& offset);
 VkExtent3D              ToVkExtent(const Extent3D& extent);
+VkComponentSwizzle      ToVkComponentSwizzle(const TextureSwizzle swizzle);
+VkColorComponentFlags   ToVkColorComponentFlags(std::uint8_t colorMask);
 
-Format                  Unmap( const VkFormat format );
+Format Unmap( const VkFormat format );
+
+bool IsVkFormatDepthStencil(const VkFormat format);
+bool IsVkFormatStencil(const VkFormat format);
+bool IsVkFormatColor(const VkFormat format);
 
 
 /* ----- Convert functions ----- */

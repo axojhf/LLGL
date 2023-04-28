@@ -1,13 +1,15 @@
 /*
  * Test_Compute.cpp
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <LLGL/LLGL.h>
+#include <LLGL/Utils/Utility.h>
 #include <Gauss/Gauss.h>
 #include <vector>
+#include <iostream>
 
 // Fill an array list of 4D-vectors for testing purposes
 static std::vector<Gs::Vector4f> GetTestVector(std::size_t size)
@@ -65,19 +67,6 @@ int main()
         // Load shader
         auto computeShader = renderer->CreateShader({ LLGL::ShaderType::Compute, "Shaders/ComputeShader.glsl" });
 
-        if (computeShader->HasErrors())
-            std::cerr << computeShader->GetReport() << std::endl;
-
-        // Create shader program
-        LLGL::ShaderProgramDescriptor shaderProgramDesc;
-        {
-            shaderProgramDesc.computeShader = computeShader;
-        }
-        auto shaderProgram = renderer->CreateShaderProgram(shaderProgramDesc);
-
-        if (shaderProgram->HasErrors())
-            std::cerr << shaderProgram->GetReport() << std::endl;
-
         // Create timer query
         LLGL::QueryHeapDescriptor queryDesc;
         {
@@ -85,17 +74,29 @@ int main()
         }
         auto timerQuery = renderer->CreateQueryHeap(queryDesc);
 
+        // Create pipeline layout
+        auto pipelineLayout = renderer->CreatePipelineLayout(
+            LLGL::PipelineLayoutDesc("rwbuffer(OutputBuffer@0):comp")
+        );
+
         // Create compute pipeline
         LLGL::ComputePipelineDescriptor pipelineDesc;
         {
-            pipelineDesc.shaderProgram = shaderProgram;
+            pipelineDesc.pipelineLayout = pipelineLayout;
+            pipelineDesc.computeShader  = computeShader;
         }
         auto pipeline = renderer->CreatePipelineState(pipelineDesc);
+
+        if (auto report = pipeline->GetReport())
+        {
+            if (report->HasErrors())
+                throw std::runtime_error(report->GetText());
+        }
 
         // Set resources
         commands->Begin();
         {
-            commands->SetResource(*storageBuffer, 0, LLGL::BindFlags::Storage, LLGL::StageFlags::ComputeStage);
+            commands->SetResource(0, *storageBuffer);
             commands->SetPipelineState(*pipeline);
 
             // Dispatch compute shader (with 1*1*1 work groups only) and measure elapsed time with timer query

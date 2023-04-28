@@ -1,8 +1,8 @@
 /*
  * D3D12CommandBuffer.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D12_COMMAND_BUFFER_H
@@ -28,6 +28,11 @@ class D3D12RenderSystem;
 class D3D12SwapChain;
 class D3D12RenderTarget;
 class D3D12RenderPass;
+class D3D12Buffer;
+class D3D12Texture;
+class D3D12Sampler;
+class D3D12PipelineLayout;
+class D3D12PipelineState;
 class D3D12SignatureFactory;
 struct D3D12Resource;
 
@@ -120,13 +125,8 @@ class D3D12CommandBuffer final : public CommandBuffer
 
         /* ----- Resources ----- */
 
-        void SetResourceHeap(
-            ResourceHeap&           resourceHeap,
-            std::uint32_t           firstSet        = 0,
-            const PipelineBindPoint bindPoint       = PipelineBindPoint::Undefined
-        ) override;
-
-        void SetResource(Resource& resource, std::uint32_t slot, long bindFlags, long stageFlags = StageFlags::AllStages) override;
+        void SetResourceHeap(ResourceHeap& resourceHeap, std::uint32_t descriptorSet = 0) override;
+        void SetResource(std::uint32_t descriptor, Resource& resource) override;
 
         void ResetResourceSlots(
             const ResourceType  resourceType,
@@ -153,21 +153,9 @@ class D3D12CommandBuffer final : public CommandBuffer
         /* ----- Pipeline States ----- */
 
         void SetPipelineState(PipelineState& pipelineState) override;
-        void SetBlendFactor(const ColorRGBAf& color) override;
+        void SetBlendFactor(const float color[4]) override;
         void SetStencilReference(std::uint32_t reference, const StencilFace stencilFace = StencilFace::FrontAndBack) override;
-
-        void SetUniform(
-            UniformLocation location,
-            const void*     data,
-            std::uint32_t   dataSize
-        ) override;
-
-        void SetUniforms(
-            UniformLocation location,
-            std::uint32_t   count,
-            const void*     data,
-            std::uint32_t   dataSize
-        ) override;
+        void SetUniforms(std::uint32_t first, const void* data, std::uint16_t dataSize) override;
 
         /* ----- Queries ----- */
 
@@ -244,7 +232,7 @@ class D3D12CommandBuffer final : public CommandBuffer
         void BindRenderTarget(D3D12RenderTarget& renderTargetD3D);
         void BindSwapChain(D3D12SwapChain& swapChainD3D);
 
-        void ClearAttachmentsWithRenderPass(
+        std::uint32_t ClearAttachmentsWithRenderPass(
             const D3D12RenderPass&  renderPassD3D,
             std::uint32_t           numClearValues,
             const ClearValue*       clearValues,
@@ -252,11 +240,11 @@ class D3D12CommandBuffer final : public CommandBuffer
             const D3D12_RECT*       rects           = nullptr
         );
 
-        void ClearRenderTargetViews(
+        std::uint32_t ClearRenderTargetViews(
             const std::uint8_t* colorBuffers,
             std::uint32_t       numClearValues,
             const ClearValue*   clearValues,
-            std::uint32_t&      idx,
+            std::uint32_t       clearValueIndex,
             UINT                numRects,
             const D3D12_RECT*   rects
         );
@@ -265,7 +253,7 @@ class D3D12CommandBuffer final : public CommandBuffer
             D3D12_CLEAR_FLAGS   clearFlags,
             std::uint32_t       numClearValues,
             const ClearValue*   clearValues,
-            std::uint32_t       idx,
+            std::uint32_t       clearValueIndex,
             UINT                numRects,
             const D3D12_RECT*   rects
         );
@@ -275,8 +263,6 @@ class D3D12CommandBuffer final : public CommandBuffer
         D3D12CommandContext             commandContext_;
         ID3D12GraphicsCommandList*      commandList_            = nullptr;
         const D3D12SignatureFactory*    cmdSignatureFactory_    = nullptr;
-
-        D3D12StagingBufferPool          stagingBufferPool_;
 
         bool                            immediateSubmit_        = false;
 
@@ -289,7 +275,10 @@ class D3D12CommandBuffer final : public CommandBuffer
         UINT                            numBoundScissorRects_   = 0;
         UINT                            numColorBuffers_        = 0;
 
-        RenderTarget*                   boundRenderTarget_      = nullptr;
+        D3D12SwapChain*                 boundSwapChain_         = nullptr;
+        D3D12RenderTarget*              boundRenderTarget_      = nullptr;
+        const D3D12PipelineLayout*      boundPipelineLayout_    = nullptr;
+        D3D12PipelineState*             boundPipelineState_     = nullptr;
 
 };
 

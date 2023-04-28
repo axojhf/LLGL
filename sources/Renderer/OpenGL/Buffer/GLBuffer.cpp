@@ -1,8 +1,8 @@
 /*
  * GLBuffer.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GLBuffer.h"
@@ -11,7 +11,7 @@
 #include "../Ext/GLExtensions.h"
 #include "../GLTypes.h"
 #include "../Ext/GLExtensionRegistry.h"
-#include "../../../Core/Helper.h"
+#include "../../../Core/CoreUtils.h"
 #include <memory>
 
 
@@ -140,6 +140,21 @@ void GLBuffer::BufferSubData(GLintptr offset, GLsizeiptr size, const void* data)
     }
 }
 
+void GLBuffer::GetBufferSubData(GLintptr offset, GLsizeiptr size, void* data)
+{
+    #if defined GL_ARB_direct_state_access && defined LLGL_GL_ENABLE_DSA_EXT
+    if (HasExtension(GLExt::ARB_direct_state_access))
+    {
+        glGetNamedBufferSubData(GetID(), offset, size, data);
+    }
+    else
+    #endif // /GL_ARB_direct_state_access
+    {
+        GLStateManager::Get().BindGLBuffer(*this);
+        GLProfile::GetBufferSubData(GetGLTarget(), offset, size, data);
+    }
+}
+
 void GLBuffer::ClearBufferData(std::uint32_t data)
 {
     #if defined GL_ARB_direct_state_access && defined LLGL_GL_ENABLE_DSA_EXT
@@ -252,6 +267,29 @@ void* GLBuffer::MapBuffer(GLenum access)
     {
         GLStateManager::Get().BindGLBuffer(*this);
         return GLProfile::MapBuffer(GetGLTarget(), access);
+    }
+}
+
+void* GLBuffer::MapBufferRange(GLintptr offset, GLsizeiptr length, GLbitfield access)
+{
+    #if defined GL_ARB_direct_state_access && defined LLGL_GL_ENABLE_DSA_EXT
+    if (HasExtension(GLExt::ARB_direct_state_access))
+    {
+        return glMapNamedBufferRange(GetID(), offset, length, access);
+    }
+    else
+    #endif // /GL_ARB_direct_state_access
+    #ifdef GL_ARB_map_buffer_range
+    if (HasExtension(GLExt::ARB_map_buffer_range))
+    {
+        GLStateManager::Get().BindGLBuffer(*this);
+        return glMapBufferRange(GetGLTarget(), offset, length, access);
+    }
+    else
+    #endif // /GL_ARB_map_buffer_range
+    {
+        GLStateManager::Get().BindGLBuffer(*this);
+        return GLProfile::MapBufferRange(GetGLTarget(), offset, length, access);
     }
 }
 

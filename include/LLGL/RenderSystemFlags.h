@@ -1,25 +1,25 @@
 /*
  * RenderSystemFlags.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_RENDER_SYSTEM_FLAGS_H
 #define LLGL_RENDER_SYSTEM_FLAGS_H
 
 
-#include "Export.h"
-#include "CommandBufferFlags.h"
-#include "TextureFlags.h"
-#include "Constants.h"
-#include "RendererConfiguration.h"
+#include <LLGL/Export.h>
+#include <LLGL/CommandBufferFlags.h>
+#include <LLGL/TextureFlags.h>
+#include <LLGL/Constants.h>
+#include <LLGL/RendererConfiguration.h>
 
-#include "Platform/Platform.h"
+#include <LLGL/Platform/Platform.h>
 #if defined LLGL_OS_ANDROID
 #   include <android_native_app_glue.h>
 //#elif defined LLGL_OS_IOS
-//#   include "Platform/"
+//#   include <LLGL/Platform/>
 #endif
 
 #include <cstddef>
@@ -190,21 +190,6 @@ enum class CPUAccess
 /* ----- Structures ----- */
 
 /**
-\brief Render system configuration structure.
-\see RenderSystem::SetConfiguration
-*/
-struct RenderSystemConfiguration
-{
-    /**
-    \brief Specifies the number of threads that will be used internally by the render system. By default Constants::maxThreadCount.
-    \remarks This is mainly used by the Direct3D render systems, e.g. inside the "CreateTexture" and "WriteTexture" functions
-    to convert the image data into the respective hardware texture format. OpenGL does this automatically.
-    \see Constants::maxThreadCount
-    */
-    std::size_t threadCount = Constants::maxThreadCount;
-};
-
-/**
 \brief Renderer identification number enumeration.
 \remarks There are several IDs for reserved future renderes, which are currently not supported (and maybe never supported).
 You can use an ID greater than 'RendererID::Reserved' (which has a value of 0x000000ff) for your own renderer.
@@ -213,20 +198,21 @@ Or use one of the pre-defined IDs if you want to implement your own OpenGL/ Dire
 */
 struct RendererID
 {
-    static const int Undefined  = 0x00000000; //!< Undefined ID number.
+    static constexpr int Undefined  = 0x00000000; //!< Undefined ID number.
 
-    static const int OpenGL     = 0x00000001; //!< ID number for an OpenGL renderer.
-    static const int OpenGLES1  = 0x00000002; //!< ID number for an OpenGL ES 1 renderer.
-    static const int OpenGLES2  = 0x00000003; //!< ID number for an OpenGL ES 2 renderer.
-    static const int OpenGLES3  = 0x00000004; //!< ID number for an OpenGL ES 3 renderer.
-    static const int Direct3D9  = 0x00000005; //!< ID number for a Direct3D 9 renderer.
-    static const int Direct3D10 = 0x00000006; //!< ID number for a Direct3D 10 renderer.
-    static const int Direct3D11 = 0x00000007; //!< ID number for a Direct3D 11 renderer.
-    static const int Direct3D12 = 0x00000008; //!< ID number for a Direct3D 12 renderer.
-    static const int Vulkan     = 0x00000009; //!< ID number for a Vulkan renderer.
-    static const int Metal      = 0x0000000a; //!< ID number for a Metal renderer.
+    static constexpr int Null       = 0x00000001; //!< ID number for a Null renderer. This renderer does not render anything but provides the same interface for debugging purposes.
+    static constexpr int OpenGL     = 0x00000002; //!< ID number for an OpenGL renderer.
+    static constexpr int OpenGLES1  = 0x00000003; //!< ID number for an OpenGL ES 1 renderer.
+    static constexpr int OpenGLES2  = 0x00000004; //!< ID number for an OpenGL ES 2 renderer.
+    static constexpr int OpenGLES3  = 0x00000005; //!< ID number for an OpenGL ES 3 renderer.
+    static constexpr int Direct3D9  = 0x00000006; //!< ID number for a Direct3D 9 renderer.
+    static constexpr int Direct3D10 = 0x00000007; //!< ID number for a Direct3D 10 renderer.
+    static constexpr int Direct3D11 = 0x00000008; //!< ID number for a Direct3D 11 renderer.
+    static constexpr int Direct3D12 = 0x00000009; //!< ID number for a Direct3D 12 renderer.
+    static constexpr int Vulkan     = 0x0000000a; //!< ID number for a Vulkan renderer.
+    static constexpr int Metal      = 0x0000000b; //!< ID number for a Metal renderer.
 
-    static const int Reserved   = 0x000000ff; //!< Highest ID number for reserved future renderers. Value is 0x000000ff.
+    static constexpr int Reserved   = 0x000000ff; //!< Highest ID number for reserved future renderers. Value is 0x000000ff.
 };
 
 /**
@@ -371,14 +357,6 @@ struct RenderSystemDescriptor
 */
 struct RenderingFeatures
 {
-    /**
-    \brief Specifies whether the render system supports binding individual resources directly instead of a resource heap.
-    This does not exclude support of resource heaps, because these are always supported.
-    \see CommandBuffer::SetResource
-    \see CommandBuffer::ResetResourceSlots
-    */
-    bool hasDirectResourceBinding       = false;
-
     //! Specifies whether render targets (also "framebuffer objects") are supported.
     bool hasRenderTargets               = false;
 

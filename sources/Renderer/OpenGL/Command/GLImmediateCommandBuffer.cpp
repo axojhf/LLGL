@@ -1,8 +1,8 @@
 /*
  * GLImmediateCommandBuffer.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GLImmediateCommandBuffer.h"
@@ -10,11 +10,12 @@
 #include "GLCommandExecutor.h"
 #include <LLGL/StaticLimits.h>
 #include <LLGL/TypeInfo.h>
+#include <LLGL/Utils/ForRange.h>
 
 #include "../../TextureUtils.h"
 #include "../GLSwapChain.h"
 #include "../Ext/GLExtensions.h"
-#include "../Ext/GLExtensionLoader.h"
+#include "../Ext/GLExtensionRegistry.h"
 #include "../GLProfile.h"
 #include "../GLTypes.h"
 #include "../GLCore.h"
@@ -25,7 +26,9 @@
 
 #include "../Texture/GLTexture.h"
 #include "../Texture/GLSampler.h"
-#include "../Texture/GL2XSampler.h"
+#ifdef LLGL_GL_ENABLE_OPENGL2X
+#   include "../Texture/GL2XSampler.h"
+#endif
 #include "../Texture/GLRenderTarget.h"
 #include "../Texture/GLMipGenerator.h"
 
@@ -54,7 +57,7 @@ GLImmediateCommandBuffer::GLImmediateCommandBuffer(GLStateManager& stateManager)
 
 void GLImmediateCommandBuffer::Begin()
 {
-    // dummy
+    ResetRenderState();
 }
 
 void GLImmediateCommandBuffer::End()
@@ -209,7 +212,7 @@ void GLImmediateCommandBuffer::SetViewports(std::uint32_t numViewports, const Vi
     /* Setup GL viewports and depth-ranges */
     auto count = static_cast<GLsizei>(std::min(numViewports, LLGL_MAX_NUM_VIEWPORTS_AND_SCISSORS));
 
-    for (GLsizei i = 0; i < count; ++i)
+    for_range(i, count)
     {
         /* Copy GL viewport data */
         viewportsGL[i].x        = viewports[i].x;
@@ -241,7 +244,7 @@ void GLImmediateCommandBuffer::SetScissors(std::uint32_t numScissors, const Scis
     /* Setup GL scissors */
     auto count = static_cast<GLsizei>(std::min(numScissors, LLGL_MAX_NUM_VIEWPORTS_AND_SCISSORS));
 
-    for (GLsizei i = 0; i < count; ++i)
+    for_range(i, count)
     {
         /* Copy GL scissor data */
         scissorsGL[i].x         = static_cast<GLint>(scissors[i].x);
@@ -305,7 +308,7 @@ void GLImmediateCommandBuffer::SetIndexBuffer(Buffer& buffer)
     /* Bind index buffer deferred (can only be bound to the active VAO) */
     auto& bufferGL = LLGL_CAST(GLBuffer&, buffer);
     stateMngr_->BindElementArrayBufferToVAO(bufferGL.GetID(), bufferGL.IsIndexType16Bits());
-    SetIndexFormat(renderState_, bufferGL.IsIndexType16Bits(), 0);
+    SetIndexFormat(bufferGL.IsIndexType16Bits(), 0);
 }
 
 void GLImmediateCommandBuffer::SetIndexBuffer(Buffer& buffer, const Format format, std::uint64_t offset)
@@ -314,71 +317,75 @@ void GLImmediateCommandBuffer::SetIndexBuffer(Buffer& buffer, const Format forma
     auto& bufferGL = LLGL_CAST(GLBuffer&, buffer);
     const bool indexType16Bits = (format == Format::R16UInt);
     stateMngr_->BindElementArrayBufferToVAO(bufferGL.GetID(), indexType16Bits);
-    SetIndexFormat(renderState_, indexType16Bits, offset);
+    SetIndexFormat(indexType16Bits, offset);
 }
 
 /* ----- Resource Heaps ----- */
 
-void GLImmediateCommandBuffer::SetResourceHeap(
-    ResourceHeap&           resourceHeap,
-    std::uint32_t           firstSet,
-    const PipelineBindPoint /*bindPoint*/)
+void GLImmediateCommandBuffer::SetResourceHeap(ResourceHeap& resourceHeap, std::uint32_t descriptorSet)
 {
     auto& resourceHeapGL = LLGL_CAST(GLResourceHeap&, resourceHeap);
-    resourceHeapGL.Bind(*stateMngr_, firstSet);
+    resourceHeapGL.Bind(*stateMngr_, descriptorSet);
 }
 
-void GLImmediateCommandBuffer::SetResource(Resource& resource, std::uint32_t slot, long bindFlags, long /*stageFlags*/)
+void GLImmediateCommandBuffer::SetResource(std::uint32_t descriptor, Resource& resource)
 {
-    switch (resource.GetResourceType())
+    auto* pipelineLayoutGL = GetBoundPipelineLayout();
+    if (pipelineLayoutGL == nullptr)
+        return /*GL_INVALID_VALUE*/;
+
+    const auto& bindingList = pipelineLayoutGL->GetBindings();
+    if (!(descriptor < bindingList.size()))
+        return /*GL_INVALID_INDEX*/;
+
+    const auto& binding = bindingList[descriptor];
+    switch (binding.type)
     {
-        case ResourceType::Undefined:
+        case GLResourceType_Invalid:
         break;
 
-        case ResourceType::Buffer:
+        case GLResourceType_UBO:
         {
             auto& bufferGL = LLGL_CAST(GLBuffer&, resource);
-
-            /* Bind uniform buffer (UBO) or shader storage buffer (SSBO) */
-            if ((bindFlags & BindFlags::ConstantBuffer) != 0)
-                stateMngr_->BindBufferBase(GLBufferTarget::UNIFORM_BUFFER, slot, bufferGL.GetID());
-            if ((bindFlags & (BindFlags::Sampled | BindFlags::Storage)) != 0)
-                stateMngr_->BindBufferBase(GLBufferTarget::SHADER_STORAGE_BUFFER, slot, bufferGL.GetID());
+            stateMngr_->BindBufferBase(GLBufferTarget::UNIFORM_BUFFER, binding.slot, bufferGL.GetID());
         }
         break;
 
-        case ResourceType::Texture:
+        case GLResourceType_SSBO:
+        {
+            auto& bufferGL = LLGL_CAST(GLBuffer&, resource);
+            stateMngr_->BindBufferBase(GLBufferTarget::SHADER_STORAGE_BUFFER, binding.slot, bufferGL.GetID());
+        }
+        break;
+
+        case GLResourceType_Texture:
         {
             auto& textureGL = LLGL_CAST(GLTexture&, resource);
-
-            /* Bind sampled texture resource */
-            if ((bindFlags & BindFlags::Sampled) != 0)
-            {
-                stateMngr_->ActiveTexture(slot);
-                stateMngr_->BindGLTexture(textureGL);
-            }
-
-            /* Bind storage texture resource */
-            if ((bindFlags & BindFlags::Storage) != 0)
-                stateMngr_->BindImageTexture(slot, 0, textureGL.GetGLInternalFormat(), textureGL.GetID());
+            stateMngr_->ActiveTexture(binding.slot);
+            stateMngr_->BindGLTexture(textureGL);
         }
         break;
 
-        case ResourceType::Sampler:
+        case GLResourceType_Image:
+        {
+            auto& textureGL = LLGL_CAST(GLTexture&, resource);
+            stateMngr_->BindImageTexture(binding.slot, 0, textureGL.GetGLInternalFormat(), textureGL.GetID());
+        }
+        break;
+
+        case GLResourceType_Sampler:
+        {
+            auto& samplerGL = LLGL_CAST(GLSampler&, resource);
+            stateMngr_->BindSampler(binding.slot, samplerGL.GetID());
+        }
+        break;
+
+        case GLResourceType_GL2XSampler:
         {
             #ifdef LLGL_GL_ENABLE_OPENGL2X
-            /* If GL_ARB_sampler_objects is not supported, use emulated sampler states */
-            if (!HasNativeSamplers())
-            {
-                auto& samplerGL2X = LLGL_CAST(const GL2XSampler&, resource);
-                stateMngr_->BindGL2XSampler(slot, samplerGL2X);
-            }
-            else
-            #endif
-            {
-                auto& samplerGL = LLGL_CAST(const GLSampler&, resource);
-                stateMngr_->BindSampler(slot, samplerGL.GetID());
-            }
+            auto& samplerGL2X = LLGL_CAST(GL2XSampler&, resource);
+            stateMngr_->BindGL2XSampler(binding.slot, samplerGL2X);
+            #endif // /LLGL_GL_ENABLE_OPENGL2X
         }
         break;
     }
@@ -461,10 +468,10 @@ void GLImmediateCommandBuffer::Clear(long flags, const ClearValue& clearValue)
     if ((flags & ClearFlags::Color) != 0)
     {
         glClearColor(
-            clearValue.color.r,
-            clearValue.color.g,
-            clearValue.color.b,
-            clearValue.color.a
+            clearValue.color[0],
+            clearValue.color[1],
+            clearValue.color[2],
+            clearValue.color[3]
         );
     }
 
@@ -489,19 +496,12 @@ void GLImmediateCommandBuffer::SetPipelineState(PipelineState& pipelineState)
     /* Bind graphics pipeline render states */
     auto& pipelineStateGL = LLGL_CAST(GLPipelineState&, pipelineState);
     pipelineStateGL.Bind(*stateMngr_);
-
-    /* Store draw and primitive mode */
-    if (pipelineStateGL.IsGraphicsPSO())
-    {
-        auto& graphicsPSO = LLGL_CAST(GLGraphicsPSO&, pipelineStateGL);
-        renderState_.drawMode       = graphicsPSO.GetDrawMode();
-        renderState_.primitiveMode  = graphicsPSO.GetPrimitiveMode();
-    }
+    SetPipelineRenderState(pipelineStateGL);
 }
 
-void GLImmediateCommandBuffer::SetBlendFactor(const ColorRGBAf& color)
+void GLImmediateCommandBuffer::SetBlendFactor(const float color[4])
 {
-    stateMngr_->SetBlendColor(color.Ptr());
+    stateMngr_->SetBlendColor(color);
 }
 
 void GLImmediateCommandBuffer::SetStencilReference(std::uint32_t reference, const StencilFace stencilFace)
@@ -509,30 +509,29 @@ void GLImmediateCommandBuffer::SetStencilReference(std::uint32_t reference, cons
     stateMngr_->SetStencilRef(static_cast<GLint>(reference), GLTypes::Map(stencilFace));
 }
 
-void GLImmediateCommandBuffer::SetUniform(
-    UniformLocation location,
-    const void*     data,
-    std::uint32_t   dataSize)
-{
-    GLImmediateCommandBuffer::SetUniforms(location, 1, data, dataSize);
-}
-
-void GLImmediateCommandBuffer::SetUniforms(
-    UniformLocation location,
-    std::uint32_t   count,
-    const void*     data,
-    std::uint32_t   dataSize)
+void GLImmediateCommandBuffer::SetUniforms(std::uint32_t first, const void* data, std::uint16_t dataSize)
 {
     /* Data size must be a multiple of 4 bytes */
-    if (dataSize == 0 || dataSize % 4 != 0)
-        return;
+    if (dataSize == 0 || dataSize % 4 != 0 || data == nullptr)
+        return /*GL_INVALID_VALUE*/;
 
-    GLSetUniformsByLocation(
-        stateMngr_->GetBoundShaderProgram(),
-        static_cast<GLint>(location),
-        static_cast<GLsizei>(count),
-        data
-    );
+    auto* boundPipelineState = GetBoundPipelineState();
+    if (boundPipelineState == nullptr)
+        return /*GL_INVALID_VALUE*/;
+
+    const std::uint32_t dataSizeInWords = dataSize / 4;
+    const auto& uniformMap = boundPipelineState->GetUniformMap();
+
+    for (auto words = reinterpret_cast<const std::uint32_t*>(data), wordsEnd = words + dataSizeInWords; words != wordsEnd; ++first)
+    {
+        if (first >= uniformMap.size())
+            return /*GL_INVALID_INDEX*/;
+
+        const auto& uniform = uniformMap[first];
+        GLSetUniformsByType(uniform.type, uniform.location, uniform.count, words);
+
+        words += uniform.wordSize;
+    }
 }
 
 /* ----- Queries ----- */
@@ -574,7 +573,7 @@ void GLImmediateCommandBuffer::BeginStreamOutput(std::uint32_t numBuffers, Buffe
     GLuint soTargets[LLGL_MAX_NUM_SO_BUFFERS];
     numBuffers = std::min(numBuffers, LLGL_MAX_NUM_SO_BUFFERS);
 
-    for (std::uint32_t i = 0; i < numBuffers; ++i)
+    for_range(i, numBuffers)
     {
         auto bufferGL = LLGL_CAST(GLBuffer*, buffers[i]);
         soTargets[i] = bufferGL->GetID();
@@ -584,12 +583,12 @@ void GLImmediateCommandBuffer::BeginStreamOutput(std::uint32_t numBuffers, Buffe
 
     /* Begin transform feedback section */
     #ifdef LLGL_GLEXT_TRANSFORM_FEEDBACK
-    glBeginTransformFeedback(renderState_.primitiveMode);
+    glBeginTransformFeedback(GetPrimitiveMode());
     #else
     if (HasExtension(GLExt::EXT_transform_feedback))
-        glBeginTransformFeedback(renderState_.primitiveMode);
+        glBeginTransformFeedback(GetPrimitiveMode());
     else if (HasExtension(GLExt::NV_transform_feedback))
-        glBeginTransformFeedbackNV(renderState_.primitiveMode);
+        glBeginTransformFeedbackNV(GetPrimitiveMode());
     #endif
 }
 
@@ -617,7 +616,7 @@ The indices actually store the index start offset, but must be passed to GL as a
 void GLImmediateCommandBuffer::Draw(std::uint32_t numVertices, std::uint32_t firstVertex)
 {
     glDrawArrays(
-        renderState_.drawMode,
+        GetDrawMode(),
         static_cast<GLint>(firstVertex),
         static_cast<GLsizei>(numVertices)
     );
@@ -625,24 +624,22 @@ void GLImmediateCommandBuffer::Draw(std::uint32_t numVertices, std::uint32_t fir
 
 void GLImmediateCommandBuffer::DrawIndexed(std::uint32_t numIndices, std::uint32_t firstIndex)
 {
-    const GLintptr indices = (renderState_.indexBufferOffset + firstIndex * renderState_.indexBufferStride);
     glDrawElements(
-        renderState_.drawMode,
+        GetDrawMode(),
         static_cast<GLsizei>(numIndices),
-        renderState_.indexBufferDataType,
-        reinterpret_cast<const GLvoid*>(indices)
+        GetIndexType(),
+        GetIndicesOffset(firstIndex)
     );
 }
 
 void GLImmediateCommandBuffer::DrawIndexed(std::uint32_t numIndices, std::uint32_t firstIndex, std::int32_t vertexOffset)
 {
     #ifdef LLGL_GLEXT_DRAW_ELEMENTS_BASE_VERTEX
-    const GLintptr indices = (renderState_.indexBufferOffset + firstIndex * renderState_.indexBufferStride);
     glDrawElementsBaseVertex(
-        renderState_.drawMode,
+        GetDrawMode(),
         static_cast<GLsizei>(numIndices),
-        renderState_.indexBufferDataType,
-        reinterpret_cast<const GLvoid*>(indices),
+        GetIndexType(),
+        GetIndicesOffset(firstIndex),
         vertexOffset
     );
     #endif
@@ -651,7 +648,7 @@ void GLImmediateCommandBuffer::DrawIndexed(std::uint32_t numIndices, std::uint32
 void GLImmediateCommandBuffer::DrawInstanced(std::uint32_t numVertices, std::uint32_t firstVertex, std::uint32_t numInstances)
 {
     glDrawArraysInstanced(
-        renderState_.drawMode,
+        GetDrawMode(),
         static_cast<GLint>(firstVertex),
         static_cast<GLsizei>(numVertices),
         static_cast<GLsizei>(numInstances)
@@ -662,7 +659,7 @@ void GLImmediateCommandBuffer::DrawInstanced(std::uint32_t numVertices, std::uin
 {
     #ifdef LLGL_GLEXT_BASE_INSTANCE
     glDrawArraysInstancedBaseInstance(
-        renderState_.drawMode,
+        GetDrawMode(),
         static_cast<GLint>(firstVertex),
         static_cast<GLsizei>(numVertices),
         static_cast<GLsizei>(numInstances),
@@ -673,12 +670,11 @@ void GLImmediateCommandBuffer::DrawInstanced(std::uint32_t numVertices, std::uin
 
 void GLImmediateCommandBuffer::DrawIndexedInstanced(std::uint32_t numIndices, std::uint32_t numInstances, std::uint32_t firstIndex)
 {
-    const GLintptr indices = (renderState_.indexBufferOffset + firstIndex * renderState_.indexBufferStride);
     glDrawElementsInstanced(
-        renderState_.drawMode,
+        GetDrawMode(),
         static_cast<GLsizei>(numIndices),
-        renderState_.indexBufferDataType,
-        reinterpret_cast<const GLvoid*>(indices),
+        GetIndexType(),
+        GetIndicesOffset(firstIndex),
         static_cast<GLsizei>(numInstances)
     );
 }
@@ -686,12 +682,11 @@ void GLImmediateCommandBuffer::DrawIndexedInstanced(std::uint32_t numIndices, st
 void GLImmediateCommandBuffer::DrawIndexedInstanced(std::uint32_t numIndices, std::uint32_t numInstances, std::uint32_t firstIndex, std::int32_t vertexOffset)
 {
     #ifdef LLGL_GLEXT_DRAW_ELEMENTS_BASE_VERTEX
-    const GLintptr indices = (renderState_.indexBufferOffset + firstIndex * renderState_.indexBufferStride);
     glDrawElementsInstancedBaseVertex(
-        renderState_.drawMode,
+        GetDrawMode(),
         static_cast<GLsizei>(numIndices),
-        renderState_.indexBufferDataType,
-        reinterpret_cast<const GLvoid*>(indices),
+        GetIndexType(),
+        GetIndicesOffset(firstIndex),
         static_cast<GLsizei>(numInstances),
         vertexOffset
     );
@@ -701,12 +696,11 @@ void GLImmediateCommandBuffer::DrawIndexedInstanced(std::uint32_t numIndices, st
 void GLImmediateCommandBuffer::DrawIndexedInstanced(std::uint32_t numIndices, std::uint32_t numInstances, std::uint32_t firstIndex, std::int32_t vertexOffset, std::uint32_t firstInstance)
 {
     #ifdef LLGL_GLEXT_BASE_INSTANCE
-    const GLintptr indices = (renderState_.indexBufferOffset + firstIndex * renderState_.indexBufferStride);
     glDrawElementsInstancedBaseVertexBaseInstance(
-        renderState_.drawMode,
+        GetDrawMode(),
         static_cast<GLsizei>(numIndices),
-        renderState_.indexBufferDataType,
-        reinterpret_cast<const GLvoid*>(indices),
+        GetIndexType(),
+        GetIndicesOffset(firstIndex),
         static_cast<GLsizei>(numInstances),
         vertexOffset,
         firstInstance
@@ -722,7 +716,7 @@ void GLImmediateCommandBuffer::DrawIndirect(Buffer& buffer, std::uint64_t offset
 
     const GLintptr indirect = static_cast<GLintptr>(offset);
     glDrawArraysIndirect(
-        renderState_.drawMode,
+        GetDrawMode(),
         reinterpret_cast<const GLvoid*>(indirect)
     );
     #endif
@@ -741,7 +735,7 @@ void GLImmediateCommandBuffer::DrawIndirect(Buffer& buffer, std::uint64_t offset
     {
         /* Use native multi draw command */
         glMultiDrawArraysIndirect(
-            renderState_.drawMode,
+            GetDrawMode(),
             reinterpret_cast<const GLvoid*>(indirect),
             static_cast<GLsizei>(numCommands),
             static_cast<GLsizei>(stride)
@@ -754,7 +748,7 @@ void GLImmediateCommandBuffer::DrawIndirect(Buffer& buffer, std::uint64_t offset
         while (numCommands-- > 0)
         {
             glDrawArraysIndirect(
-                renderState_.drawMode,
+                GetDrawMode(),
                 reinterpret_cast<const GLvoid*>(indirect)
             );
             indirect += stride;
@@ -771,8 +765,8 @@ void GLImmediateCommandBuffer::DrawIndexedIndirect(Buffer& buffer, std::uint64_t
 
     const GLintptr indirect = static_cast<GLintptr>(offset);
     glDrawElementsIndirect(
-        renderState_.drawMode,
-        renderState_.indexBufferDataType,
+        GetDrawMode(),
+        GetIndexType(),
         reinterpret_cast<const GLvoid*>(indirect)
     );
     #endif
@@ -791,8 +785,8 @@ void GLImmediateCommandBuffer::DrawIndexedIndirect(Buffer& buffer, std::uint64_t
     {
         /* Use native multi draw command */
         glMultiDrawElementsIndirect(
-            renderState_.drawMode,
-            renderState_.indexBufferDataType,
+            GetDrawMode(),
+            GetIndexType(),
             reinterpret_cast<const GLvoid*>(indirect),
             static_cast<GLsizei>(numCommands),
             static_cast<GLsizei>(stride)
@@ -805,8 +799,8 @@ void GLImmediateCommandBuffer::DrawIndexedIndirect(Buffer& buffer, std::uint64_t
         while (numCommands-- > 0)
         {
             glDrawElementsIndirect(
-                renderState_.drawMode,
-                renderState_.indexBufferDataType,
+                GetDrawMode(),
+                GetIndexType(),
                 reinterpret_cast<const GLvoid*>(indirect)
             );
             indirect += stride;

@@ -1,8 +1,8 @@
 /*
  * GLGraphicsPSO.cpp
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GLGraphicsPSO.h"
@@ -13,18 +13,40 @@
 #include "../GLTypes.h"
 #include "../GLCore.h"
 #include "../../CheckedCast.h"
-#include "../../../Core/Helper.h"
+#include "../../../Core/CoreUtils.h"
 #include "../../../Core/ByteBufferIterator.h"
 #include <LLGL/PipelineStateFlags.h>
 #include <LLGL/StaticLimits.h>
+#include <LLGL/Utils/ForRange.h>
+#include <vector>
 
 
 namespace LLGL
 {
 
 
+static void AddToShaderArray(Shader* shader, std::vector<Shader*>& shaders)
+{
+    if (shader != nullptr)
+        shaders.push_back(shader);
+}
+
+static std::vector<Shader*> GetShaderArrayFromDesc(const GraphicsPipelineDescriptor& desc)
+{
+    std::vector<Shader*> shaders;
+    shaders.reserve(5);
+
+    AddToShaderArray(desc.vertexShader,         shaders);
+    AddToShaderArray(desc.tessControlShader,    shaders);
+    AddToShaderArray(desc.tessEvaluationShader, shaders);
+    AddToShaderArray(desc.geometryShader,       shaders);
+    AddToShaderArray(desc.fragmentShader,       shaders);
+
+    return shaders;
+}
+
 GLGraphicsPSO::GLGraphicsPSO(const GraphicsPipelineDescriptor& desc, const RenderingLimits& limits) :
-    GLPipelineState { true, desc.pipelineLayout, desc.shaderProgram }
+    GLPipelineState { /*isGraphicsPSO:*/ true, desc.pipelineLayout, GetShaderArrayFromDesc(desc) }
 {
     /* Convert input-assembler state */
     drawMode_       = GLTypes::ToDrawMode(desc.primitiveTopology);
@@ -139,7 +161,7 @@ void GLGraphicsPSO::BuildStaticViewports(std::size_t numViewports, const Viewpor
     }
 
     /* Build <GLViewport> entries */
-    for (std::size_t i = 0; i < numViewports; ++i)
+    for_range(i, numViewports)
     {
         auto dst = byteBufferIter.Next<GLViewport>();
         {
@@ -151,7 +173,7 @@ void GLGraphicsPSO::BuildStaticViewports(std::size_t numViewports, const Viewpor
     }
 
     /* Build <GLDepthRange> entries */
-    for (std::size_t i = 0; i < numViewports; ++i)
+    for_range(i, numViewports)
     {
         auto dst = byteBufferIter.Next<GLDepthRange>();
         {
@@ -175,7 +197,7 @@ void GLGraphicsPSO::BuildStaticScissors(std::size_t numScissors, const Scissor* 
     }
 
     /* Build <GLScissor> entries */
-    for (std::size_t i = 0; i < numScissors; ++i)
+    for_range(i, numScissors)
     {
         auto dst = byteBufferIter.Next<GLScissor>();
         {

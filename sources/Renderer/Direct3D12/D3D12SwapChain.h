@@ -1,8 +1,8 @@
 /*
  * D3D12SwapChain.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D12_SWAP_CHAIN_H
@@ -110,7 +110,7 @@ class D3D12SwapChain final : public SwapChain
         DXGI_FORMAT                     depthStencilFormat_                 = DXGI_FORMAT_UNKNOWN;
 
         UINT64                          frameFenceValues_[maxSwapBuffers]   = {};
-        D3D12Fence                      frameFence_;
+        D3D12NativeFence                frameFence_;
 
         UINT                            numFrames_                          = 0;
         UINT                            currentFrame_                       = 0;

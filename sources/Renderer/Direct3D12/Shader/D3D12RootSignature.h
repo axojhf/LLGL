@@ -1,18 +1,17 @@
 /*
- * D3D12RootSignatureBuilder.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * D3D12RootSignature.h
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
-#ifndef LLGL_D3D12_ROOT_SIGNATURE_BUILDER_H
-#define LLGL_D3D12_ROOT_SIGNATURE_BUILDER_H
+#ifndef LLGL_D3D12_ROOT_SIGNATURE_H
+#define LLGL_D3D12_ROOT_SIGNATURE_H
 
 
 #include "D3D12RootParameter.h"
 #include "../../DXCommon/ComPtr.h"
 #include <d3d12.h>
-#include <vector>
 
 
 namespace LLGL
@@ -20,16 +19,33 @@ namespace LLGL
 
 
 // Helper class to manage all root parameters of a root signature
-class D3D12RootSignatureBuilder
+class D3D12RootSignature
 {
 
     public:
 
+        D3D12RootSignature() = default;
+
+        D3D12RootSignature(const D3D12RootSignature&) = default;
+        D3D12RootSignature& operator = (const D3D12RootSignature&) = default;
+
+        void Clear();
         void Reset(UINT maxNumRootParamters, UINT maxNumStaticSamplers);
         void ResetAndAlloc(UINT maxNumRootParamters, UINT maxNumStaticSamplers);
 
-        D3D12RootParameter* AppendRootParameter();
-        D3D12RootParameter* FindCompatibleRootParameter(D3D12_DESCRIPTOR_RANGE_TYPE rangeType);
+        D3D12RootParameter* AppendRootParameter(UINT* outRootParameterIndex = nullptr);
+
+        D3D12RootParameter* FindCompatibleRootParameter(
+            D3D12_DESCRIPTOR_RANGE_TYPE rangeType,
+            std::size_t                 first                   = 0,
+            UINT*                       outRootParameterIndex   = nullptr
+        );
+
+        D3D12RootParameter* FindCompatibleRootParameter(
+            const D3D12_ROOT_CONSTANTS& rootConstants,
+            std::size_t                 first                   = 0,
+            UINT*                       outRootParameterIndex   = nullptr
+        );
 
         D3D12_STATIC_SAMPLER_DESC* AppendStaticSampler();
 
@@ -52,11 +68,17 @@ class D3D12RootSignatureBuilder
             return rootParams_[idx];
         }
 
+        // Returns the number of root parameters.
+        inline std::size_t GetNumRootParameters() const
+        {
+            return rootParams_.size();
+        }
+
     private:
 
-        std::vector<D3D12_ROOT_PARAMETER>       nativeRootParams_;
-        std::vector<D3D12RootParameter>         rootParams_;
-        std::vector<D3D12_STATIC_SAMPLER_DESC>  staticSamplers_;
+        SmallVector<D3D12_ROOT_PARAMETER, 4u>       nativeRootParams_;
+        SmallVector<D3D12RootParameter, 4u>         rootParams_;
+        SmallVector<D3D12_STATIC_SAMPLER_DESC, 2u>  staticSamplers_;
 
 };
 

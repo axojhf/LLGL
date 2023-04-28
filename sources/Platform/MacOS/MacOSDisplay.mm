@@ -1,12 +1,12 @@
 /*
  * MacOSDisplay.mm
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "MacOSDisplay.h"
-#include "../../Core/Helper.h"
+#include "../../Core/CoreUtils.h"
 
 
 namespace LLGL
@@ -30,6 +30,9 @@ static std::uint32_t GetDisplayModeRefreshRate(CGDisplayModeRef displayMode, CGD
     /* Built-in displays return 0 */
     if (refreshRate == 0)
     {
+        #ifdef LLGL_MACOS_ENABLE_COREVIDEO
+
+        /* Use CoreVideo framework to query accurate display refresh rate */
         CVDisplayLinkRef displayLink = nullptr;
         CVDisplayLinkCreateWithCGDisplay(displayID, &displayLink);
         {
@@ -38,6 +41,13 @@ static std::uint32_t GetDisplayModeRefreshRate(CGDisplayModeRef displayMode, CGD
                 refreshRate = static_cast<std::uint32_t>(static_cast<double>(time.timeScale) / static_cast<double>(time.timeValue) + 0.5);
         }
         CVDisplayLinkRelease(displayLink);
+
+        #else
+
+        /* Without CoreVideo framework, we just assume 60 Hz */
+        refreshRate = 60;
+
+        #endif // /LLGL_MACOS_ENABLE_COREVIDEO
     }
 
     return refreshRate;
@@ -185,10 +195,10 @@ bool MacOSDisplay::IsPrimary() const
     return (CGDisplayIsMain(displayID_) != 0);
 }
 
-std::wstring MacOSDisplay::GetDeviceName() const
+UTF8String MacOSDisplay::GetDeviceName() const
 {
     //TODO
-    return L"";
+    return UTF8String{};
 }
 
 Offset2D MacOSDisplay::GetOffset() const

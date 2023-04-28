@@ -1,16 +1,17 @@
 /*
  * D3D11Buffer.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D11Buffer.h"
 #include "../D3D11Types.h"
 #include "../D3D11ResourceFlags.h"
 #include "../D3D11ObjectUtils.h"
+#include "../../ResourceUtils.h"
 #include "../../DXCommon/DXCore.h"
-#include "../../../Core/Helper.h"
+#include "../../../Core/CoreUtils.h"
 #include "../../../Core/Assertion.h"
 
 
@@ -66,13 +67,13 @@ void D3D11Buffer::UpdateSubresource(ID3D11DeviceContext* context, const void* da
     if (GetDXUsage() == D3D11_USAGE_DYNAMIC)
     {
         /* Discard previous content if the entire resource will be updated */
-        const bool writeDiscard = (offset == 0 && dataSize == GetSize());
+        const bool isWholeBufferUpdated = (offset == 0 && dataSize == GetSize());
 
         /* Update partial subresource by mapping buffer from GPU into CPU memory space */
-        D3D11_MAPPED_SUBRESOURCE subresource;
-        context->Map(GetNative(), 0, DXGetMapWrite(writeDiscard), 0, &subresource);
+        D3D11_MAPPED_SUBRESOURCE mappedSubresource;
+        context->Map(GetNative(), 0, DXGetMapWrite(isWholeBufferUpdated), 0, &mappedSubresource);
         {
-            ::memcpy(reinterpret_cast<char*>(subresource.pData) + offset, data, dataSize);
+            ::memcpy(reinterpret_cast<char*>(mappedSubresource.pData) + offset, data, dataSize);
         }
         context->Unmap(GetNative(), 0);
     }
@@ -81,10 +82,8 @@ void D3D11Buffer::UpdateSubresource(ID3D11DeviceContext* context, const void* da
         if ((GetBindFlags() & BindFlags::ConstantBuffer) != 0)
         {
             /* Update entire subresource */
-            if (dataSize == GetSize())
-                context->UpdateSubresource(GetNative(), 0, nullptr, data, 0, 0);
-            else
-                throw std::out_of_range(LLGL_ASSERT_INFO("cannot update D3D11 buffer partially when it is created with static usage"));
+            LLGL_ASSERT(dataSize == GetSize(), "cannot update D3D11 buffer partially when it is created with static usage");
+            context->UpdateSubresource(GetNative(), 0, nullptr, data, 0, 0);
         }
         else
         {
@@ -95,19 +94,72 @@ void D3D11Buffer::UpdateSubresource(ID3D11DeviceContext* context, const void* da
     }
 }
 
-void D3D11Buffer::UpdateSubresource(ID3D11DeviceContext* context, const void* data)
+//private
+void D3D11Buffer::ReadFromStagingBuffer(
+    ID3D11DeviceContext*    context,
+    ID3D11Buffer*           stagingBuffer,
+    UINT                    stagingBufferOffset,
+    void*                   data,
+    UINT                    dataSize,
+    UINT                    srcOffset)
 {
-    context->UpdateSubresource(GetNative(), 0, nullptr, data, 0, 0);
+    /* Copy memory range from GPU buffer to CPU-access buffer */
+    const D3D11_BOX srcRange{ srcOffset, 0, 0, srcOffset + dataSize, 1, 1 };
+    context->CopySubresourceRegion(stagingBuffer, 0, stagingBufferOffset, 0, 0, GetNative(), 0, &srcRange);
+
+    /* Map CPU-access buffer to read data */
+    D3D11_MAPPED_SUBRESOURCE mappedSubresource;
+    if (SUCCEEDED(context->Map(stagingBuffer, 0, D3D11_MAP_READ, 0, &mappedSubresource)))
+    {
+        /* Copy mapped memory to output data */
+        const char* mappedSubresourceWithOffset = reinterpret_cast<const char*>(mappedSubresource.pData) + stagingBufferOffset;
+        ::memcpy(data, mappedSubresourceWithOffset, dataSize);
+        context->Unmap(stagingBuffer, 0);
+    }
 }
 
-static bool HasReadAccess(const CPUAccess access)
+//private
+void D3D11Buffer::ReadFromSubresourceCopyWithCpuAccess(
+    ID3D11DeviceContext*    context,
+    void*                   data,
+    UINT                    dataSize,
+    UINT                    srcOffset)
 {
-    return (access == CPUAccess::ReadOnly || access == CPUAccess::ReadWrite);
+    /* Get device this D3D buffer was created with */
+    ComPtr<ID3D11Device> device;
+    GetNative()->GetDevice(device.GetAddressOf());
+
+    /* Create intermediate staging buffer */
+    D3D11_BUFFER_DESC stagingBufferDesc;
+    {
+        stagingBufferDesc.ByteWidth           = dataSize;
+        stagingBufferDesc.Usage               = D3D11_USAGE_STAGING;
+        stagingBufferDesc.BindFlags           = 0;
+        stagingBufferDesc.CPUAccessFlags      = D3D11_CPU_ACCESS_READ;
+        stagingBufferDesc.MiscFlags           = 0;
+        stagingBufferDesc.StructureByteStride = 0;
+    }
+    ComPtr<ID3D11Buffer> stagingBuffer;
+    auto hr = device->CreateBuffer(&stagingBufferDesc, nullptr, stagingBuffer.GetAddressOf());
+    DXThrowIfCreateFailed(hr, "ID3D11Buffer", "for intermediate staging buffer");
+
+    /* Read data from intermediate stating buffer with CPU access */
+    ReadFromStagingBuffer(context, stagingBuffer.Get(), 0, data, dataSize, srcOffset);
 }
 
-static bool HasWriteAccess(const CPUAccess access)
+void D3D11Buffer::ReadSubresource(ID3D11DeviceContext* context, void* data, UINT dataSize, UINT offset)
 {
-    return (access >= CPUAccess::WriteOnly && access <= CPUAccess::ReadWrite);
+    if (cpuAccessBuffer_)
+    {
+        D3D11_BUFFER_DESC cpuAccessBufferDesc;
+        cpuAccessBuffer_->GetDesc(&cpuAccessBufferDesc);
+        if (cpuAccessBufferDesc.Usage == D3D11_USAGE_STAGING && (cpuAccessBufferDesc.CPUAccessFlags & D3D11_CPU_ACCESS_READ) != 0)
+            ReadFromStagingBuffer(context, cpuAccessBuffer_.Get(), offset, data, dataSize, offset);
+        else
+            ReadFromSubresourceCopyWithCpuAccess(context, data, dataSize, offset);
+    }
+    else
+        ReadFromSubresourceCopyWithCpuAccess(context, data, dataSize, offset);
 }
 
 // private
@@ -123,7 +175,7 @@ D3D11_MAP D3D11Buffer::GetCPUAccessTypeForUsage(const CPUAccess access) const
 void* D3D11Buffer::Map(ID3D11DeviceContext* context, const CPUAccess access)
 {
     HRESULT hr = 0;
-    D3D11_MAPPED_SUBRESOURCE mapppedSubresource;
+    D3D11_MAPPED_SUBRESOURCE mappedSubresource;
 
     if (cpuAccessBuffer_)
     {
@@ -132,18 +184,55 @@ void* D3D11Buffer::Map(ID3D11DeviceContext* context, const CPUAccess access)
             context->CopyResource(cpuAccessBuffer_.Get(), GetNative());
 
         /* Mark dirty-bit if write access is used */
-        isWriteAccessMapped_ = HasWriteAccess(access);
+        if (HasWriteAccess(access))
+        {
+            mappedWriteRange_[0] = 0;
+            mappedWriteRange_[1] = size_;
+        }
 
         /* Map CPU-access buffer */
-        hr = context->Map(cpuAccessBuffer_.Get(), 0, GetCPUAccessTypeForUsage(access), 0, &mapppedSubresource);
+        hr = context->Map(cpuAccessBuffer_.Get(), 0, GetCPUAccessTypeForUsage(access), 0, &mappedSubresource);
     }
     else
     {
         /* Map buffer */
-        hr = context->Map(GetNative(), 0, GetCPUAccessTypeForUsage(access), 0, &mapppedSubresource);
+        hr = context->Map(GetNative(), 0, GetCPUAccessTypeForUsage(access), 0, &mappedSubresource);
     }
 
-    return (SUCCEEDED(hr) ? mapppedSubresource.pData : nullptr);
+    return (SUCCEEDED(hr) ? mappedSubresource.pData : nullptr);
+}
+
+void* D3D11Buffer::Map(ID3D11DeviceContext* context, const CPUAccess access, UINT offset, UINT size)
+{
+    HRESULT hr = 0;
+    D3D11_MAPPED_SUBRESOURCE mappedSubresource;
+
+    if (cpuAccessBuffer_)
+    {
+        /* On read access -> copy storage buffer to CPU-access buffer */
+        if (HasReadAccess(access))
+        {
+            const D3D11_BOX srcRange{ offset, 0, 0, offset + size, 1, 1 };
+            context->CopySubresourceRegion(cpuAccessBuffer_.Get(), 0, offset, 0, 0, GetNative(), 0, &srcRange);
+        }
+
+        /* Mark dirty-bit if write access is used */
+        if (HasWriteAccess(access))
+        {
+            mappedWriteRange_[0] = offset;
+            mappedWriteRange_[1] = offset + size;
+        }
+
+        /* Map CPU-access buffer */
+        hr = context->Map(cpuAccessBuffer_.Get(), 0, GetCPUAccessTypeForUsage(access), 0, &mappedSubresource);
+    }
+    else
+    {
+        /* Map buffer */
+        hr = context->Map(GetNative(), 0, GetCPUAccessTypeForUsage(access), 0, &mappedSubresource);
+    }
+
+    return (SUCCEEDED(hr) ? mappedSubresource.pData : nullptr);
 }
 
 void D3D11Buffer::Unmap(ID3D11DeviceContext* context)
@@ -154,10 +243,12 @@ void D3D11Buffer::Unmap(ID3D11DeviceContext* context)
         context->Unmap(cpuAccessBuffer_.Get(), 0);
 
         /* On write access -> copy CPU-access buffer to storage buffer */
-        if (isWriteAccessMapped_)
+        if (mappedWriteRange_[0] < mappedWriteRange_[1])
         {
-            context->CopyResource(GetNative(), cpuAccessBuffer_.Get());
-            isWriteAccessMapped_ = false;
+            const D3D11_BOX srcRange{ mappedWriteRange_[0], 0, 0, mappedWriteRange_[1], 1, 1 };
+            context->CopySubresourceRegion(GetNative(), 0, mappedWriteRange_[0], 0, 0, cpuAccessBuffer_.Get(), 0, &srcRange);
+            mappedWriteRange_[0] = 0;
+            mappedWriteRange_[1] = 0;
         }
     }
     else
@@ -178,7 +269,7 @@ void D3D11Buffer::CreateSubresourceSRV(
     /* Create shader-resource-view (SRV) for subresource */
     D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     {
-        srvDesc.Format                  = D3D11Types::ToDXGIFormatSRV(format);
+        srvDesc.Format                  = DXTypes::ToDXGIFormatSRV(format);
         srvDesc.ViewDimension           = D3D11_SRV_DIMENSION_BUFFEREX;
         srvDesc.BufferEx.FirstElement   = firstElement;
         srvDesc.BufferEx.NumElements    = numElements;
@@ -241,7 +332,7 @@ void D3D11Buffer::CreateGpuBuffer(ID3D11Device* device, const BufferDescriptor& 
     /* Store buffer creation attributes */
     size_   = descD3D.ByteWidth;
     stride_ = (desc.vertexAttribs.empty() ? 0 : desc.vertexAttribs.front().stride);
-    format_ = D3D11Types::Map(desc.format);
+    format_ = DXTypes::ToDXGIFormat(desc.format);
     usage_  = descD3D.Usage;
 }
 

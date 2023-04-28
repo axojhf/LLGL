@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_PBR)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
@@ -15,11 +15,11 @@ class Example_PBR : public ExampleBase
     LLGL::Buffer*               vertexBuffer        = nullptr;
     LLGL::Buffer*               constantBuffer      = nullptr;
 
-    LLGL::ShaderProgram*        shaderProgramMeshes = nullptr;
+    ShaderPipeline              shaderPipelineMeshes;
     LLGL::PipelineLayout*       layoutMeshes        = nullptr;
     LLGL::PipelineState*        pipelineMeshes      = nullptr;
 
-    LLGL::ShaderProgram*        shaderProgramSky    = nullptr;
+    ShaderPipeline              shaderPipelineSky;
     LLGL::PipelineLayout*       layoutSky           = nullptr;
     LLGL::PipelineState*        pipelineSky         = nullptr;
 
@@ -112,51 +112,27 @@ private:
     {
         if (Supported(LLGL::ShadingLanguage::HLSL))
         {
-            shaderProgramSky = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.hlsl", "VSky", "vs_5_0" },
-                    { LLGL::ShaderType::Fragment, "Example.hlsl", "PSky", "ps_5_0" },
-                }
-            );
-            shaderProgramMeshes = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.hlsl", "VMesh", "vs_5_0" },
-                    { LLGL::ShaderType::Fragment, "Example.hlsl", "PMesh", "ps_5_0" },
-                },
-                { vertexFormat }
-            );
+            shaderPipelineSky.vs = LoadShader({ LLGL::ShaderType::Vertex,   "Example.hlsl", "VSky", "vs_5_0" });
+            shaderPipelineSky.ps = LoadShader({ LLGL::ShaderType::Fragment, "Example.hlsl", "PSky", "ps_5_0" });
+
+            shaderPipelineMeshes.vs = LoadShader({ LLGL::ShaderType::Vertex,   "Example.hlsl", "VMesh", "vs_5_0" }, { vertexFormat });
+            shaderPipelineMeshes.ps = LoadShader({ LLGL::ShaderType::Fragment, "Example.hlsl", "PMesh", "ps_5_0" });
         }
         else if (Supported(LLGL::ShadingLanguage::GLSL))
         {
-            shaderProgramSky = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.Sky.vert" },
-                    { LLGL::ShaderType::Fragment, "Example.Sky.frag" },
-                }
-            );
-            shaderProgramMeshes = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.Mesh.vert" },
-                    { LLGL::ShaderType::Fragment, "Example.Mesh.frag" },
-                },
-                { vertexFormat }
-            );
+            shaderPipelineSky.vs = LoadShader({ LLGL::ShaderType::Vertex,   "Example.Sky.vert" });
+            shaderPipelineSky.ps = LoadShader({ LLGL::ShaderType::Fragment, "Example.Sky.frag" });
+
+            shaderPipelineMeshes.vs = LoadShader({ LLGL::ShaderType::Vertex,   "Example.Mesh.vert" }, { vertexFormat });
+            shaderPipelineMeshes.ps = LoadShader({ LLGL::ShaderType::Fragment, "Example.Mesh.frag" });
         }
         else if (Supported(LLGL::ShadingLanguage::Metal))
         {
-            shaderProgramSky = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.metal", "VSky", "1.1" },
-                    { LLGL::ShaderType::Fragment, "Example.metal", "PSky", "1.1" },
-                }
-            );
-            shaderProgramMeshes = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.metal", "VMesh", "1.1" },
-                    { LLGL::ShaderType::Fragment, "Example.metal", "PMesh", "1.1" },
-                },
-                { vertexFormat }
-            );
+            shaderPipelineSky.vs = LoadShader({ LLGL::ShaderType::Vertex,   "Example.metal", "VSky", "1.1" });
+            shaderPipelineSky.ps = LoadShader({ LLGL::ShaderType::Fragment, "Example.metal", "PSky", "1.1" });
+
+            shaderPipelineMeshes.vs = LoadShader({ LLGL::ShaderType::Vertex,   "Example.metal", "VMesh", "1.1" }, { vertexFormat });
+            shaderPipelineMeshes.ps = LoadShader({ LLGL::ShaderType::Fragment, "Example.metal", "PMesh", "1.1" });
         }
         else
             throw std::runtime_error("shaders not supported for active renderer");
@@ -169,9 +145,11 @@ private:
         {
             layoutSky = renderer->CreatePipelineLayout(
                 LLGL::PipelineLayoutDesc(
+                    "heap{"
                     "cbuffer(Settings@1):frag:vert,"
                     "sampler(skyBox@2):frag,"
                     "texture(2):frag,"
+                    "}"
                 )
             );
         }
@@ -179,9 +157,11 @@ private:
         {
             layoutSky = renderer->CreatePipelineLayout(
                 LLGL::PipelineLayoutDesc(
+                    "heap{"
                     "cbuffer(1):frag:vert,"
                     "sampler(2):frag,"
                     "texture(3):frag,"
+                    "}"
                 )
             );
         }
@@ -189,7 +169,8 @@ private:
         // Create graphics pipeline for skybox
         LLGL::GraphicsPipelineDescriptor pipelineDescSky;
         {
-            pipelineDescSky.shaderProgram                   = shaderProgramSky;
+            pipelineDescSky.vertexShader                    = shaderPipelineSky.vs;
+            pipelineDescSky.fragmentShader                  = shaderPipelineSky.ps;
             pipelineDescSky.pipelineLayout                  = layoutSky;
             //pipelineDescSky.depth.testEnabled               = true;
             //pipelineDescSky.depth.writeEnabled              = true;
@@ -202,6 +183,7 @@ private:
         {
             layoutMeshes = renderer->CreatePipelineLayout(
                 LLGL::PipelineLayoutDesc(
+                    "heap{"
                     "cbuffer(Settings@1):frag:vert,"
                     "sampler(skyBox@2):frag,"
                     "sampler(colorMaps@3):frag,"
@@ -213,6 +195,7 @@ private:
                     "texture(4):frag,"
                     "texture(5):frag,"
                     "texture(6):frag,"
+                    "}"
                 )
             );
         }
@@ -220,6 +203,7 @@ private:
         {
             layoutMeshes = renderer->CreatePipelineLayout(
                 LLGL::PipelineLayoutDesc(
+                    "heap{"
                     "cbuffer(1):frag:vert,"
                     "sampler(2):frag,"
                     "texture(3):frag,"
@@ -227,6 +211,7 @@ private:
                     "texture(5):frag,"
                     "texture(6):frag,"
                     "texture(7):frag,"
+                    "}"
                 )
             );
         }
@@ -234,7 +219,8 @@ private:
         // Create graphics pipeline for meshes
         LLGL::GraphicsPipelineDescriptor pipelineDescMeshes;
         {
-            pipelineDescMeshes.shaderProgram                    = shaderProgramMeshes;
+            pipelineDescMeshes.vertexShader                     = shaderPipelineMeshes.vs;
+            pipelineDescMeshes.fragmentShader                   = shaderPipelineMeshes.ps;
             pipelineDescMeshes.pipelineLayout                   = layoutMeshes;
             pipelineDescMeshes.depth.testEnabled                = true;
             pipelineDescMeshes.depth.writeEnabled               = true;
@@ -405,49 +391,47 @@ private:
     void CreateResourceHeaps()
     {
         // Create resource heap for skybox
-        LLGL::ResourceHeapDescriptor heapDescSky;
+        const LLGL::ResourceViewDescriptor resourceViewsSky[] =
         {
-            heapDescSky.pipelineLayout  = layoutSky;
-            heapDescSky.resourceViews   = { constantBuffer, linearSampler, skyboxArray };
-        }
-        resourceHeapSkybox = renderer->CreateResourceHeap(heapDescSky);
+            constantBuffer, linearSampler, skyboxArray
+        };
+        resourceHeapSkybox = renderer->CreateResourceHeap(layoutSky, resourceViewsSky);
+        resourceHeapSkybox->SetName("resourceHeapSkybox");
 
         // Create resource heap for meshes
-        LLGL::ResourceHeapDescriptor heapDescMeshes;
+        std::vector<LLGL::ResourceViewDescriptor> resourceViewsMeshes;
+        if (IsOpenGL())
         {
-            heapDescMeshes.pipelineLayout = layoutMeshes;
-            if (IsOpenGL())
+            resourceViewsMeshes =
             {
-                heapDescMeshes.resourceViews =
-                {
-                    constantBuffer,
-                    linearSampler,
-                    linearSampler,
-                    linearSampler,
-                    linearSampler,
-                    linearSampler,
-                    skyboxArray,
-                    colorMapArray,
-                    normalMapArray,
-                    roughnessMapArray,
-                    metallicMapArray,
-                };
-            }
-            else
-            {
-                heapDescMeshes.resourceViews =
-                {
-                    constantBuffer,
-                    linearSampler,
-                    skyboxArray,
-                    colorMapArray,
-                    normalMapArray,
-                    roughnessMapArray,
-                    metallicMapArray,
-                };
-            }
+                constantBuffer,
+                linearSampler,
+                linearSampler,
+                linearSampler,
+                linearSampler,
+                linearSampler,
+                skyboxArray,
+                colorMapArray,
+                normalMapArray,
+                roughnessMapArray,
+                metallicMapArray,
+            };
         }
-        resourceHeapMeshes = renderer->CreateResourceHeap(heapDescMeshes);
+        else
+        {
+            resourceViewsMeshes =
+            {
+                constantBuffer,
+                linearSampler,
+                skyboxArray,
+                colorMapArray,
+                normalMapArray,
+                roughnessMapArray,
+                metallicMapArray,
+            };
+        }
+        resourceHeapMeshes = renderer->CreateResourceHeap(layoutMeshes, resourceViewsMeshes);
+        resourceHeapMeshes->SetName("resourceHeapMeshes");
     }
 
 private:

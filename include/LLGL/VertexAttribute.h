@@ -1,18 +1,18 @@
 /*
  * VertexAttribute.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_VERTEX_ATTRIBUTE_H
 #define LLGL_VERTEX_ATTRIBUTE_H
 
 
-#include "Export.h"
-#include "Format.h"
-#include "SystemValue.h"
-#include <string>
+#include <LLGL/Export.h>
+#include <LLGL/Format.h>
+#include <LLGL/SystemValue.h>
+#include <LLGL/Container/Strings.h>
 #include <cstdint>
 
 
@@ -42,7 +42,7 @@ struct LLGL_EXPORT VertexAttribute
 
     //! Constructor for minimal vertex attribute information and system value semantics, e.g. \c SV_VertexID (HLSL) or \c gl_VertexID (GLSL).
     VertexAttribute(
-        const char*         name,
+        const StringView&   name,
         const Format        format,
         std::uint32_t       location        = 0,
         std::uint32_t       instanceDivisor = 0,
@@ -51,34 +51,34 @@ struct LLGL_EXPORT VertexAttribute
 
     //! Constructor for basic vertex attribute information.
     VertexAttribute(
-        const char*     semanticName,
-        std::uint32_t   semanticIndex,
-        const Format    format,
-        std::uint32_t   location        = 0,
-        std::uint32_t   instanceDivisor = 0
+        const StringView&   semanticName,
+        std::uint32_t       semanticIndex,
+        const Format        format,
+        std::uint32_t       location        = 0,
+        std::uint32_t       instanceDivisor = 0
     );
 
     //! Constructor for common vertex attribute information.
     VertexAttribute(
-        const char*     name,
-        const Format    format,
-        std::uint32_t   location,
-        std::uint32_t   offset,
-        std::uint32_t   stride,
-        std::uint32_t   slot            = 0,
-        std::uint32_t   instanceDivisor = 0
+        const StringView&   name,
+        const Format        format,
+        std::uint32_t       location,
+        std::uint32_t       offset,
+        std::uint32_t       stride,
+        std::uint32_t       slot            = 0,
+        std::uint32_t       instanceDivisor = 0
     );
 
     //! Constructor for the most vertex attribute information, including semantic index.
     VertexAttribute(
-        const char*     semanticName,
-        std::uint32_t   semanticIndex,
-        const Format    format,
-        std::uint32_t   location,
-        std::uint32_t   offset,
-        std::uint32_t   stride,
-        std::uint32_t   slot            = 0,
-        std::uint32_t   instanceDivisor = 0
+        const StringView&   semanticName,
+        std::uint32_t       semanticIndex,
+        const Format        format,
+        std::uint32_t       location,
+        std::uint32_t       offset,
+        std::uint32_t       stride,
+        std::uint32_t       slot            = 0,
+        std::uint32_t       instanceDivisor = 0
     );
 
     /**
@@ -90,7 +90,7 @@ struct LLGL_EXPORT VertexAttribute
     std::uint32_t GetSize() const;
 
     //! Vertex attribute name (for GLSL) or semantic name (for HLSL).
-    std::string     name;
+    UTF8String      name;
 
     /**
     \brief Vertex attribute format. By default Format::RGBA32Float.
@@ -154,7 +154,7 @@ struct LLGL_EXPORT VertexAttribute
     \remarks System value semantics are only used for shader code reflection. Examples of system value semantics are:
     - Vertex ID: \c SV_VertexID (HLSL), \c gl_VertexID (GLSL), \c gl_VertexIndex (SPIR-V), <code>[[vertex_id]]</code> (Metal).
     - Instance ID: \c SV_InstanceID (HLSL), \c gl_InstanceID (GLSL), \c gl_InstanceIndex (SPIR-V), <code>[[instance_id]]</code> (Metal).
-    \see ShaderProgram::Reflect
+    \see Shader::Reflect
     */
     SystemValue     systemValue     = SystemValue::Undefined;
 

@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_RenderTarget)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
@@ -21,7 +21,7 @@
 #define ENABLE_CBUFFER_RANGE
 
 // Enables the resource heap. Otherwise, all resources are bound to the graphics pipeline individually.
-#define ENABLE_RESOURCE_HEAP
+//#define ENABLE_RESOURCE_HEAP
 
 
 #if defined ENABLE_CUSTOM_MULTISAMPLING && !defined ENABLE_MULTISAMPLING
@@ -35,7 +35,7 @@
 class Example_RenderTarget : public ExampleBase
 {
 
-    LLGL::ShaderProgram*    shaderProgram           = nullptr;
+    ShaderPipeline          shaderPipeline;
 
     LLGL::PipelineState*    pipelines[2]            = {};
     LLGL::PipelineLayout*   pipelineLayout          = nullptr;
@@ -77,6 +77,7 @@ class Example_RenderTarget : public ExampleBase
     struct alignas(16) Settings
     {
         Gs::Matrix4f        wvpMatrix;
+        Gs::Matrix4f        wMatrix;
         int                 useTexture2DMS = 0;
     };
 
@@ -108,13 +109,15 @@ private:
         // Specify vertex format
         LLGL::VertexFormat vertexFormat;
         vertexFormat.AppendAttribute({ "position", LLGL::Format::RGB32Float });
+        vertexFormat.AppendAttribute({ "normal",   LLGL::Format::RGB32Float });
         vertexFormat.AppendAttribute({ "texCoord", LLGL::Format::RG32Float  });
 
         // Initialize vertices (scale texture-coordiantes a little bit, to show the texture border)
         auto vertices = GenerateTexturedCubeVertices();
 
+        constexpr float borderSize = 0.02f;
         for (auto& v : vertices)
-            v.texCoord = (v.texCoord - Gs::Vector2f(0.5f))*1.05f + Gs::Vector2f(0.5f);
+            v.texCoord = (v.texCoord - Gs::Vector2f(0.5f))*(1.0f + borderSize) + Gs::Vector2f(0.5f);
 
         // Create vertex, index, and constant buffer
         vertexBuffer = CreateVertexBuffer(vertices, vertexFormat);
@@ -145,47 +148,29 @@ private:
         // Load shader program
         if (Supported(LLGL::ShadingLanguage::HLSL))
         {
-            shaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.hlsl", "VS", "vs_5_0" },
-                    { LLGL::ShaderType::Fragment, "Example.hlsl", "PS", "ps_5_0" }
-                },
-                { vertexFormat }
-            );
+            shaderPipeline.vs = LoadShader({ LLGL::ShaderType::Vertex,   "Example.hlsl", "VS", "vs_5_0" }, { vertexFormat });
+            shaderPipeline.ps = LoadShader({ LLGL::ShaderType::Fragment, "Example.hlsl", "PS", "ps_5_0" });
         }
         else if (Supported(LLGL::ShadingLanguage::GLSL))
         {
-            shaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.vert" },
-                    #ifdef __APPLE__
-                    { LLGL::ShaderType::Fragment, "Example.410core.frag" }
-                    #else
-                    { LLGL::ShaderType::Fragment, "Example.frag" }
-                    #endif
-                },
-                { vertexFormat }
+            shaderPipeline.vs = LoadShader({ LLGL::ShaderType::Vertex,   "Example.vert" }, { vertexFormat });
+            shaderPipeline.ps = LoadShader(
+                #ifdef __APPLE__
+                { LLGL::ShaderType::Fragment, "Example.410core.frag" }
+                #else
+                { LLGL::ShaderType::Fragment, "Example.frag" }
+                #endif
             );
         }
         else if (Supported(LLGL::ShadingLanguage::SPIRV))
         {
-            shaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.450core.vert.spv" },
-                    { LLGL::ShaderType::Fragment, "Example.450core.frag.spv" }
-                },
-                { vertexFormat }
-            );
+            shaderPipeline.vs = LoadShader({ LLGL::ShaderType::Vertex,   "Example.450core.vert.spv" }, { vertexFormat });
+            shaderPipeline.ps = LoadShader({ LLGL::ShaderType::Fragment, "Example.450core.frag.spv" });
         }
         else if (Supported(LLGL::ShadingLanguage::Metal))
         {
-            shaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.metal", "VS", "1.1" },
-                    { LLGL::ShaderType::Fragment, "Example.metal", "PS", "1.1" }
-                },
-                { vertexFormat }
-            );
+            shaderPipeline.vs = LoadShader({ LLGL::ShaderType::Vertex,   "Example.metal", "VS", "1.1" }, { vertexFormat });
+            shaderPipeline.ps = LoadShader({ LLGL::ShaderType::Fragment, "Example.metal", "PS", "1.1" });
         }
     }
 
@@ -196,7 +181,11 @@ private:
         // Create pipeline layout
         LLGL::PipelineLayoutDescriptor layoutDesc;
         {
+            #ifdef ENABLE_RESOURCE_HEAP
+            layoutDesc.heapBindings =
+            #else
             layoutDesc.bindings =
+            #endif
             {
                 LLGL::BindingDescriptor{ "Settings",        LLGL::ResourceType::Buffer,   LLGL::BindFlags::ConstantBuffer, LLGL::StageFlags::FragmentStage | LLGL::StageFlags::VertexStage, 3                           },
                 LLGL::BindingDescriptor{ "colorMapSampler", LLGL::ResourceType::Sampler,  0,                               LLGL::StageFlags::FragmentStage,                                 1                           },
@@ -209,7 +198,8 @@ private:
         // Create graphics pipeline for swap-chain
         LLGL::GraphicsPipelineDescriptor pipelineDesc;
         {
-            pipelineDesc.shaderProgram                  = shaderProgram;
+            pipelineDesc.vertexShader                   = shaderPipeline.vs;
+            pipelineDesc.fragmentShader                 = shaderPipeline.ps;
             pipelineDesc.renderPass                     = swapChain->GetRenderPass();
             pipelineDesc.pipelineLayout                 = pipelineLayout;
 
@@ -248,7 +238,7 @@ private:
             samplerDesc.addressModeU    = LLGL::SamplerAddressMode::Border;
             samplerDesc.addressModeV    = LLGL::SamplerAddressMode::Border;
             samplerDesc.maxAnisotropy   = 8;
-            samplerDesc.borderColor     = { 0, 0, 0, 1 };
+            samplerDesc.borderColor[3]  = 1.0f;
         }
         samplerState = renderer->CreateSampler(samplerDesc);
     }
@@ -310,11 +300,11 @@ private:
             renderTargetDesc.attachments =
             {
                 #ifdef ENABLE_DEPTH_TEXTURE
-                LLGL::AttachmentDescriptor{ LLGL::AttachmentType::Depth, renderTargetDepthTex },
+                LLGL::AttachmentDescriptor{ renderTargetDepthTex },
                 #else
-                LLGL::AttachmentDescriptor{ LLGL::AttachmentType::Depth },
+                LLGL::AttachmentDescriptor{ LLGL::Format::D32Float },
                 #endif
-                LLGL::AttachmentDescriptor{ LLGL::AttachmentType::Color, renderTargetTex }
+                LLGL::AttachmentDescriptor{ renderTargetTex }
             };
         }
         renderTarget = renderer->CreateRenderTarget(renderTargetDesc);
@@ -328,41 +318,38 @@ private:
     void CreateResourceHeap()
     {
         // Create resource heap for render target
-        LLGL::ResourceHeapDescriptor resourceHeapDesc;
+        LLGL::ResourceViewDescriptor resourceViews[] =
         {
-            resourceHeapDesc.pipelineLayout = pipelineLayout;
-            resourceHeapDesc.resourceViews =
-            {
-                constantBuffer, samplerState, colorMap, /*colorMap,*/
-                constantBuffer, samplerState, renderTargetTex, /*renderTargetTex,*/
-            };
+            constantBuffer, samplerState, colorMap, /*colorMap,*/
+            constantBuffer, samplerState, renderTargetTex, /*renderTargetTex,*/
+        };
 
-            #ifdef ENABLE_CBUFFER_RANGE
+        #ifdef ENABLE_CBUFFER_RANGE
 
-            auto& cbufferView0 = resourceHeapDesc.resourceViews[0].bufferView;
-            {
-                cbufferView0.offset = 0;
-                cbufferView0.size   = cbufferAlignment;
-            }
-
-            auto& cbufferView1 = resourceHeapDesc.resourceViews[3].bufferView;
-            {
-                cbufferView1.offset = cbufferAlignment;
-                cbufferView1.size   = cbufferAlignment;
-            }
-
-            #endif // /ENABLE_CBUFFER_RANGE
+        auto& cbufferView0 = resourceViews[0].bufferView;
+        {
+            cbufferView0.offset = 0;
+            cbufferView0.size   = cbufferAlignment;
         }
-        resourceHeap = renderer->CreateResourceHeap(resourceHeapDesc);
+
+        auto& cbufferView1 = resourceViews[3].bufferView;
+        {
+            cbufferView1.offset = cbufferAlignment;
+            cbufferView1.size   = cbufferAlignment;
+        }
+
+        #endif // /ENABLE_CBUFFER_RANGE
+
+        resourceHeap = renderer->CreateResourceHeap(pipelineLayout, resourceViews);
     }
 
     #endif // /ENABLE_RESOURCE_HEAP
 
     void UpdateModelTransform(Settings& settings, const Gs::Matrix4f& proj, float rotation, const Gs::Vector3f& axis = { 0, 1, 0 })
     {
-        settings.wvpMatrix = proj;
-        Gs::Translate(settings.wvpMatrix, { 0, 0, 5 });
-        Gs::RotateFree(settings.wvpMatrix, axis.Normalized(), rotation);
+        Gs::Translate(settings.wMatrix, { 0, 0, 5 });
+        Gs::RotateFree(settings.wMatrix, axis.Normalized(), rotation);
+        settings.wvpMatrix = proj * settings.wMatrix;
     }
 
     static const auto shaderStages = LLGL::StageFlags::VertexStage | LLGL::StageFlags::FragmentStage;
@@ -372,7 +359,7 @@ private:
         // Update model transformation with render-target projection
         UpdateModelTransform(settings, renderTargetProj, rotation.y, Gs::Vector3f(1));
 
-        if (IsOpenGL())
+        if (IsOpenGL() && IsScreenOriginLowerLeft())
         {
             /*
             Now flip the Y-axis (0 for X-axis, 1 for Y-axis, 2 for Z-axis) of the
@@ -429,7 +416,7 @@ private:
         commands->BeginRenderPass(*renderTarget);
         {
             // Clear color and depth buffers of active framebuffer (i.e. the render target)
-            commands->Clear(LLGL::ClearFlags::ColorDepth, { LLGL::ColorRGBAf{ 0.2f, 0.7f, 0.1f } });
+            commands->Clear(LLGL::ClearFlags::ColorDepth, { 0.2f, 0.7f, 0.1f, 1.0f });
 
             // Bind graphics pipeline for render target
             commands->SetPipelineState(*pipelines[0]);
@@ -448,9 +435,9 @@ private:
             #endif // /ENABLE_RESOURCE_HEAP
             {
                 // Set resource directly
-                commands->SetResource(*constantBuffer, 3, LLGL::BindFlags::ConstantBuffer, shaderStages);
-                commands->SetResource(*colorMap, 1, LLGL::BindFlags::Sampled, shaderStages);
-                commands->SetResource(*samplerState, 1, 0, shaderStages);
+                commands->SetResource(0, *constantBuffer);
+                commands->SetResource(1, *samplerState);
+                commands->SetResource(2, *colorMap);
             }
 
             // Draw scene
@@ -477,7 +464,7 @@ private:
         commands->BeginRenderPass(*swapChain);
         {
             // Clear color and depth buffers of active framebuffer (i.e. the screen)
-            commands->Clear(LLGL::ClearFlags::ColorDepth, { backgroundColor });
+            commands->Clear(LLGL::ClearFlags::ColorDepth, backgroundColor);
 
             // Binds graphics pipeline for swap-chain
             commands->SetPipelineState(*pipelines[1]);
@@ -496,8 +483,12 @@ private:
             else
             #endif // /ENABLE_RESOURCE_HEAP
             {
+                // Set previous resources again since we invalidated them via SetPipelineState()
+                commands->SetResource(0, *constantBuffer);
+                commands->SetResource(1, *samplerState);
+
                 // Set render-target texture
-                commands->SetResource(*renderTargetTex, 1, LLGL::BindFlags::Sampled, shaderStages);
+                commands->SetResource(2, *renderTargetTex);
             }
 
             // Draw scene

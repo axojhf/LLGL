@@ -1,12 +1,12 @@
 /*
  * Example.cpp (Example_HelloTriangle)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
-#include <LLGL/Strings.h>
+#include <LLGL/Utils/TypeNames.h>
 #include <chrono>
 
 
@@ -27,7 +27,7 @@ int main(int argc, char* argv[])
         std::string rendererModule = GetSelectedRendererModule(argc, argv);
 
         // Load render system module
-        std::unique_ptr<LLGL::RenderSystem> renderer = LLGL::RenderSystem::Load(rendererModule);
+        LLGL::RenderSystemPtr renderer = LLGL::RenderSystem::Load(rendererModule);
 
         // Create swap-chain
         LLGL::SwapChainDescriptor swapChainDesc;
@@ -148,25 +148,9 @@ int main(int argc, char* argv[])
 
         for (auto shader : { vertShader, fragShader })
         {
-            if (shader != nullptr)
-            {
-                std::string log = shader->GetReport();
-                if (!log.empty())
-                    std::cerr << log << std::endl;
-            }
+            if (auto report = shader->GetReport())
+                std::cerr << report->GetText() << std::endl;
         }
-
-        // Create shader program which is used as composite
-        LLGL::ShaderProgramDescriptor shaderProgramDesc;
-        {
-            shaderProgramDesc.vertexShader      = vertShader;
-            shaderProgramDesc.fragmentShader    = fragShader;
-        }
-        LLGL::ShaderProgram* shaderProgram = renderer->CreateShaderProgram(shaderProgramDesc);
-
-        // Link shader program and check for errors
-        if (shaderProgram->HasErrors())
-            throw std::runtime_error(shaderProgram->GetReport());
 
         // Create graphics pipeline
         LLGL::PipelineState* pipeline = nullptr;
@@ -186,7 +170,8 @@ int main(int argc, char* argv[])
         {
             LLGL::GraphicsPipelineDescriptor pipelineDesc;
             {
-                pipelineDesc.shaderProgram                  = shaderProgram;
+                pipelineDesc.vertexShader                   = vertShader;
+                pipelineDesc.fragmentShader                 = fragShader;
                 pipelineDesc.renderPass                     = swapChain->GetRenderPass();
                 #ifdef ENABLE_MULTISAMPLING
                 pipelineDesc.rasterizer.multiSampleEnabled  = (swapChainDesc.samples > 1);
@@ -215,13 +200,20 @@ int main(int argc, char* argv[])
             pipeline = renderer->CreatePipelineState(pipelineDesc);
 
             #endif
+
+            // Link shader program and check for errors
+            if (auto report = pipeline->GetReport())
+            {
+                if (report->HasErrors())
+                    throw std::runtime_error(report->GetText());
+            }
         }
 
         // Create command buffer to submit subsequent graphics commands to the GPU
         LLGL::CommandBuffer* commands = renderer->CreateCommandBuffer(LLGL::CommandBufferFlags::ImmediateSubmit);
 
         #ifdef ENABLE_TIMER
-        auto timer = LLGL::Timer::Create();
+        Stopwatch timer;
         auto start = std::chrono::system_clock::now();
         #endif
 
@@ -229,11 +221,11 @@ int main(int argc, char* argv[])
         while (window.ProcessEvents())
         {
             #ifdef ENABLE_TIMER
-            timer->MeasureTime();
+            timer.MeasureTime();
             auto end = std::chrono::system_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(end - start).count() > 0)
             {
-                std::cout << "Rendertime: " << timer->GetDeltaTime() << ", FPS: " << 1.0 / timer->GetDeltaTime() << '\n';
+                std::cout << "Rendertime: " << timer.GetDeltaTime() << ", FPS: " << 1.0 / timer.GetDeltaTime() << '\n';
                 start = end;
             }
             #endif

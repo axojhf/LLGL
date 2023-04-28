@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_Animation)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
@@ -13,7 +13,6 @@ class Example_Animation : public ExampleBase
 
     LLGL::PipelineLayout*       pipelineLayout          = nullptr;
     LLGL::ResourceHeap*         resourceHeap            = nullptr;
-    LLGL::ShaderProgram*        shaderProgram           = nullptr;
     LLGL::PipelineState*        pipelineScene           = nullptr;
 
     LLGL::Buffer*               vertexBuffer            = nullptr;
@@ -83,11 +82,10 @@ public:
     {
         // Create all graphics objects
         auto vertexFormat = CreateBuffers();
-        shaderProgram = LoadStandardShaderProgram({ vertexFormat });
         CreateTextures();
         CreateSamplers();
         CreatePipelineLayouts();
-        CreatePipelines();
+        CreatePipelines(vertexFormat);
         CreateResourceHeaps();
 
         // Add balls to scene
@@ -141,24 +139,25 @@ private:
         if (IsOpenGL())
         {
             pipelineLayout = renderer->CreatePipelineLayout(
-                LLGL::PipelineLayoutDesc("cbuffer(Settings@1):frag:vert, texture(colorMap@2):frag, sampler(2):frag")
+                LLGL::PipelineLayoutDesc("heap{cbuffer(Settings@1):frag:vert, texture(colorMap@2):frag, sampler(2):frag}")
             );
         }
         else
         {
             pipelineLayout = renderer->CreatePipelineLayout(
-                LLGL::PipelineLayoutDesc("cbuffer(Settings@1):frag:vert, texture(colorMap@2):frag, sampler(linearSampler@3):frag")
+                LLGL::PipelineLayoutDesc("heap{cbuffer(Settings@1):frag:vert, texture(colorMap@2):frag, sampler(linearSampler@3):frag}")
             );
         }
     }
 
-    void CreatePipelines()
+    void CreatePipelines(const LLGL::VertexFormat& vertexFormat)
     {
         // Create graphics pipeline for scene rendering
         {
             LLGL::GraphicsPipelineDescriptor pipelineDesc;
             {
-                pipelineDesc.shaderProgram                  = shaderProgram;
+                pipelineDesc.vertexShader                   = LoadStandardVertexShader("VS", { vertexFormat });
+                pipelineDesc.fragmentShader                 = LoadStandardFragmentShader("PS");
                 pipelineDesc.renderPass                     = swapChain->GetRenderPass();
                 pipelineDesc.pipelineLayout                 = pipelineLayout;
                 pipelineDesc.depth.testEnabled              = true;
@@ -167,18 +166,14 @@ private:
                 pipelineDesc.rasterizer.multiSampleEnabled  = (GetSampleCount() > 1);
             }
             pipelineScene = renderer->CreatePipelineState(pipelineDesc);
+            ThrowIfFailed(pipelineScene);
         }
     }
 
     void CreateResourceHeaps()
     {
         // Create resource heap for scene rendering
-        LLGL::ResourceHeapDescriptor resourceHeapDesc;
-        {
-            resourceHeapDesc.pipelineLayout = pipelineLayout;
-            resourceHeapDesc.resourceViews  = { constantBuffer, colorMap, linearSampler };
-        }
-        resourceHeap = renderer->CreateResourceHeap(resourceHeapDesc);
+        resourceHeap = renderer->CreateResourceHeap(pipelineLayout, { constantBuffer, colorMap, linearSampler });
     }
 
     Gs::Vector3f GetGridPos(std::size_t frame) const
@@ -321,8 +316,8 @@ private:
     void OnDrawFrame() override
     {
         // Update scene by user input
-        timer->MeasureTime();
-        UpdateScene(static_cast<float>(timer->GetDeltaTime()));
+        timer.MeasureTime();
+        UpdateScene(static_cast<float>(timer.GetDeltaTime()));
 
         commands->Begin();
         {
@@ -332,7 +327,7 @@ private:
             // Render everything directly into the swap-chain
             commands->BeginRenderPass(*swapChain);
             {
-                commands->Clear(LLGL::ClearFlags::All, { backgroundColor });
+                commands->Clear(LLGL::ClearFlags::All, backgroundColor);
                 commands->SetViewport(swapChain->GetResolution());
                 RenderScene();
             }

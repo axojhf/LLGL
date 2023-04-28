@@ -1,11 +1,12 @@
 /*
  * MTBuffer.mm
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "MTBuffer.h"
+#include "../../ResourceUtils.h"
 #include <string.h>
 
 
@@ -62,42 +63,48 @@ BufferDescriptor MTBuffer::GetDesc() const
     return bufferDesc;
 }
 
-void MTBuffer::Write(NSUInteger dstOffset, const void* data, NSUInteger dataSize)
+void MTBuffer::Write(NSUInteger offset, const void* data, NSUInteger dataSize)
 {
-    /* Set buffer region to update */
-    NSRange range;
-    range.location  = dstOffset;
-    range.length    = dataSize;
+    if (char* sharedGpuMemory = reinterpret_cast<char*>([native_ contents]))
+    {
+        ::memcpy(sharedGpuMemory + offset, data, dataSize);
 
-    /* Copy data to CPU buffer region */
-    auto byteAlignedBuffer = reinterpret_cast<std::int8_t*>([native_ contents]);
-    ::memcpy(byteAlignedBuffer + dstOffset, data, dataSize);
+        #ifndef LLGL_OS_IOS
+        /* Notify Metal API about update */
+        if (isManaged_)
+            [native_ didModifyRange:NSMakeRange(offset, dataSize)];
+        #endif
+    }
+}
 
-    #ifndef LLGL_OS_IOS
-    /* Notify Metal API about update */
-    if (isManaged_)
-        [native_ didModifyRange:range];
-    #endif
+void MTBuffer::Read(NSUInteger offset, void* data, NSUInteger dataSize)
+{
+    if (const char* sharedGpuMemory = reinterpret_cast<char*>([native_ contents]))
+        ::memcpy(data, sharedGpuMemory + offset, dataSize);
 }
 
 void* MTBuffer::Map(CPUAccess access)
 {
-    mappedWriteAccess_ = (access == CPUAccess::WriteOnly);
+    if (HasWriteAccess(access))
+        mappedWriteRange_ = NSMakeRange(0, [native_ length]);
     return [native_ contents];
+}
+
+void* MTBuffer::Map(CPUAccess access, NSUInteger offset, NSUInteger length)
+{
+    if (HasWriteAccess(access))
+        mappedWriteRange_ = NSMakeRange(offset, length);
+    char* mappedMemory = reinterpret_cast<char*>([native_ contents]) + offset;
+    return reinterpret_cast<void*>(mappedMemory);
 }
 
 void MTBuffer::Unmap()
 {
     #ifndef LLGL_OS_IOS
-    if (isManaged_ && mappedWriteAccess_)
-    {
-        NSRange range;
-        range.location  = 0;
-        range.length    = [native_ length];
-        [native_ didModifyRange:range];
-    }
+    if (isManaged_ && mappedWriteRange_.length > 0)
+        [native_ didModifyRange:mappedWriteRange_];
     #endif // /LLGL_OS_IOS
-    mappedWriteAccess_ = false;
+    mappedWriteRange_ = NSMakeRange(0, 0);
 }
 
 

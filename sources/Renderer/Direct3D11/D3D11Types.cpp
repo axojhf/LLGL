@@ -1,12 +1,11 @@
 /*
  * D3D11Types.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D11Types.h"
-#include "../DXCommon/DXTypes.h"
 #include "../DXCommon/DXCore.h"
 #include <stdexcept>
 #include <string>
@@ -20,21 +19,6 @@ namespace D3D11Types
 
 
 /* ----- Map Functions ----- */
-
-DXGI_FORMAT Map(const DataType dataType)
-{
-    return DXTypes::Map(dataType);
-}
-
-DXGI_FORMAT Map(const Format format)
-{
-    return DXTypes::Map(format);
-}
-
-D3D_PRIMITIVE_TOPOLOGY Map(const PrimitiveTopology topology)
-{
-    return DXTypes::Map(topology);
-}
 
 D3D11_FILL_MODE Map(const PolygonMode polygonMode)
 {
@@ -267,27 +251,6 @@ D3D11_LOGIC_OP Map(const LogicOp logicOp)
 #endif // /LLGL_D3D11_ENABLE_FEATURELEVEL
 
 
-/* ----- Unmap Functions ----- */
-
-Format Unmap(const DXGI_FORMAT format)
-{
-    return DXTypes::Unmap(format);
-}
-
-
-/* ----- Other Map Functions ----- */
-
-DXGI_FORMAT ToDXGIFormatDSV(const DXGI_FORMAT format)
-{
-    return DXTypes::ToDXGIFormatDSV(format);
-}
-
-DXGI_FORMAT ToDXGIFormatSRV(const DXGI_FORMAT format)
-{
-    return DXTypes::ToDXGIFormatSRV(format);
-}
-
-
 /* ----- Convert Functions ----- */
 
 static void Convert(D3D11_DEPTH_STENCILOP_DESC& dst, const StencilFaceDescriptor& src)
@@ -311,6 +274,8 @@ void Convert(D3D11_DEPTH_STENCIL_DESC& dst, const DepthDescriptor& srcDepth, con
     Convert(dst.BackFace, srcStencil.back);
 }
 
+// Disable 'MultisampleEnable' for fill mode as it causes artifacts on triangle edges on MSAA render targets
+// See https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_rasterizer_desc#remarks
 void Convert(D3D11_RASTERIZER_DESC& dst, const RasterizerDescriptor& src)
 {
     if (src.conservativeRasterization)
@@ -324,7 +289,7 @@ void Convert(D3D11_RASTERIZER_DESC& dst, const RasterizerDescriptor& src)
     dst.SlopeScaledDepthBias    = src.depthBias.slopeFactor;
     dst.DepthClipEnable         = DXBoolean(!src.depthClampEnabled);
     dst.ScissorEnable           = DXBoolean(src.scissorTestEnabled);
-    dst.MultisampleEnable       = DXBoolean(src.multiSampleEnabled);
+    dst.MultisampleEnable       = DXBoolean(src.multiSampleEnabled && src.polygonMode != PolygonMode::Fill);
     dst.AntialiasedLineEnable   = DXBoolean(src.antiAliasedLineEnabled);
 }
 
@@ -341,7 +306,7 @@ void Convert(D3D11_RASTERIZER_DESC2& dst, const RasterizerDescriptor& src)
     dst.SlopeScaledDepthBias    = src.depthBias.slopeFactor;
     dst.DepthClipEnable         = DXBoolean(!src.depthClampEnabled);
     dst.ScissorEnable           = DXBoolean(src.scissorTestEnabled);
-    dst.MultisampleEnable       = DXBoolean(src.multiSampleEnabled);
+    dst.MultisampleEnable       = DXBoolean(src.multiSampleEnabled && src.polygonMode != PolygonMode::Fill);
     dst.AntialiasedLineEnable   = DXBoolean(src.antiAliasedLineEnabled);
     dst.ForcedSampleCount       = 0;
     dst.ConservativeRaster      = (src.conservativeRasterization ? D3D11_CONSERVATIVE_RASTERIZATION_MODE_ON : D3D11_CONSERVATIVE_RASTERIZATION_MODE_OFF);
@@ -349,14 +314,14 @@ void Convert(D3D11_RASTERIZER_DESC2& dst, const RasterizerDescriptor& src)
 
 #endif // /LLGL_D3D11_ENABLE_FEATURELEVEL
 
-static UINT8 GetColorWriteMask(const ColorRGBAb& color)
+static UINT8 GetColorWriteMask(std::uint8_t colorMask)
 {
     UINT8 mask = 0;
 
-    if (color.r) { mask |= D3D11_COLOR_WRITE_ENABLE_RED;   }
-    if (color.g) { mask |= D3D11_COLOR_WRITE_ENABLE_GREEN; }
-    if (color.b) { mask |= D3D11_COLOR_WRITE_ENABLE_BLUE;  }
-    if (color.a) { mask |= D3D11_COLOR_WRITE_ENABLE_ALPHA; }
+    if ((colorMask & ColorMaskFlags::R) != 0) { mask |= D3D11_COLOR_WRITE_ENABLE_RED;   }
+    if ((colorMask & ColorMaskFlags::G) != 0) { mask |= D3D11_COLOR_WRITE_ENABLE_GREEN; }
+    if ((colorMask & ColorMaskFlags::B) != 0) { mask |= D3D11_COLOR_WRITE_ENABLE_BLUE;  }
+    if ((colorMask & ColorMaskFlags::A) != 0) { mask |= D3D11_COLOR_WRITE_ENABLE_ALPHA; }
 
     return mask;
 }

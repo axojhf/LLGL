@@ -1,8 +1,8 @@
 /*
  * D3D11StateManager.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D11_STATE_MANAGER_H
@@ -11,7 +11,7 @@
 
 #include "../../DXCommon/ComPtr.h"
 #include "../Shader/D3D11BuiltinShaderFactory.h"
-#include "../Buffer/D3D11IntermediateBufferPool.h"
+#include "../Buffer/D3D11StagingBufferPool.h"
 #include <LLGL/PipelineStateFlags.h>
 #include <vector>
 #include <cstdint>
@@ -22,16 +22,14 @@ namespace LLGL
 {
 
 
+struct D3D11StaticSampler;
+
 class D3D11StateManager
 {
 
     public:
 
-        D3D11StateManager(
-            ID3D11Device*                       device,
-            const ComPtr<ID3D11DeviceContext>&  context,
-            ID3D11DeviceContext*                cbufferPoolDeviceContext = nullptr
-        );
+        D3D11StateManager(ID3D11Device* device, const ComPtr<ID3D11DeviceContext>& context);
 
         void SetViewports(std::uint32_t numViewports, const Viewport* viewportArray);
         void SetScissors(std::uint32_t numScissors, const Scissor* scissorArray);
@@ -53,8 +51,8 @@ class D3D11StateManager
         void SetStencilRef(UINT stencilRef);
 
         void SetBlendState(ID3D11BlendState* blendState, UINT sampleMask);
-        void SetBlendState(ID3D11BlendState* blendState, const FLOAT* blendFactor, UINT sampleMask);
-        void SetBlendFactor(const FLOAT* blendFactor);
+        void SetBlendState(ID3D11BlendState* blendState, const FLOAT blendFactor[4], UINT sampleMask);
+        void SetBlendFactor(const FLOAT blendFactor[4]);
 
         void SetConstantBuffers(
             UINT                    startSlot,
@@ -79,13 +77,6 @@ class D3D11StateManager
             long                                stageFlags
         );
 
-        void SetSamplers(
-            UINT                        startSlot,
-            UINT                        count,
-            ID3D11SamplerState* const*  samplers,
-            long                        stageFlags
-        );
-
         void SetUnorderedAccessViews(
             UINT                                startSlot,
             UINT                                count,
@@ -94,14 +85,24 @@ class D3D11StateManager
             long                                stageFlags
         );
 
+        void SetSamplers(
+            UINT                        startSlot,
+            UINT                        count,
+            ID3D11SamplerState* const*  samplers,
+            long                        stageFlags
+        );
+
+        void SetGraphicsStaticSampler(const D3D11StaticSampler& staticSamplerD3D);
+        void SetComputeStaticSampler(const D3D11StaticSampler& staticSamplerD3D);
+
         // Binds an intermediate constant buffer and updates its content with the specified data.
-        void SetConstants(std::uint32_t slot, const void* data, std::uint16_t dataSize, long stageFlags);
+        void SetConstants(UINT slot, const void* data, UINT dataSize, long stageFlags);
 
         // Executes the specified builtin compute shader.
         void DispatchBuiltin(const D3D11BuiltinShader builtinShader, UINT numWorkGroupsX, UINT numWorkGroupsY, UINT numWorkGroupsZ);
 
-        // Must be called in D3D11CommandBuffer::Begin
-        void ResetIntermediateBufferPools();
+        // Must be called in D3D11CommandBuffer::Begin().
+        void ResetStagingBufferPools();
 
         // Returns the ID3D11DeviceContext that this state manager is associated with.
         inline ID3D11DeviceContext* GetContext() const
@@ -119,12 +120,12 @@ class D3D11StateManager
 
         struct D3DShaderState
         {
-            ID3D11VertexShader*     vs = nullptr;
-            ID3D11HullShader*       hs = nullptr;
-            ID3D11DomainShader*     ds = nullptr;
-            ID3D11GeometryShader*   gs = nullptr;
-            ID3D11PixelShader*      ps = nullptr;
-            ID3D11ComputeShader*    cs = nullptr;
+            ID3D11VertexShader*         vs                  = nullptr;
+            ID3D11HullShader*           hs                  = nullptr;
+            ID3D11DomainShader*         ds                  = nullptr;
+            ID3D11GeometryShader*       gs                  = nullptr;
+            ID3D11PixelShader*          ps                  = nullptr;
+            ID3D11ComputeShader*        cs                  = nullptr;
         };
 
         struct D3DRenderState
@@ -145,7 +146,7 @@ class D3D11StateManager
         ComPtr<ID3D11DeviceContext1>    context1_;
         #endif
 
-        D3D11IntermediateBufferPool     intermediateCbufferPool_;
+        D3D11StagingBufferPool          stagingCbufferPool_;
 
         D3DInputAssemblyState           inputAssemblyState_;
         D3DShaderState                  shaderState_;

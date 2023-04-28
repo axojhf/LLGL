@@ -1,8 +1,8 @@
 /*
  * VKRenderTarget.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_VK_RENDER_TARGET_H
@@ -28,7 +28,7 @@ class VKRenderTarget final : public RenderTarget
     public:
 
         VKRenderTarget(
-            const VKPtr<VkDevice>&          device,
+            VkDevice                        device,
             VKDeviceMemoryManager&          deviceMemoryMngr,
             const RenderTargetDescriptor&   desc
         );
@@ -73,20 +73,20 @@ class VKRenderTarget final : public RenderTarget
 
     private:
 
-        void CreateDepthStencilForAttachment(VKDeviceMemoryManager& deviceMemoryMngr, const AttachmentDescriptor& attachmentDesc);
+        void CreateDepthStencilAttachment(VKDeviceMemoryManager& deviceMemoryMngr, VkFormat format);
 
         void CreateRenderPass(
             VkDevice                        device,
             const RenderTargetDescriptor&   desc,
             VKRenderPass&                   renderPass,
-            bool                            loadContent
+            VkAttachmentLoadOp              attachmentsLoadOp
         );
 
         void CreateDefaultRenderPass(VkDevice device, const RenderTargetDescriptor& desc);
         void CreateSecondaryRenderPass(VkDevice device, const RenderTargetDescriptor& desc);
 
         void CreateFramebuffer(
-            const VKPtr<VkDevice>&          device,
+            VkDevice                        device,
             VKDeviceMemoryManager&          deviceMemoryMngr,
             const RenderTargetDescriptor&   desc
         );

@@ -1,8 +1,8 @@
 /*
  * D3D12RenderPass.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D12_RENDER_PASS_H
@@ -46,7 +46,6 @@ class D3D12RenderPass final : public RenderPass
         void BuildAttachments(
             UINT                        numAttachmentDescs,
             const AttachmentDescriptor* attachmentDescs,
-            const DXGI_FORMAT           defaultDepthStencilFormat,
             const DXGI_SAMPLE_DESC&     sampleDesc
         );
 
@@ -97,7 +96,7 @@ class D3D12RenderPass final : public RenderPass
     private:
 
         void SetDSVFormat(DXGI_FORMAT format);
-        void SetRTVFormat(UINT colorAttachment, DXGI_FORMAT format);
+        void SetRTVFormat(DXGI_FORMAT format, UINT colorAttachment);
 
     private:
 

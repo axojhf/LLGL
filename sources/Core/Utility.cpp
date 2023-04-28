@@ -1,18 +1,19 @@
 /*
  * Utility.h
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifdef LLGL_ENABLE_UTILITY
 
-#include <LLGL/Utility.h>
+#include <LLGL/Utils/Utility.h>
+#include <LLGL/Utils/VertexFormat.h>
+#include <LLGL/Utils/ForRange.h>
 #include <LLGL/Buffer.h>
 #include <LLGL/Texture.h>
 #include <LLGL/Sampler.h>
 #include <LLGL/Shader.h>
-#include <LLGL/VertexFormat.h>
 #include <cstring>
 #include <cctype>
 
@@ -245,59 +246,6 @@ LLGL_EXPORT ShaderDescriptor ShaderDescFromFile(const ShaderType type, const cha
     return desc;
 }
 
-/* ----- ShaderProgramDescriptor utility functions ----- */
-
-static void AssignShaderToDesc(ShaderProgramDescriptor& desc, Shader* shader)
-{
-    if (shader != nullptr)
-    {
-        /* Assign shader types their respective struct members */
-        switch (shader->GetType())
-        {
-            case ShaderType::Undefined:
-                break;
-            case ShaderType::Vertex:
-                desc.vertexShader = shader;
-                break;
-            case ShaderType::TessControl:
-                desc.tessControlShader = shader;
-                break;
-            case ShaderType::TessEvaluation:
-                desc.tessEvaluationShader = shader;
-                break;
-            case ShaderType::Geometry:
-                desc.geometryShader = shader;
-                break;
-            case ShaderType::Fragment:
-                desc.fragmentShader = shader;
-                break;
-            case ShaderType::Compute:
-                desc.computeShader = shader;
-                break;
-        }
-    }
-}
-
-LLGL_EXPORT ShaderProgramDescriptor ShaderProgramDesc(const std::initializer_list<Shader*>& shaders)
-{
-    ShaderProgramDescriptor desc;
-    {
-        for (auto shader : shaders)
-            AssignShaderToDesc(desc, shader);
-    }
-    return desc;
-}
-
-LLGL_EXPORT ShaderProgramDescriptor ShaderProgramDesc(const std::vector<Shader*>& shaders)
-{
-    ShaderProgramDescriptor desc;
-    {
-        for (auto shader : shaders)
-            AssignShaderToDesc(desc, shader);
-    }
-    return desc;
-}
-
 /* ----- PipelineLayoutDescriptor utility functions ----- */
 
 LLGL_EXPORT PipelineLayoutDescriptor PipelineLayoutDesc(const ShaderReflection& reflection)
@@ -346,10 +294,25 @@ static void AcceptChar(const char*& s, char c, const char* err = nullptr)
             ErrUnexpectedChar(err, *s);
         else
         {
-            std::string errMsg { "expected character " + GetASCIIName(c) };
+            std::string errMsg{ "expected character " + GetASCIIName(c) };
             ErrUnexpectedChar(errMsg.c_str(), *s);
         }
     }
+}
+
+// Scans the specified token and returns true on success. Otherwise, the input string remains at the current position.
+static bool ScanToken(const char*& s, const char* tok)
+{
+    auto p = s;
+    while (*tok != '\0')
+    {
+        if (*p != *tok)
+            return false;
+        ++tok;
+        ++p;
+    }
+    s = p;
+    return true;
 }
 
 // Ignore all whitespace characters.
@@ -481,7 +444,7 @@ static long ParseLayoutSignatureStageFlagsAll(const char*& s)
 }
 
 // Parse next layout signature binding point, e.g. "texture(1)"
-static void ParseLayoutSignatureBindingPoint(PipelineLayoutDescriptor& desc, const char*& s)
+static void ParseLayoutSignatureBindingPoint(PipelineLayoutDescriptor& desc, const char*& s, bool isHeap)
 {
     BindingDescriptor bindingDesc;
 
@@ -493,7 +456,8 @@ static void ParseLayoutSignatureBindingPoint(PipelineLayoutDescriptor& desc, con
     IgnoreWhiteSpaces(s);
     AcceptChar(s, '(', "expected open bracket '(' after resource type");
 
-    auto bindingIndex = desc.bindings.size();
+    auto& dstBindings = (isHeap ? desc.heapBindings : desc.bindings);
+    auto firstBinding = dstBindings.size();
 
     for (;;)
     {
@@ -522,11 +486,9 @@ static void ParseLayoutSignatureBindingPoint(PipelineLayoutDescriptor& desc, con
             AcceptChar(s, ']');
             IgnoreWhiteSpaces(s);
         }
-        else
-            bindingDesc.arraySize = 1;
 
         /* Add new binding point to output descriptor */
-        desc.bindings.push_back(bindingDesc);
+        dstBindings.push_back(bindingDesc);
 
         if (*s == ',')
             ++s;
@@ -543,9 +505,44 @@ static void ParseLayoutSignatureBindingPoint(PipelineLayoutDescriptor& desc, con
         auto stageFlags = ParseLayoutSignatureStageFlagsAll(s);
 
         /* Update stage flags of all previously added binding descriptors */
-        while (bindingIndex < desc.bindings.size())
-            desc.bindings[bindingIndex++].stageFlags = stageFlags;
+        for_subrange(i, firstBinding, dstBindings.size())
+            dstBindings[i].stageFlags = stageFlags;
     }
+}
+
+// Parse layout signature, e.g. "texture(1), sampler(2)" within a "heap{ ... }" scope
+static void ParseLayoutSignatureForHeap(PipelineLayoutDescriptor& desc, const char*& s)
+{
+    IgnoreWhiteSpaces(s);
+    if (*s == '{')
+        ++s;
+    else
+        ErrUnexpectedChar("expected open curly bracket '{' after heap declaration", *s);
+
+    while (*s != '}')
+    {
+        if (*s == '\0')
+            ErrUnexpectedChar("expected heap terminator '}'", *s);
+
+        /* Parse next binding point */
+        ParseLayoutSignatureBindingPoint(desc, s, /*isHeap:*/ true);
+
+        /* If there is no comma, the layout must end */
+        if (*s == ',')
+        {
+            ++s;
+            IgnoreWhiteSpaces(s);
+        }
+        else
+        {
+            IgnoreWhiteSpaces(s);
+            if (*s != '}')
+                ErrUnexpectedChar("expected comma separator ',' after binding point", *s);
+        }
+    }
+
+    /* Accept '}' token */
+    ++s;
 }
 
 // Parse layout signature, e.g. "texture(1), sampler(2)"
@@ -553,12 +550,24 @@ static void ParseLayoutSignature(PipelineLayoutDescriptor& desc, const char* s)
 {
     while (*s != '\0')
     {
-        /* Parse next binding point */
-        ParseLayoutSignatureBindingPoint(desc, s);
+        /* Check if we must enter a heap declaration */
+        if (ScanToken(s, "heap"))
+        {
+            /* Start parsing layout siganture for heap declaration */
+            ParseLayoutSignatureForHeap(desc, s);
+        }
+        else
+        {
+            /* Parse next binding point */
+            ParseLayoutSignatureBindingPoint(desc, s, /*isHeap:*/ false);
+        }
 
         /* If there is no comma, the layout must end */
         if (*s == ',')
+        {
             ++s;
+            IgnoreWhiteSpaces(s);
+        }
         else
         {
             IgnoreWhiteSpaces(s);
@@ -584,37 +593,28 @@ LLGL_EXPORT PipelineLayoutDescriptor PipelineLayoutDesc(const char* layoutSignat
 
 LLGL_EXPORT RenderPassDescriptor RenderPassDesc(const RenderTargetDescriptor& renderTargetDesc)
 {
-    RenderPassDescriptor desc;
+    RenderPassDescriptor renderPassDesc;
     {
+        std::uint32_t numColorAttachments = 0;
         for (const auto& attachment : renderTargetDesc.attachments)
         {
             /* First try to get format from texture */
-            auto format = Format::Undefined;
-            if (auto texture = attachment.texture)
-                format = texture->GetDesc().format;
+            const Format format = (attachment.texture != nullptr ? attachment.texture->GetFormat() : attachment.format);
 
-            switch (attachment.type)
+            if (IsDepthAndStencilFormat(format))
             {
-                case AttachmentType::Color:
-                    desc.colorAttachments.push_back({ format });
-                    break;
-
-                case AttachmentType::Depth:
-                    desc.depthAttachment    = { format != Format::Undefined ? format : Format::D32Float };
-                    break;
-
-                case AttachmentType::DepthStencil:
-                    desc.depthAttachment    = { format != Format::Undefined ? format : Format::D24UNormS8UInt };
-                    desc.stencilAttachment  = desc.depthAttachment;
-                    break;
-
-                case AttachmentType::Stencil:
-                    desc.depthAttachment    = { format != Format::Undefined ? format : Format::D24UNormS8UInt };
-                    break;
+                renderPassDesc.depthAttachment      = { format };
+                renderPassDesc.stencilAttachment    = { format };
             }
+            else if (IsDepthFormat(format))
+                renderPassDesc.depthAttachment      = { format };
+            else if (IsStencilFormat(format))
+                renderPassDesc.depthAttachment      = { format };
+            else if (numColorAttachments < LLGL_MAX_NUM_COLOR_ATTACHMENTS)
+                renderPassDesc.colorAttachments[numColorAttachments++] = { format };
         }
     }
-    return desc;
+    return renderPassDesc;
 }
 
 

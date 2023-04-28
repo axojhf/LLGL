@@ -1,47 +1,47 @@
 /*
  * RenderSystem.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_RENDER_SYSTEM_H
 #define LLGL_RENDER_SYSTEM_H
 
 
-#include "Interface.h"
-#include "SwapChain.h"
-#include "CommandQueue.h"
-#include "CommandBuffer.h"
-#include "RenderSystemFlags.h"
-#include "RenderingProfiler.h"
-#include "RenderingDebugger.h"
+#include <LLGL/Interface.h>
+#include <LLGL/SwapChain.h>
+#include <LLGL/CommandQueue.h>
+#include <LLGL/CommandBuffer.h>
+#include <LLGL/RenderSystemFlags.h>
+#include <LLGL/RenderingProfiler.h>
+#include <LLGL/RenderingDebugger.h>
+#include <LLGL/Blob.h>
+#include <LLGL/Container/ArrayView.h>
 
-#include "Blob.h"
-#include "Buffer.h"
-#include "BufferFlags.h"
-#include "BufferArray.h"
-#include "Texture.h"
-#include "TextureFlags.h"
-#include "Sampler.h"
-#include "SamplerFlags.h"
-#include "ResourceHeap.h"
-#include "ResourceHeapFlags.h"
-
-#include "RenderPass.h"
-#include "RenderPassFlags.h"
-#include "RenderTarget.h"
-#include "RenderTargetFlags.h"
-#include "Shader.h"
-#include "ShaderFlags.h"
-#include "ShaderProgram.h"
-#include "ShaderProgramFlags.h"
-#include "PipelineLayout.h"
-#include "PipelineLayoutFlags.h"
-#include "PipelineState.h"
-#include "PipelineStateFlags.h"
-#include "QueryHeap.h"
-#include "Fence.h"
+#include <LLGL/Buffer.h>
+#include <LLGL/BufferFlags.h>
+#include <LLGL/BufferArray.h>
+#include <LLGL/Texture.h>
+#include <LLGL/TextureFlags.h>
+#include <LLGL/Sampler.h>
+#include <LLGL/SamplerFlags.h>
+#include <LLGL/ResourceHeap.h>
+#include <LLGL/ResourceHeapFlags.h>
+#include <LLGL/RenderPass.h>
+#include <LLGL/RenderPassFlags.h>
+#include <LLGL/RenderTarget.h>
+#include <LLGL/RenderTargetFlags.h>
+#include <LLGL/Shader.h>
+#include <LLGL/ShaderFlags.h>
+#include <LLGL/ShaderReflection.h>
+#include <LLGL/PipelineLayout.h>
+#include <LLGL/PipelineLayoutFlags.h>
+#include <LLGL/PipelineState.h>
+#include <LLGL/PipelineStateFlags.h>
+#include <LLGL/QueryHeap.h>
+#include <LLGL/QueryHeapFlags.h>
+#include <LLGL/Fence.h>
 
 #include <string>
 #include <memory>
@@ -52,6 +52,56 @@
 namespace LLGL
 {
 
+
+class RenderSystem;
+
+
+/**
+\brief Delegate to delete an instance of the RenderSystem interface.
+\remarks This deleter keeps a function pointer to the actual deleter from the renderer module.
+If no function pointer is provided, the deleter uses the C++ \c delete operator by default.
+\see RenderSystem::Load
+\see RenderSystem::Unload
+*/
+class RenderSystemDeleter
+{
+
+    public:
+
+        #ifdef _WIN32
+        typedef void (__cdecl *RenderSystemDeleterFuncPtr)(void*);
+        #else
+        typedef void (*RenderSystemDeleterFuncPtr)(void*);
+        #endif
+
+        RenderSystemDeleter() noexcept = default;
+
+        RenderSystemDeleter(const RenderSystemDeleter&) noexcept = default;
+        RenderSystemDeleter& operator = (const RenderSystemDeleter&) noexcept = default;
+
+        //! Constructs the deleter with the actual deleter function pointer.
+        inline RenderSystemDeleter(RenderSystemDeleterFuncPtr deleterFuncPtr);
+
+        /**
+        \brief Deletes the specified render system using the function pointer this deleter was initialized with.
+        \remarks If no function pointer was provided, the deleter uses the C++ \c delete operator by default.
+        */
+        inline void operator()(RenderSystem* ptr) const;
+
+    private:
+
+        RenderSystemDeleterFuncPtr deleterFuncPtr_ = nullptr;
+
+};
+
+/**
+\brief Unique pointer type for the RenderSystem interface with a custom deleter.
+\see RenderSystem
+\see RenderSystem::Load
+\see RenderSystem::Unload
+\see RenderSystemDeleter
+*/
+using RenderSystemPtr = std::unique_ptr<RenderSystem, RenderSystemDeleter>;
 
 /**
 \brief Render system interface.
@@ -78,6 +128,9 @@ class LLGL_EXPORT RenderSystem : public Interface
 
     public:
 
+        //! Releases the internal data.
+        ~RenderSystem();
+
         /* ----- Common ----- */
 
         /**
@@ -102,7 +155,7 @@ class LLGL_EXPORT RenderSystem : public Interface
         \remarks The debugger and profiler can be used like this:
         \code
         // Forward all log reports to the standard output stream for errors
-        LLGL::Log::SetReportCallbackStd(std::cerr);
+        LLGL::Log::SetReportCallbackStd(&(std::cerr));
 
         // Declare profiler and debugger (these classes can also be extended)
         LLGL::RenderingProfiler myProfiler;
@@ -114,7 +167,7 @@ class LLGL_EXPORT RenderSystem : public Interface
         \throws std::runtime_error If loading the render system from the specified module failed.
         \see RenderSystemDescriptor::moduleName
         */
-        static std::unique_ptr<RenderSystem> Load(
+        static RenderSystemPtr Load(
             const RenderSystemDescriptor&   renderSystemDesc,
             RenderingProfiler*              profiler            = nullptr,
             RenderingDebugger*              debugger            = nullptr
@@ -124,7 +177,9 @@ class LLGL_EXPORT RenderSystem : public Interface
         \brief Unloads the specified render system and the internal module.
         \remarks After this call, the specified render system and all the objects associated to it must no longer be used!
         */
-        static void Unload(std::unique_ptr<RenderSystem>&& renderSystem);
+        static void Unload(RenderSystemPtr&& renderSystem);
+
+    public:
 
         /**
         \brief Rendering API identification number.
@@ -132,65 +187,39 @@ class LLGL_EXPORT RenderSystem : public Interface
         Since the render system is modular, a new render system can have its own ID number.
         \see RendererID
         */
-        inline int GetRendererID() const
-        {
-            return rendererID_;
-        }
+        int GetRendererID() const;
 
         //! Returns the name of this render system.
-        inline const std::string& GetName() const
-        {
-            return name_;
-        }
+        const char* GetName() const;
 
         /**
         \brief Returns basic renderer information.
         \remarks The validity of these information is only guaranteed if this function is called
         after a valid swap-chain has been created. Otherwise the behavior is undefined!
         */
-        inline const RendererInfo& GetRendererInfo() const
-        {
-            return info_;
-        }
+        const RendererInfo& GetRendererInfo() const;
 
         /**
         \brief Returns the rendering capabilities.
         \remarks The validity of these information is only guaranteed if this function is called
         after a valid swap-chain has been created. Otherwise the behavior is undefined!
         */
-        inline const RenderingCapabilities& GetRenderingCaps() const
-        {
-            return caps_;
-        }
+        const RenderingCapabilities& GetRenderingCaps() const;
 
-        /**
-        \brief Sets the basic configuration.
-        \remarks This can be used to change the behavior of default initializion of textures for instance.
-        \see RenderSystemConfiguration
-        */
-        virtual void SetConfiguration(const RenderSystemConfiguration& config);
-
-        /**
-        \brief Returns the basic configuration.
-        \see SetConfiguration
-        */
-        inline const RenderSystemConfiguration& GetConfiguration() const
-        {
-            return config_;
-        }
+    public:
 
         /* ----- Swap-chain ----- */
 
         /**
         \brief Creates a new swap-chain. At least one swap-chain is required to render into an output surface.
-        \param[in] desc Specifies the swap-chain descriptor, which contains resolution, bit depth, multi-sampling settings etc.
+        \param[in] swapChainDesc Specifies the swap-chain descriptor, which contains resolution, bit depth, multi-sampling settings etc.
         \param[in] surface Optional shared pointer to a surface for the swap-chain.
         If this is null, the swap-chain will create its own platform specific surface, which can be accessed by SwapChain::GetSurface.
         The default surface on desktop platforms (i.e. Window interface) is not shown automatically, i.e. the Window::Show function has to be invoked to show the surface.
         \see SwapChain::GetSurface
         \see Window::Show
         */
-        virtual SwapChain* CreateSwapChain(const SwapChainDescriptor& desc, const std::shared_ptr<Surface>& surface = {}) = 0;
+        virtual SwapChain* CreateSwapChain(const SwapChainDescriptor& swapChainDesc, const std::shared_ptr<Surface>& surface = {}) = 0;
 
         /**
         \brief Releases the specified swap-chain. After this call, the specified object must no longer be used.
@@ -207,11 +236,11 @@ class LLGL_EXPORT RenderSystem : public Interface
 
         /**
         \brief Creates a new command buffer.
-        \remarks All render systems can create multiple command buffers,
-        but especially for the legacy graphics APIs such as OpenGL and Direct3D 11, this doesn't provide any benefit,
-        since all graphics and compute commands are submitted sequentially to the GPU.
+        \param[in] commandBufferDesc Specifies an optional command buffer descriptor.
+        \remarks Each render system can create multiple command buffers,
+        but especially the legacy graphics APIs such as OpenGL and Direct3D 11 don't provide a performance benefit with that feature.
         */
-        virtual CommandBuffer* CreateCommandBuffer(const CommandBufferDescriptor& desc = {}) = 0;
+        virtual CommandBuffer* CreateCommandBuffer(const CommandBufferDescriptor& commandBufferDesc = {}) = 0;
 
         /**
         \brief Releases the specified command buffer. After this call, the specified object must no longer be used.
@@ -223,13 +252,13 @@ class LLGL_EXPORT RenderSystem : public Interface
 
         /**
         \brief Creates a new generic hardware buffer.
-        \param[in] desc Specifies the vertex buffer descriptor.
+        \param[in] bufferDesc Specifies the buffer descriptor.
         \param[in] initialData Optional raw pointer to the data with which the buffer is to be initialized.
         This may also be null, to only initialize the size of the buffer. In this case, the buffer must
         be initialized with the "WriteBuffer" function before it is used for drawing operations. By default null.
         \see WriteBuffer
         */
-        virtual Buffer* CreateBuffer(const BufferDescriptor& desc, const void* initialData = nullptr) = 0;
+        virtual Buffer* CreateBuffer(const BufferDescriptor& bufferDesc, const void* initialData = nullptr) = 0;
 
         /**
         \brief Creates a new buffer array.
@@ -254,27 +283,62 @@ class LLGL_EXPORT RenderSystem : public Interface
 
         /**
         \brief Updates the data of the specified buffer.
-        \param[in] dstBuffer Specifies the destination buffer whose data is to be updated.
-        \param[in] dstOffset Specifies the offset (in bytes) at which the buffer is to be updated.
+        \param[in] buffer Specifies the destination buffer whose data is to be updated.
+        \param[in] offset Specifies the offset (in bytes) at which the buffer is to be updated.
         This offset plus the data block size (i.e. <code>offset + dataSize</code>) must be less than or equal to the size of the buffer.
         \param[in] data Raw pointer to the data with which the buffer is to be updated. This must not be null!
         \param[in] dataSize Specifies the size (in bytes) of the data block which is to be updated.
         This must be less then or equal to the size of the buffer.
         \remarks To update a small buffer (maximum of 65536 bytes) during encoding a command buffer, use CommandBuffer::UpdateBuffer.
+        \see ReadBuffer
         */
-        virtual void WriteBuffer(Buffer& dstBuffer, std::uint64_t dstOffset, const void* data, std::uint64_t dataSize) = 0;
+        virtual void WriteBuffer(Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t dataSize) = 0;
+
+        /**
+        \brief Reads the data from the specified buffer.
+        \param[in] buffer Specifies the buffer which is to be read.
+        \param[in] offset Specifies the offset (in bytes) at which the buffer is to be read.
+        \param[out] data Raw pointer to a memory block in CPU memory space where the data will be written to.
+        \param[in] dataSize Specifies the size (in bytes) of the data block given by the \c data parameter.
+        \see WriteBuffer
+        */
+        virtual void ReadBuffer(Buffer& buffer, std::uint64_t offset, void* data, std::uint64_t dataSize) = 0;
 
         /**
         \brief Maps the specified buffer from GPU to CPU memory space.
-        \param[in] buffer Specifies the buffer which is to be mapped.
+        \param[in] buffer Specifies the buffer which is to be mapped. Depending on the CPU access type (see \c access parameter),
+        this buffer must have been created with the corresponding CPU access flag, i.e. CPUAccessFlags::Read and/or CPUAccessFlags::Write.
         \param[in] access Specifies the CPU buffer access requirement, i.e. if the CPU can read and/or write the mapped memory.
-        \return Raw pointer to the mapped memory block. You should be aware of the storage buffer size, to not cause memory violations.
+        \return Raw pointer to the mapped memory block in CPU memory space or null if the operation failed.
+        \remarks Memory that is written back from CPU to GPU becomes visible in the GPU after a corresponding UnmapBuffer operation.
         \see UnmapBuffer
         */
         virtual void* MapBuffer(Buffer& buffer, const CPUAccess access) = 0;
 
         /**
+        \brief Maps the specified buffer range from GPU to CPU memory space.
+        \param[in] buffer Specifies the buffer which is to be mapped. Depending on the CPU access type (see \c access parameter),
+        this buffer must have been created with the corresponding CPU access flag, i.e. CPUAccessFlags::Read and/or CPUAccessFlags::Write.
+        \param[in] access Specifies the CPU buffer access requirement, i.e. if the CPU can read and/or write the mapped memory.
+        \param[in] offset Specifies the memory offset (in bytes) from the GPU buffer.
+        \param[in] length Specifies the length of the memory block (in bytes) that is to be mapped.
+        \return Raw pointer to the mapped memory block in CPU memory space or null if the operation failed.
+        \remarks Memory that is written back from CPU to GPU becomes visible in the GPU after a corresponding UnmapBuffer operation.
+        \see UnmapBuffer
+        */
+        virtual void* MapBuffer(Buffer& buffer, const CPUAccess access, std::uint64_t offset, std::uint64_t length) = 0;
+
+        /**
         \brief Unmaps the specified buffer.
+        \remarks This must be called on a buffer that was previously mapped into CPU memory space.
+        The following example illustrates how to map and unmap a buffer from GPU into CPU memory sapce:
+        \code
+        if (void* data = myRenderer->MapBuffer(*myBuffer, LLGL::CPUAccess::Write))
+        {
+            // Write to 'data' ...
+            myRenderer->UnmapBuffer(*myBuffer);
+        }
+        \endcode
         \see MapBuffer
         */
         virtual void UnmapBuffer(Buffer& buffer) = 0;
@@ -316,14 +380,14 @@ class LLGL_EXPORT RenderSystem : public Interface
         auto myTextureExtent = myTexture->GetMipExtent(0);
 
         // Allocate image buffer with elements in all dimensions
-        std::vector<LLGL::ColorRGBAub> myImage(myTextureExtent.width * myTextureExtent.height * myTextureExtent.depth);
+        std::vector<std::uint8_t> myImage(myTextureExtent.width * myTextureExtent.height * myTextureExtent.depth * 4);
 
         // Initialize destination image descriptor
         const DstImageDescriptor myImageDesc {
-            LLGL::ImageFormat::RGBA,                    // RGBA image format, since we used LLGL::ColorRGBAub
-            LLGL::DataType::UInt8,                      // 8-bit unsigned integral data type: <std::uint8_t> or <unsigned char>
-            myImage.data(),                             // Output image buffer
-            myImage.size() * sizeof(LLGL::ColorRGBAub)  // Image buffer size: number of color elements and size of each color element
+            LLGL::ImageFormat::RGBA,                // RGBA image format, since the size of 'myImage' is a multiple of 4
+            LLGL::DataType::UInt8,                  // 8-bit unsigned integral data type: <std::uint8_t> or <unsigned char>
+            myImage.data(),                         // Output image buffer
+            myImage.size() * sizeof(std::uint8_t)   // Image buffer size: number of color elements and size of each color element
         };
 
         // Read texture data from first MIP-map level (index 0)
@@ -345,7 +409,7 @@ class LLGL_EXPORT RenderSystem : public Interface
         \throws std::runtime_error If the renderer does not support Sampler objects (e.g. if OpenGL 3.1 or lower is used).
         \see GetRenderingCaps
         */
-        virtual Sampler* CreateSampler(const SamplerDescriptor& desc) = 0;
+        virtual Sampler* CreateSampler(const SamplerDescriptor& samplerDesc) = 0;
 
         //! Releases the specified Sampler object. After this call, the specified object must no longer be used.
         virtual void Release(Sampler& sampler) = 0;
@@ -354,16 +418,37 @@ class LLGL_EXPORT RenderSystem : public Interface
 
         /**
         \brief Creates a new resource heap.
-        \param[in] desc Specifies the descriptor which determines all shader resource.
-        \remarks Resources heaps are used in combination with a pipeline layout.
+        \param[in] resourceHeapDesc Specifies the descriptor for the resource heap.
+        If the \c numResourceViews field is zero, the \c initialResourceViews parameter will determine the number of resources,
+        it must \e not be empty and it \b must be a multiple of the number of bindings in the piepline layout.
+        \param[in] initialResourceViews Specifies an optional array of initial resource views.
+        If this is non-null, the array pointed to must have enough elements to initialze the entire resource heap.
+        Uninitialized resource views must be written with a call to WriteResourceHeap before the resource heap can be used in a command buffer.
+        \remarks Resource heaps are used in combination with a pipeline layout.
         The pipeline layout determines to which binding points the resources are bound.
         \see CreatePipelineLayout
         \see CommandBuffer::SetResourceHeap
+        \see WriteResourceHeap
+        \see ResourceHeapDescriptor::numResourceViews
         */
-        virtual ResourceHeap* CreateResourceHeap(const ResourceHeapDescriptor& desc) = 0;
+        virtual ResourceHeap* CreateResourceHeap(const ResourceHeapDescriptor& resourceHeapDesc, const ArrayView<ResourceViewDescriptor>& initialResourceViews = {}) = 0;
 
         //! Releases the specified ResourceHeap object. After this call, the specified object must no longer be used.
         virtual void Release(ResourceHeap& resourceHeap) = 0;
+
+        /**
+        \brief Writes new resource view descriptors into the specified resource heap.
+        \param[in] resourceHeap Specifies the resource heap that is to be updated.
+        \param[in] firstDescriptor Zero-based index to the first descriptor that is to be updated.
+        This must be less than the number of bindings in the resource heap's pipeline layout (PipelineLayout::GetNumHeapBindings)
+        multiplied by the number of descriptor sets in the resource heap (ResourceHeap::GetNumDescriptorSets).
+        \param[in] resourceViews Array of resource view descriptors.
+        \remarks The type of a resource view, i.e. whether it's a buffer, texture, or sampler, must not be changed with this function.
+        \return Number of resource views that have been updated by this call. Any resource view descriptor with a \c resource field that is null will be ignored silently.
+        \see ResourceHeap::GetNumDescriptorSets
+        \see PipelineLayout::GetNumHeapBindings
+        */
+        virtual std::uint32_t WriteResourceHeap(ResourceHeap& resourceHeap, std::uint32_t firstDescriptor, const ArrayView<ResourceViewDescriptor>& resourceViews) = 0;
 
         /* ----- Render Passes ----- */
 
@@ -376,7 +461,7 @@ class LLGL_EXPORT RenderSystem : public Interface
         \see CommandBuffer::BeginRenderPass
         \see CommandBuffer::EndRenderPass
         */
-        virtual RenderPass* CreateRenderPass(const RenderPassDescriptor& desc) = 0;
+        virtual RenderPass* CreateRenderPass(const RenderPassDescriptor& renderPassDesc) = 0;
 
         //! Releases the specified RenderPass object. After this call, the specified object must no longer be used.
         virtual void Release(RenderPass& renderPass) = 0;
@@ -387,7 +472,7 @@ class LLGL_EXPORT RenderSystem : public Interface
         \brief Creates a new RenderTarget object.
         \throws std::runtime_error If the renderer does not support RenderTarget objects (e.g. if OpenGL 2.1 or lower is used).
         */
-        virtual RenderTarget* CreateRenderTarget(const RenderTargetDescriptor& desc) = 0;
+        virtual RenderTarget* CreateRenderTarget(const RenderTargetDescriptor& renderTargetDesc) = 0;
 
         //! Releases the specified RenderTarget object. After this call, the specified object must no longer be used.
         virtual void Release(RenderTarget& renderTarget) = 0;
@@ -402,29 +487,16 @@ class LLGL_EXPORT RenderSystem : public Interface
         \see ShaderDescriptor
         \see ShaderDescFromFile
         */
-        virtual Shader* CreateShader(const ShaderDescriptor& desc) = 0;
-
-        /**
-        \brief Creates a new shader program and links all specified shaders.
-        \remarks To check whether the linking was successful or not, use the \c HasErrors and \c GetReport functions of the ShaderProgram interface.
-        \see ShaderProgram::HasErrors
-        \see ShaderProgram::GetReport
-        \see ShaderProgramDescriptor
-        \see ShaderProgramDesc
-        */
-        virtual ShaderProgram* CreateShaderProgram(const ShaderProgramDescriptor& desc) = 0;
+        virtual Shader* CreateShader(const ShaderDescriptor& shaderDesc) = 0;
 
         //! Releases the specified Shader object. After this call, the specified object must no longer be used.
         virtual void Release(Shader& shader) = 0;
-
-        //! Releases the specified ShaderProgram object. After this call, the specified object must no longer be used.
-        virtual void Release(ShaderProgram& shaderProgram) = 0;
 
         /* ----- Pipeline Layouts ----- */
 
         /**
         \brief Creates a new and initialized pipeline layout object, if and only if the renderer supports pipeline layouts.
-        \param[in] desc Specifies the pipeline layout descriptor with all layout bindings.
+        \param[in] pipelineLayoutDesc Specifies the pipeline layout descriptor with all layout bindings.
         \remarks A pipeline layout is required in combination with a ResourceHeap to bind multiple resources at once.
         For modern graphics APIs (i.e. Direct3D 12 and Vulkan), this is only way to bind shader resources.
         For legacy graphics APIs (i.e. Direct3D 11 and OpenGL), shader resources can also be bound individually with the extended command buffer.
@@ -432,7 +504,7 @@ class LLGL_EXPORT RenderSystem : public Interface
         \see CreateResourceHeap
         \see PipelineLayoutDesc
         */
-        virtual PipelineLayout* CreatePipelineLayout(const PipelineLayoutDescriptor& desc) = 0;
+        virtual PipelineLayout* CreatePipelineLayout(const PipelineLayoutDescriptor& pipelineLayoutDesc) = 0;
 
         //! Releases the specified PipelineLayout object. After this call, the specified object must no longer be used.
         virtual void Release(PipelineLayout& pipelineLayout) = 0;
@@ -456,7 +528,7 @@ class LLGL_EXPORT RenderSystem : public Interface
             // Setup initial pipeline state
             LLGL::ComputePipelineDescritpor myPipelineDesc;
             myPipelineDesc.pipelineLayout = myPipelineLayout;
-            myPipelineDesc.shaderProgram  = myShaderProgram;
+            myPipelineDesc.computeShader  = myComputeShader;
 
             // Create new PSO
             std::unique_ptr<LLGL::Blob> myCache;
@@ -477,28 +549,28 @@ class LLGL_EXPORT RenderSystem : public Interface
 
         /**
         \brief Creates a new graphics pipeline state object (PSO).
-        \param[in] desc Specifies the graphics pipeline descriptor.
+        \param[in] pipelineStateDesc Specifies the graphics PSO descriptor.
         This will describe the entire pipeline state, i.e. the blending-, rasterizer-, depth-, stencil- and shader states.
-        The \c shaderProgram member of the descriptor must never be null!
+        The \c vertexShader member of the descriptor must never be null!
         \param[out] serializedCache Optional pointer to a unique Blob instance. If this is not null, the renderer returns the pipeline state as serialized cache.
         This cache may be unique to the respective hardware and driver the application is running on. The behavior is undefined if this cache is used in a different software environment.
         It can be used to faster restore a pipeline state on next application run.
         \see GraphicsPipelineDescriptor
         \see CreatePipelineState(const Blob&)
         */
-        virtual PipelineState* CreatePipelineState(const GraphicsPipelineDescriptor& desc, std::unique_ptr<Blob>* serializedCache = nullptr) = 0;
+        virtual PipelineState* CreatePipelineState(const GraphicsPipelineDescriptor& pipelineStateDesc, std::unique_ptr<Blob>* serializedCache = nullptr) = 0;
 
         /**
         \brief Creates a new compute pipeline state object (PSO).
-        \param[in] desc Specifies the compute pipeline descriptor. This will describe the entire pipeline state.
-        The \c shaderProgram member of the descriptor must never be null!
+        \param[in] pipelineStateDesc Specifies the compute PSO descriptor. This will describe the entire pipeline state.
+        The \c computeShader member of the descriptor must never be null!
         \param[out] serializedCache Optional pointer to a unique Blob instance. If this is not null, the renderer returns the pipeline state as serialized cache.
         This cache may be unique to the respective hardware and driver the application is running on. The behavior is undefined if this cache is used in a different software environment.
         It can be used to faster restore a pipeline state on next application run.
         \see ComputePipelineDescriptor
         \see CreatePipelineState(const Blob&)
         */
-        virtual PipelineState* CreatePipelineState(const ComputePipelineDescriptor& desc, std::unique_ptr<Blob>* serializedCache = nullptr) = 0;
+        virtual PipelineState* CreatePipelineState(const ComputePipelineDescriptor& pipelineStateDesc, std::unique_ptr<Blob>* serializedCache = nullptr) = 0;
 
         //! Releases the specified PipelineState object. After this call, the specified object must no longer be used.
         virtual void Release(PipelineState& pipelineState) = 0;
@@ -506,7 +578,7 @@ class LLGL_EXPORT RenderSystem : public Interface
         /* ----- Queries ----- */
 
         //! Creates a new query heap.
-        virtual QueryHeap* CreateQueryHeap(const QueryHeapDescriptor& desc) = 0;
+        virtual QueryHeap* CreateQueryHeap(const QueryHeapDescriptor& queryHeapDesc) = 0;
 
         //! Releases the specified QueryHeap object. After this call, the specified object must no longer be used.
         virtual void Release(QueryHeap& queryHeap) = 0;
@@ -525,7 +597,8 @@ class LLGL_EXPORT RenderSystem : public Interface
 
     protected:
 
-        RenderSystem() = default;
+        //! Allocates the internal data.
+        RenderSystem();
 
         //! Sets the renderer information.
         void SetRendererInfo(const RendererInfo& info);
@@ -534,25 +607,19 @@ class LLGL_EXPORT RenderSystem : public Interface
         void SetRenderingCaps(const RenderingCapabilities& caps);
 
         //! Validates the specified buffer descriptor to be used for buffer creation.
-        void AssertCreateBuffer(const BufferDescriptor& desc, std::uint64_t maxSize);
+        void AssertCreateBuffer(const BufferDescriptor& bufferDesc, std::uint64_t maxSize);
 
         //! Validates the specified arguments to be used for buffer array creation.
         void AssertCreateBufferArray(std::uint32_t numBuffers, Buffer* const * bufferArray);
 
         //! Validates the specified shader descriptor.
-        void AssertCreateShader(const ShaderDescriptor& desc);
-
-        //! Validates the specified shader program descriptor.
-        void AssertCreateShaderProgram(const ShaderProgramDescriptor& desc);
+        void AssertCreateShader(const ShaderDescriptor& shaderDesc);
 
         //! Validates the specified render target descriptor.
-        void AssertCreateRenderTarget(const RenderTargetDescriptor& desc);
-
-        //! Validates the specified render pass descriptor.
-        void AssertCreateRenderPass(const RenderPassDescriptor& desc);
+        void AssertCreateRenderTarget(const RenderTargetDescriptor& renderTargetDesc);
 
         //! Validates the specified image data size against the required size (in bytes).
-        void AssertImageDataSize(std::size_t dataSize, std::size_t requiredDataSize, const char* info = nullptr);
+        void AssertImageDataSize(std::size_t dataSize, std::size_t requiredDataSize, const char* useCase = nullptr);
 
         /**
         \brief Copies the specified source data (i.e. \c data) to the destination image.
@@ -569,14 +636,31 @@ class LLGL_EXPORT RenderSystem : public Interface
 
     private:
 
-        int                         rendererID_ = 0;
-        std::string                 name_;
-
-        RendererInfo                info_;
-        RenderingCapabilities       caps_;
-        RenderSystemConfiguration   config_;
+        struct Pimpl;
+        Pimpl* pimpl_;
 
 };
+
+
+/*
+ * RenderSystemDeleter implementation
+ */
+
+inline RenderSystemDeleter::RenderSystemDeleter(RenderSystemDeleterFuncPtr deleterFuncPtr) :
+    deleterFuncPtr_ { deleterFuncPtr }
+{
+}
+
+inline void RenderSystemDeleter::operator()(RenderSystem* ptr) const
+{
+    if (ptr != nullptr)
+    {
+        if (deleterFuncPtr_ != nullptr)
+            deleterFuncPtr_(ptr);
+        else
+            delete ptr;
+    }
+}
 
 
 } // /namespace LLGL

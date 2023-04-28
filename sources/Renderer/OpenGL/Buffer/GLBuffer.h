@@ -1,8 +1,8 @@
 /*
  * GLBuffer.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_GL_BUFFER_H
@@ -37,12 +37,15 @@ class GLBuffer : public Buffer
         void BufferStorage(GLsizeiptr size, const void* data, GLbitfield flags, GLenum usage);
         void BufferSubData(GLintptr offset, GLsizeiptr size, const void* data);
 
+        void GetBufferSubData(GLintptr offset, GLsizeiptr size, void* data);
+
         void ClearBufferData(std::uint32_t data);
         void ClearBufferSubData(GLintptr offset, GLsizeiptr size, std::uint32_t data);
 
         void CopyBufferSubData(const GLBuffer& readBuffer, GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size);
 
         void* MapBuffer(GLenum access);
+        void* MapBufferRange(GLintptr offset, GLsizeiptr length, GLbitfield access);
         void UnmapBuffer();
 
         // Returns the specified buffer parameters; null pointers are ignored.

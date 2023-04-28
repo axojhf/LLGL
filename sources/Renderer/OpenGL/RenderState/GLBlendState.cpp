@@ -1,8 +1,8 @@
 /*
  * GLBlendState.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GLBlendState.h"
@@ -12,7 +12,7 @@
 #include "../GLTypes.h"
 #include "../GLProfile.h"
 #include "../../PipelineStateUtils.h"
-#include "../../../Core/HelperMacros.h"
+#include "../../../Core/MacroUtils.h"
 #include "../Texture/GLRenderTarget.h"
 #include "GLStateManager.h"
 #include <LLGL/PipelineStateFlags.h>
@@ -22,18 +22,12 @@ namespace LLGL
 {
 
 
-static void Convert(GLfloat (&dst)[4], const ColorRGBAf& src)
-{
-    dst[0] = src[0];
-    dst[1] = src[1];
-    dst[2] = src[2];
-    dst[3] = src[3];
-}
-
 GLBlendState::GLBlendState(const BlendDescriptor& desc, std::uint32_t numColorAttachments)
 {
-    Convert(blendColor_, desc.blendFactor);
-
+    blendColor_[0]          = desc.blendFactor[0];
+    blendColor_[1]          = desc.blendFactor[1];
+    blendColor_[2]          = desc.blendFactor[2];
+    blendColor_[3]          = desc.blendFactor[3];
     blendColorDynamic_      = desc.blendFactorDynamic;
     blendColorEnabled_      = IsStaticBlendFactorEnabled(desc);
     sampleAlphaToCoverage_  = desc.alphaToCoverageEnabled;
@@ -261,10 +255,10 @@ void GLBlendState::GLDrawBufferState::Convert(GLDrawBufferState& dst, const Blen
     dst.srcAlpha        = GLTypes::Map(src.srcAlpha);
     dst.dstAlpha        = GLTypes::Map(src.dstAlpha);
     dst.funcAlpha       = GLTypes::Map(src.alphaArithmetic);
-    dst.colorMask[0]    = GLBoolean(src.colorMask.r);
-    dst.colorMask[1]    = GLBoolean(src.colorMask.g);
-    dst.colorMask[2]    = GLBoolean(src.colorMask.b);
-    dst.colorMask[3]    = GLBoolean(src.colorMask.a);
+    dst.colorMask[0]    = GLBoolean((src.colorMask & ColorMaskFlags::R) != 0);
+    dst.colorMask[1]    = GLBoolean((src.colorMask & ColorMaskFlags::G) != 0);
+    dst.colorMask[2]    = GLBoolean((src.colorMask & ColorMaskFlags::B) != 0);
+    dst.colorMask[3]    = GLBoolean((src.colorMask & ColorMaskFlags::A) != 0);
 }
 
 int GLBlendState::GLDrawBufferState::CompareSWO(const GLDrawBufferState& lhs, const GLDrawBufferState& rhs)

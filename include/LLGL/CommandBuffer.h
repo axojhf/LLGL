@@ -1,30 +1,29 @@
 /*
  * CommandBuffer.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_COMMAND_BUFFER_H
 #define LLGL_COMMAND_BUFFER_H
 
 
-#include "RenderSystemChild.h"
-#include "CommandBufferFlags.h"
-#include "RenderSystemFlags.h"
-#include "ColorRGBA.h"
+#include <LLGL/RenderSystemChild.h>
+#include <LLGL/CommandBufferFlags.h>
+#include <LLGL/RenderSystemFlags.h>
 
-#include "Buffer.h"
-#include "BufferArray.h"
-#include "ResourceHeap.h"
-#include "PipelineLayoutFlags.h"
-#include "Constants.h"
+#include <LLGL/Buffer.h>
+#include <LLGL/BufferArray.h>
+#include <LLGL/ResourceHeap.h>
+#include <LLGL/PipelineLayoutFlags.h>
+#include <LLGL/Constants.h>
 
-#include "RenderPass.h"
-#include "RenderTarget.h"
-#include "ShaderProgram.h"
-#include "PipelineState.h"
-#include "QueryHeap.h"
+#include <LLGL/RenderPass.h>
+#include <LLGL/RenderTarget.h>
+#include <LLGL/Shader.h>
+#include <LLGL/PipelineState.h>
+#include <LLGL/QueryHeap.h>
 
 #include <cstdint>
 
@@ -351,46 +350,22 @@ class LLGL_EXPORT CommandBuffer : public RenderSystemChild
         /**
         \brief Binds the specified resource heap to the respective pipeline.
         \param[in] resourceHeap Specifies the resource heap that contains all shader resources that will be bound to the shader pipeline.
-        \param[in] firstSet Specifies the zero-based index of the first set of layout descriptors. This \b must be in the half-open range <code>[0, ResourceHeap::GetNumDescriptorSets)</code>. By default 0.
-        \param[in] bindPoint Specifies to which pipeline the resource heap is meant be bound. By default PipelineBindPoint::Undefined.
-        If this is PipelineBindPoint::Undefined, the resource heap is automatically bound to the graphics and/or compute pipeline.
-        Use this parameter if a resource heap has one or more resources that are in both the graphics and compute pipeline to avoid unnecessary bindings.
-        \remarks Any previous resource bindings are invalid after this call.
+        \param[in] descriptorSet Specifies the zero-based index of the set of resource descriptors.
+        This \b must be in the half-open range <code>[0, ResourceHeap::GetNumDescriptorSets)</code>. By default 0.
+        \remarks Any previous heap resource bindings are invalid after this call.
         \see ResourceHeap::GetNumDescriptorSets
+        \see PipelineLayoutDescriptor::heapBindings
         */
-        virtual void SetResourceHeap(
-            ResourceHeap&           resourceHeap,
-            std::uint32_t           firstSet        = 0,
-            const PipelineBindPoint bindPoint       = PipelineBindPoint::Undefined
-        ) = 0;
+        virtual void SetResourceHeap(ResourceHeap& resourceHeap, std::uint32_t descriptorSet = 0) = 0;
 
         /**
-        \brief Sets the specified resource to a binding slot.
-        \param[in] resource Specifies the resource to set.
-        \param[in] slot Specifies the slot index where to put the resource.
-        \param[in] bindFlags Specifies to types of binding points for this resource.
-        This can be a bitwise OR combination of the BindFlags entries.
-        Input and output binding flags cannot be used together when a resource is bound, e.g. a texture cannot be sampled while it is written to.
-        \param[in] stageFlags Specifies at which shader stages the resource is to be set.
-        This can be a bitwise OR combinations of the StageFlags entries. By default StageFlags::AllStages.
-        \remarks This function is only supported with the older graphics APIs and only available for convenience.
-        For best performance and complete renderer independence use \c SetResourceHeap.
-        \remarks The following example binds a constant buffer and texture resource to the fragment shader stage:
-        \code
-        myCmdBuffer->SetResource(*myConstantBuffer, 1, LLGL::BindFlags::ConstantBuffer, LLGL::StageFlags::FragmentStage);
-        myCmdBuffer->SetResource(*myTexture,        2, LLGL::BindFlags::Sampled,        LLGL::StageFlags::FragmentStage);
-        \endcode
-        \remarks If direct resource binding is not supported by the render system, this function has no effect.
-        \note Only supported with: OpenGL, Direct3D 11, Metal.
-        \see RenderingFeatures::hasDirectResourceBinding
-        \see SetResourceHeap
+        \brief Binds the specified resource as root parameter to the respective pipeline.
+        \param[in] descriptor Specifies the zero-based index of the descriptor in the currently bound pipeline layout.
+        This \b must be in the half-open range <code>[0, PipelineLayout::GetNumBindings)</code>.
+        \param[in] resource Specifies the resource that is to be bound to the shader pipeline.
+        \see PipelineLayoutDescriptor::bindings
         */
-        virtual void SetResource(
-            Resource&       resource,
-            std::uint32_t   slot,
-            long            bindFlags,
-            long            stageFlags = StageFlags::AllStages
-        ) = 0;
+        virtual void SetResource(std::uint32_t descriptor, Resource& resource) = 0;
 
         /**
         \brief Resets the binding slots for the specified resources.
@@ -408,7 +383,6 @@ class LLGL_EXPORT CommandBuffer : public RenderSystemChild
         \note Only supported with: OpenGL, Direct3D 11, Metal.
         \see BindFlags
         \see StageFlags
-        \see RenderingFeatures::hasDirectResourceBinding
         */
         virtual void ResetResourceSlots(
             const ResourceType  resourceType,
@@ -550,15 +524,14 @@ class LLGL_EXPORT CommandBuffer : public RenderSystemChild
 
         /**
         \brief Sets the dynamic pipeline state for blending factors.
-        \param[in] color Specifies the blending factors for each color component.
-        The default value is <code>{ 1, 1, 1, 1 }</code>.
+        \param[in] color Specifies the blending factors for each color component as an array of four floating-point numbers. The default value is (1, 1, 1, 1).
         \remarks This is only used for the following blending operations:
         - BlendOp::BlendFactor
         - BlendOp::InvBlendFactor
         \remarks This must only be used if the currently bound graphics pipeline state was created with \c blendFactorDynamic set to true. Otherwise, the behavior is undefined.
         \see BlendDescriptor::blendFactorDynamic
         */
-        virtual void SetBlendFactor(const ColorRGBAf& color) = 0;
+        virtual void SetBlendFactor(const float color[4]) = 0;
 
         /**
         \brief Sets the dynamic pipeline state for stencil reference values.
@@ -571,43 +544,19 @@ class LLGL_EXPORT CommandBuffer : public RenderSystemChild
         virtual void SetStencilReference(std::uint32_t reference, const StencilFace stencilFace = StencilFace::FrontAndBack) = 0;
 
         /**
-        \brief Sets the value of a single uniform (a.k.a. shader constant) in the shader program that is currently bound.
-        \param[in] location Specifies the location of the uniform.
+        \brief Sets the value of a certain number of shader uniforms (aka. push constant/ shader constants) in the currently bound PSO.
+        \param[in] first Specifies the zero-based index of the first uniform that are to be updated.
+        This \b must be in the half-open range <code>[0, PipelineLayout::GetNumUniforms)</code>.
+        The number of uniforms that are to be updated is determined by the size of the data. See \c dataSize parameter for more details.
         \param[in] data Raw pointer to the data that is to be copied to the uniform.
-        \param[in] dataSize Specifies the size (in bytes) of the input buffer \c data. This must be a multiple of 4.
-        \remarks This function must only be called after a graphics or compute pipeline has been set.
-        \note Only supported with: OpenGL, Vulkan, Direct3D 12.
-        \see ShaderProgram::FindUniformLocation
-        \see ShaderProgram::Reflect
-        \see SetGraphicsPipeline
-        \see SetComputePipeline
+        \param[in] dataSize Specifies the size (in bytes) of the input buffer \c data.
+        This \b must be a multiple of 4 since 32-bits are the smallest granularity to update shader uniforms.
+        This parameter also determines the number of uniforms that are to be updated.
+        \remarks This function must only be called after a pipeline state object (PSO) has been bound.
+        \see PipelineLayoutDescriptor::uniforms
+        \see SetPipelineState
         */
-        virtual void SetUniform(
-            UniformLocation location,
-            const void*     data,
-            std::uint32_t   dataSize
-        ) = 0;
-
-        /**
-        \brief Sets the value of multiple uniforms (a.k.a. shader constants) in the shader program that is currently bound.
-        \param[in] location Specifies the location of the first uniform.
-        \param[in] count Specifies the number of uniforms that are meant to be updated.
-        \param[in] data Raw pointer to the data that is to be copied to the uniforms.
-        \param[in] dataSize Specifies the size (in bytes) of the input buffer \c data. This must be a multiple of 4.
-        \remarks This function must only be called after a graphics or compute pipeline has been set.
-        The order of uniforms that come after the first one can be determined by the ShaderReflection::uniform container returned by ShaderProgram::Reflect.
-        \note Only supported with: OpenGL, Vulkan, Direct3D 12.
-        \see ShaderProgram::FindUniformLocation
-        \see ShaderProgram::Reflect
-        \see SetGraphicsPipeline
-        \see SetComputePipeline
-        */
-        virtual void SetUniforms(
-            UniformLocation location,
-            std::uint32_t   count,
-            const void*     data,
-            std::uint32_t   dataSize
-        ) = 0;
+        virtual void SetUniforms(std::uint32_t first, const void* data, std::uint16_t dataSize) = 0;
 
         /* ----- Queries ----- */
 
@@ -872,6 +821,7 @@ class LLGL_EXPORT CommandBuffer : public RenderSystemChild
         \endcode
         \note Invalid arguments are ignored by this function silently (except for corrupted pointers).
         \see MetalDependentStateDescriptor
+        \todo Rename to SetAPIDependentState
         */
         virtual void SetGraphicsAPIDependentState(const void* stateDesc, std::size_t stateDescSize) = 0;
 

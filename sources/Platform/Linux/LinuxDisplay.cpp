@@ -1,21 +1,19 @@
 /*
  * LinuxDisplay.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "LinuxDisplay.h"
-#include "../../Core/Helper.h"
-#include <locale>
-#include <codecvt>
+#include "../../Core/CoreUtils.h"
 #include <X11/extensions/Xrandr.h>
 
 
 namespace LLGL
 {
 
-    
+
 static std::vector<std::unique_ptr<LinuxDisplay>>   g_displayList;
 static std::vector<Display*>                        g_displayRefList;
 static Display*                                     g_primaryDisplay;
@@ -29,7 +27,7 @@ static std::shared_ptr<LinuxSharedX11Display> GetSharedX11Display()
 static bool UpdateDisplayList()
 {
     auto sharedX11Display = GetSharedX11Display();
-        
+
     const int screenCount = ScreenCount(sharedX11Display->GetNative());
     if (screenCount >= 0 && static_cast<std::size_t>(screenCount) != g_displayList.size())
     {
@@ -42,7 +40,7 @@ static bool UpdateDisplayList()
         }
         return true;
     }
-    
+
     return false;
 }
 
@@ -171,11 +169,9 @@ bool LinuxDisplay::IsPrimary() const
     return (screen_ == DefaultScreen(GetNative()));
 }
 
-std::wstring LinuxDisplay::GetDeviceName() const
+UTF8String LinuxDisplay::GetDeviceName() const
 {
-    const char* name = DisplayString(GetNative());
-    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-    return converter.from_bytes(name);
+    return UTF8String{ DisplayString(GetNative()) };
 }
 
 Offset2D LinuxDisplay::GetOffset() const
@@ -288,7 +284,7 @@ std::vector<DisplayModeDescriptor> LinuxDisplay::GetSupportedDisplayModes() cons
 {
     return sharedX11Display_->GetNative();
 }
- 
+
 
 } // /namespace LLGL
 

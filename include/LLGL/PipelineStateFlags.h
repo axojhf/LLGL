@@ -1,20 +1,19 @@
 /*
  * PipelineStateFlags.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_PIPELINE_STATE_FLAGS_H
 #define LLGL_PIPELINE_STATE_FLAGS_H
 
 
-#include "Export.h"
-#include "ColorRGBA.h"
-#include "Types.h"
-#include "Format.h"
-#include "ForwardDecls.h"
-#include "StaticLimits.h"
+#include <LLGL/Export.h>
+#include <LLGL/Types.h>
+#include <LLGL/Format.h>
+#include <LLGL/ForwardDecls.h>
+#include <LLGL/StaticLimits.h>
 #include <vector>
 #include <cstdint>
 
@@ -268,6 +267,26 @@ enum class TessellationPartition
     \remarks Equivalent of <code>[partitioning("fractional_even")]</code> in HLSL and <code>layout(fractional_even_spacing)</code> in GLSL.
     */
     FractionalEven,
+};
+
+
+/* ----- Flags ----- */
+
+/**
+\brief Blend target color mask flags.
+\see BlendTargetDescriptor::colorMask
+*/
+struct ColorMaskFlags
+{
+    enum : std::uint8_t
+    {
+        Zero    = 0,                //!< No color mask. Use this to disable rasterizer output.
+        R       = (1 << 0),         //!< Bitmask for the red channel. Value is \c 0x1.
+        G       = (1 << 1),         //!< Bitmask for the green channel. Value is \c 0x2.
+        B       = (1 << 2),         //!< Bitmask for the blue channel. Value is \c 0x4.
+        A       = (1 << 3),         //!< Bitmask for the alpha channel. Value is \c 0x8.
+        All     = (R | G | B | A),  //!< Bitwise OR combination of all color component bitmasks.
+    };
 };
 
 
@@ -612,12 +631,13 @@ struct BlendTargetDescriptor
     BlendArithmetic alphaArithmetic = BlendArithmetic::Add;
 
     /**
-    \brief Specifies which color components are enabled for writing. By default <code>(true, true, true, true)</code>.
+    \brief Specifies which color components are enabled for writing. By default LLGL::ColorMaskFlags::All to enable all components.
     \remarks If no pixel shader is used in the graphics pipeline,
-    the color mask \b must be set to \c false for all components. Otherwise, the behavior is undefined.
+    the color mask \b must be set to LLGL::ColorMaskFlags::Zero (or 0) to disable rasterizer output. Otherwise, the behavior is undefined.
     */
-    ColorRGBAb      colorMask       = { true, true, true, true };
+    std::uint8_t    colorMask       = LLGL::ColorMaskFlags::All;
 };
+
 
 /**
 \brief Blending state descriptor structure.
@@ -667,7 +687,7 @@ struct BlendDescriptor
     \see BlendOp::InvBlendFactor
     \see CommandBuffer::SetBlendFactor
     */
-    ColorRGBAf              blendFactor             = { 0.0f, 0.0f, 0.0f, 0.0f };
+    float                   blendFactor[4]          = { 0.0f, 0.0f, 0.0f, 0.0f };
 
     /**
     \brief Specifies whether the blend factor will be set dynamically with the command buffer. By default false.
@@ -695,7 +715,7 @@ struct BlendDescriptor
 struct TessellationDescriptor
 {
     //! Specifies the partition mode of the tessellator stage. By default TessellationPartition::Undefined.
-    TessellationPartition   partition       = TessellationPartition::Undefined;
+    TessellationPartition   partition           = TessellationPartition::Undefined;
 
     /**
     \brief Specifies the index buffer format. By default
@@ -703,7 +723,7 @@ struct TessellationDescriptor
     \see CommandBuffer::DrawIndexed
     \see CommandBuffer::DrawIndexedInstanced
     */
-    Format                  indexFormat     = Format::Undefined;
+    Format                  indexFormat         = Format::Undefined;
 
     /**
     \brief Specifies the maximum tessellation factor. By default 64.
@@ -740,14 +760,7 @@ struct GraphicsPipelineDescriptor
     If this is null, a default layout will be used that is only compatible with graphics pipelines that have no input and output vertex attributes and no binding points.
     \see RenderSystem::CreatePipelineLayout
     */
-    const PipelineLayout*   pipelineLayout      = nullptr;
-
-    /**
-    \brief Specifies the shader program for the graphics pipeline. By default null.
-    \remarks This must never be null when RenderSystem::CreatePipelineState is called with this structure.
-    \see RenderSystem::CreateShaderProgram
-    */
-    const ShaderProgram*    shaderProgram       = nullptr;
+    const PipelineLayout*   pipelineLayout          = nullptr;
 
     /**
     \brief Specifies an optional render pass. By default null.
@@ -756,13 +769,47 @@ struct GraphicsPipelineDescriptor
     \see CommandBuffer::BeginRenderPass
     \see RenderSystem::CreateRenderPass
     */
-    const RenderPass*       renderPass          = nullptr;
+    const RenderPass*       renderPass              = nullptr;
+
+    /**
+    \brief Specifies the vertex shader.
+    \remarks Each graphics pipeline must have at least a vertex shader. Therefore, this must never be null when a graphics PSO is created.
+    With OpenGL, this shader may also have a stream output.
+    */
+    Shader*                 vertexShader            = nullptr;
+
+    /**
+    \brief Specifies the tessellation-control shader (also referred to as "Hull Shader").
+    \remarks If this is used, the counter part must also be specified, i.e. \c tessEvaluationShader.
+    \see tessEvaluationShader
+    */
+    Shader*                 tessControlShader       = nullptr;
+
+    /**
+    \brief Specifies the tessellation-evaluation shader (also referred to as "Domain Shader").
+    \remarks If this is used, the counter part must also be specified, i.e. \c tessControlShader.
+    \see tessControlShader
+    */
+    Shader*                 tessEvaluationShader    = nullptr;
+
+    /**
+    \brief Specifies an optional geometry shader.
+    \remarks This shader may also have a stream output.
+    */
+    Shader*                 geometryShader          = nullptr;
+
+    /**
+    \brief Specifies an optional fragment shader (also referred to as "Pixel Shader").
+    \remarks If no fragment shader is specified, generated fragments are discarded by the output merger
+    and only the stream-output functionality is used by either the vertex or geometry shader.
+    */
+    Shader*                 fragmentShader          = nullptr;
 
     /**
     \brief Specifies the primitive topology and ordering of the primitive data. By default PrimitiveTopology::TriangleList.
     \see PrimitiveTopology
     */
-    PrimitiveTopology       primitiveTopology   = PrimitiveTopology::TriangleList;
+    PrimitiveTopology       primitiveTopology       = PrimitiveTopology::TriangleList;
 
     /**
     \brief Specifies an optional list of static viewports. If empty, the viewports must be set dynamically with the command buffer.
@@ -811,16 +858,14 @@ struct ComputePipelineDescriptor
     \brief Pointer to an optional pipeline layout for the graphics pipeline.
     \remarks This layout determines at which slots buffer resources can be bound.
     This is ignored by render systems which do not support pipeline layouts.
-    \note Only supported with: Vulkan, Direct3D 12
     */
-    const PipelineLayout* pipelineLayout    = nullptr;
+    const PipelineLayout*   pipelineLayout  = nullptr;
 
     /**
-    \brief Pointer to the shader program for the compute pipeline.
-    \remarks This must never be null when RenderSystem::CreatePipelineState is called with this structure.
-    \see RenderSystem::CreateShaderProgram
+    \brief Specifies the compute shader.
+    \remarks This must never be null when a compute PSO is created.
     */
-    const ShaderProgram*  shaderProgram     = nullptr;
+    Shader*                 computeShader   = nullptr;
 };
 
 

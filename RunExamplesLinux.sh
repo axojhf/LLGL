@@ -1,10 +1,10 @@
 #!/bin/bash
-BUILD_DIR="build/build"
+BUILD_DIR="build_linux/build"
 
 if [ "$#" -eq 1 ]; then
     BUILD_DIR=$1
-elif [ -f "build/build/Example_HelloTriangle" ]; then
-    BUILD_DIR="build/build"
+elif [ -f "build_linux/build/Example_HelloTriangle" ]; then
+    BUILD_DIR="build_linux/build"
 elif [ -f "bin/x64/Linux/Example_HelloTriangle" ]; then
     BUILD_DIR="bin/x64/Linux"
 else
@@ -29,6 +29,7 @@ options=(
 	"Animation"
 	"Stencil Buffer"
 	"Volume Rendering"
+	"Resource Binding"
 )
 select opt in "${options[@]}"
 do
@@ -77,6 +78,9 @@ do
 		;;
 	"${options[14]}")
 		(cd examples/Cpp/VolumeRendering; ../../../$BUILD_DIR/Example_VolumeRendering)
+		;;
+	"${options[15]}")
+		(cd examples/Cpp/ResourceBinding; ../../../$BUILD_DIR/Example_ResourceBinding)
 		;;
 	*)
 		echo "invalid selection";;

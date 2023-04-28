@@ -1,8 +1,8 @@
 /*
  * D3D12StagingBufferPool.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D12_STAGING_BUFFER_POOL_H
@@ -36,7 +36,7 @@ class D3D12StagingBufferPool
         void Reset();
 
         // Writes the specified data to the destination buffer using the staging pool.
-        void WriteStaged(
+        HRESULT WriteStaged(
             D3D12CommandContext&    commandContext,
             D3D12Resource&          dstBuffer,
             UINT64                  dstOffset,
@@ -45,11 +45,21 @@ class D3D12StagingBufferPool
         );
 
         // Writes the specified data to the destination buffer using the global upload buffer.
-        void WriteImmediate(
+        HRESULT WriteImmediate(
             D3D12CommandContext&    commandContext,
             D3D12Resource&          dstBuffer,
             UINT64                  dstOffset,
             const void*             data,
+            UINT64                  dataSize,
+            UINT64                  alignment   = 256u
+        );
+
+        // Copies the specified subresource region into the global readback buffer and writes it into the output data.
+        HRESULT ReadSubresourceRegion(
+            D3D12CommandContext&    commandContext,
+            D3D12Resource&          srcBuffer,
+            UINT64                  srcOffset,
+            void*                   data,
             UINT64                  dataSize,
             UINT64                  alignment   = 256u
         );
@@ -68,7 +78,7 @@ class D3D12StagingBufferPool
         );
 
         D3D12StagingBuffer& GetUploadBufferAndGrow(UINT64 size, UINT64 alignment);
-        //D3D12StagingBuffer& GetReadbackBufferAndGrow(UINT64 size, UINT64 alignment);
+        D3D12StagingBuffer& GetReadbackBufferAndGrow(UINT64 size, UINT64 alignment);
 
     private:
 
@@ -79,7 +89,7 @@ class D3D12StagingBufferPool
         UINT64                          chunkSize_          = 0;
 
         D3D12StagingBuffer              globalUploadBuffer_;
-        //D3D12StagingBuffer              globalReadbackBuffer_;
+        D3D12StagingBuffer              globalReadbackBuffer_;
 
 };
 

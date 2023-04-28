@@ -1,8 +1,8 @@
 /*
  * GLStateManager.cpp
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GLStateManager.h"
@@ -10,18 +10,26 @@
 #include "GLDepthStencilState.h"
 #include "GLRasterizerState.h"
 #include "GLBlendState.h"
+#include "../Shader/GLShaderProgram.h"
 #include "../GLSwapChain.h"
 #include "../Buffer/GLBuffer.h"
 #include "../Texture/GLTexture.h"
 #include "../Texture/GLRenderTarget.h"
-#include "../Texture/GL2XSampler.h"
+#ifdef LLGL_GL_ENABLE_OPENGL2X
+#   include "../Texture/GL2XSampler.h"
+#endif
 #include "../Ext/GLExtensions.h"
 #include "../Ext/GLExtensionRegistry.h"
 #include "../GLTypes.h"
-#include "../../../Core/Helper.h"
+#include "../../../Core/CoreUtils.h"
 #include "../../../Core/Assertion.h"
 #include <LLGL/TypeInfo.h>
+#include <LLGL/Utils/ForRange.h>
 #include <functional>
+
+#ifdef LLGL_OPENGL
+#include "../Shader/GLProgramPipeline.h"
+#endif
 
 
 namespace LLGL
@@ -139,22 +147,6 @@ static void InvalidateBoundGLObject(GLuint& boundId, const GLuint releasedObject
 
 
 /*
- * GLContextState static members
- */
-
-const std::uint32_t         GLContextState::numTextureLayers;
-const std::uint32_t         GLContextState::numImageUnits;
-const std::uint32_t         GLContextState::numCaps;
-const std::uint32_t         GLContextState::numBufferTargets;
-const std::uint32_t         GLContextState::numFboTargets;
-const std::uint32_t         GLContextState::numTextureTargets;
-
-#ifdef LLGL_GL_ENABLE_VENDOR_EXT
-const std::uint32_t         GLContextState::numCapsExt;
-#endif // /LLGL_GL_ENABLE_VENDOR_EXT
-
-
-/*
  * GLStateManager static members
  */
 
@@ -208,7 +200,7 @@ void GLStateManager::NotifyRenderTargetHeight(GLint height)
 void GLStateManager::Reset()
 {
     /* Query all states from OpenGL */
-    for (std::size_t i = 0; i < GLContextState::numCaps; ++i)
+    for_range(i, GLContextState::numCaps)
         contextState_.capabilities[i] = (glIsEnabled(g_stateCapsEnum[i]) != GL_FALSE);
 }
 
@@ -388,7 +380,7 @@ void GLStateManager::SetViewportArray(GLuint first, GLsizei count, const GLViewp
         {
             GLViewport adjustedViewports[LLGL_MAX_NUM_VIEWPORTS_AND_SCISSORS];
 
-            for (GLsizei i = 0; i < count; ++i)
+            for_range(i, count)
                 AdjustViewport(adjustedViewports[i], viewports[i]);
 
             glViewportArrayv(first, count, reinterpret_cast<const GLfloat*>(adjustedViewports));
@@ -463,7 +455,7 @@ void GLStateManager::SetScissorArray(GLuint first, GLsizei count, const GLScisso
         {
             GLScissor adjustedScissors[LLGL_MAX_NUM_VIEWPORTS_AND_SCISSORS];
 
-            for (GLsizei i = 0; i < count; ++i)
+            for_range(i, count)
                 AdjustScissor(adjustedScissors[i], scissors[i]);
 
             glScissorArrayv(first, count, reinterpret_cast<const GLint*>(adjustedScissors));
@@ -487,7 +479,7 @@ void GLStateManager::SetClipControl(GLenum origin, GLenum depth)
     /* Flip viewport if origin is emulated and set to upper-left corner */
     flipViewportYPos_ = !isOriginUpperLeft;
 
-    #ifdef GL_ARB_clip_control
+    #ifdef LLGL_GLEXT_CLIP_CONTROL
     if (HasExtension(GLExt::ARB_clip_control))
     {
         /* Use GL extension to transform clipping space */
@@ -499,7 +491,11 @@ void GLStateManager::SetClipControl(GLenum origin, GLenum depth)
     {
         /* Emulate clipping space modification; this has to be addressed by transforming gl_Position in each vertex shader */
         emulateOriginUpperLeft_ = isOriginUpperLeft;
+        #ifdef LLGL_GLEXT_CLIP_CONTROL
         emulateDepthModeZeroToOne_ = (depth == GL_ZERO_TO_ONE);
+        #else
+        emulateDepthModeZeroToOne_ = true;
+        #endif
 
         /* Flip front-facing when emulating upper-left origin */
         FlipFrontFacing(isOriginUpperLeft);
@@ -732,7 +728,7 @@ void GLStateManager::BindBlendState(GLBlendState* blendState)
     }
 }
 
-void GLStateManager::SetBlendColor(const GLfloat* color)
+void GLStateManager::SetBlendColor(const GLfloat color[4])
 {
     if ( color[0] != contextState_.blendColor[0] ||
          color[1] != contextState_.blendColor[1] ||
@@ -807,7 +803,7 @@ void GLStateManager::BindBuffersBase(GLBufferTarget target, GLuint first, GLsize
         /* Bind each individual buffer, and store last bound buffer */
         contextState_.boundBuffers[targetIdx] = buffers[count - 1];
 
-        for (GLsizei i = 0; i < count; ++i)
+        for_range(i, count)
             glBindBufferBase(targetGL, first + i, buffers[i]);
     }
 }
@@ -845,13 +841,13 @@ void GLStateManager::BindBuffersRange(GLBufferTarget target, GLuint first, GLsiz
         #ifdef GL_NV_transform_feedback
         if (HasExtension(GLExt::NV_transform_feedback))
         {
-            for (GLsizei i = 0; i < count; ++i)
+            for_range(i, count)
                 glBindBufferRangeNV(targetGL, first + i, buffers[i], offsets[i], sizes[i]);
         }
         else
         #endif // /GL_NV_transform_feedback
         {
-            for (GLsizei i = 0; i < count; ++i)
+            for_range(i, count)
                 glBindBufferRange(targetGL, first + i, buffers[i], offsets[i], sizes[i]);
         }
     }
@@ -1026,7 +1022,7 @@ void GLStateManager::NotifyBufferRelease(const GLBuffer& buffer)
 void GLStateManager::DisableVertexAttribArrays(GLuint firstIndex)
 {
     /* Disable remaining vertex-attrib-arrays */
-    for (GLuint i = firstIndex; i < lastVertexAttribArray_; ++i)
+    for_subrange(i, firstIndex, lastVertexAttribArray_)
         glDisableVertexAttribArray(i);
 
     /* Store new highest vertex-attrib-array index */
@@ -1110,16 +1106,16 @@ void GLStateManager::BindRenderbuffer(GLuint renderbuffer)
 
 void GLStateManager::PushBoundRenderbuffer()
 {
-    renderbufferState_.push({ contextState_.boundRenderbuffer });
+    renderbufferStack_.push({ contextState_.boundRenderbuffer });
 }
 
 void GLStateManager::PopBoundRenderbuffer()
 {
-    const auto& state = renderbufferState_.top();
+    const auto& state = renderbufferStack_.top();
     {
         BindRenderbuffer(state.renderbuffer);
     }
-    renderbufferState_.pop();
+    renderbufferStack_.pop();
 }
 
 void GLStateManager::DeleteRenderbuffer(GLuint renderbuffer)
@@ -1183,7 +1179,7 @@ void GLStateManager::BindTextures(GLuint first, GLsizei count, const GLTextureTa
     if (HasExtension(GLExt::ARB_multi_bind))
     {
         /* Store bound textures */
-        for (GLsizei i = 0; i < count; ++i)
+        for_range(i, count)
         {
             auto targetIdx = static_cast<std::size_t>(targets[i]);
             contextState_.textureLayers[i + first].boundTextures[targetIdx] = textures[i];
@@ -1200,7 +1196,7 @@ void GLStateManager::BindTextures(GLuint first, GLsizei count, const GLTextureTa
     #endif
     {
         /* Bind each texture layer individually */
-        for (GLsizei i = 0; i < count; ++i)
+        for_range(i, count)
         {
             ActiveTexture(first + i);
             BindTexture(targets[i], textures[i]);
@@ -1214,7 +1210,7 @@ void GLStateManager::UnbindTextures(GLuint first, GLsizei count)
     if (HasExtension(GLExt::ARB_multi_bind))
     {
         /* Reset bound textures */
-        for (GLsizei i = 0; i < count; ++i)
+        for_range(i, count)
         {
             auto& boundTextures = contextState_.textureLayers[i].boundTextures;
             ::memset(boundTextures, 0, sizeof(boundTextures));
@@ -1231,10 +1227,10 @@ void GLStateManager::UnbindTextures(GLuint first, GLsizei count)
     #endif // /GL_ARB_multi_bind
     {
         /* Unbind all targets for each texture layer individually */
-        for (GLsizei i = 0; i < count; ++i)
+        for_range(i, count)
         {
             ActiveTexture(first + i);
-            for (std::size_t target = 0; target < GLContextState::numTextureTargets; ++target)
+            for_range(target, GLContextState::numTextureTargets)
                 BindTexture(static_cast<GLTextureTarget>(target), 0);
         }
     }
@@ -1274,7 +1270,7 @@ void GLStateManager::BindImageTextures(GLuint first, GLsizei count, const GLenum
     #endif // /GL_ARB_multi_bind
     {
         /* Bind image units individually */
-        for (GLsizei i = 0; i < count; ++i)
+        for_range(i, count)
             BindImageTexture(first + static_cast<GLuint>(i), 0, formats[i], textures[i]);
     }
 }
@@ -1291,7 +1287,7 @@ void GLStateManager::UnbindImageTextures(GLuint first, GLsizei count)
     #endif // /GL_ARB_multi_bind
     {
         /* Unbind all image units individually */
-        for (GLsizei i = 0; i < count; ++i)
+        for_range(i, count)
             BindImageTexture(first + static_cast<GLuint>(i), 0, 0, 0);
     }
 }
@@ -1372,7 +1368,7 @@ void GLStateManager::BindSamplers(GLuint first, GLsizei count, const GLuint* sam
     if (count >= 2 && HasExtension(GLExt::ARB_multi_bind))
     {
         /* Store bound samplers */
-        for (GLsizei i = 0; i < count; ++i)
+        for_range(i, count)
             contextState_.boundSamplers[i + first] = samplers[i];
 
         /* Bind all samplers at once */
@@ -1382,7 +1378,7 @@ void GLStateManager::BindSamplers(GLuint first, GLsizei count, const GLuint* sam
     #endif
     {
         /* Bind each sampler individually */
-        for (GLsizei i = 0; i < count; ++i)
+        for_range(i, count)
             BindSampler(first + static_cast<GLuint>(i), samplers[i]);
     }
 }
@@ -1398,9 +1394,10 @@ void GLStateManager::NotifySamplerRelease(GLuint sampler)
         InvalidateBoundGLObject(boundSampler, sampler);
 }
 
+#ifdef LLGL_GL_ENABLE_OPENGL2X
+
 void GLStateManager::BindGL2XSampler(GLuint layer, const GL2XSampler& sampler)
 {
-    #ifdef LLGL_GL_ENABLE_OPENGL2X
     #ifdef LLGL_DEBUG
     LLGL_ASSERT_UPPER_BOUND(layer, GLContextState::numTextureLayers);
     #endif
@@ -1410,10 +1407,31 @@ void GLStateManager::BindGL2XSampler(GLuint layer, const GL2XSampler& sampler)
         if (auto texture = boundGLTextures_[layer])
             texture->BindTexParameters(sampler);
     }
-    #endif
 }
 
-/* ----- Shader binding ----- */
+void GLStateManager::BindCombinedGL2XSampler(GLuint layer, const GL2XSampler& sampler, GLTexture& texture)
+{
+    #ifdef LLGL_DEBUG
+    LLGL_ASSERT_UPPER_BOUND(layer, GLContextState::numTextureLayers);
+    #endif
+
+    /* Activate specified texture layer */
+    ActiveTexture(layer);
+
+    /* Keep reference to GLTexture for emulated sampler binding */
+    boundGLTextures_[layer] = &texture;
+    boundGL2XSamplers_[layer] = &sampler;
+
+    /* Update texture parameterf if sampler has changed */
+    texture.BindTexParameters(sampler);
+
+    /* Bind native texture */
+    BindTexture(GLStateManager::GetTextureTarget(texture.GetType()), texture.GetID());
+}
+
+#endif // /LLGL_GL_ENABLE_OPENGL2X
+
+/* ----- Shader program ----- */
 
 void GLStateManager::BindShaderProgram(GLuint program)
 {
@@ -1424,14 +1442,55 @@ void GLStateManager::BindShaderProgram(GLuint program)
     }
 }
 
-void GLStateManager::NotifyShaderProgramRelease(GLuint program)
+void GLStateManager::PushBoundShaderProgram()
 {
-    InvalidateBoundGLObject(contextState_.boundProgram, program);
+    shaderProgramStack_.push({ contextState_.boundProgram });
+}
+
+void GLStateManager::PopBoundShaderProgram()
+{
+    const auto& state = shaderProgramStack_.top();
+    {
+        BindShaderProgram(state.program);
+    }
+    shaderProgramStack_.pop();
+}
+
+void GLStateManager::NotifyShaderProgramRelease(GLShaderProgram* shaderProgram)
+{
+    if (shaderProgram != nullptr)
+        InvalidateBoundGLObject(contextState_.boundProgram, shaderProgram->GetID());
 }
 
 GLuint GLStateManager::GetBoundShaderProgram() const
 {
     return contextState_.boundProgram;
+}
+
+/* ----- Program pipeline ----- */
+
+void GLStateManager::BindProgramPipeline(GLuint pipeline)
+{
+    #ifdef LLGL_OPENGL
+    if (contextState_.boundProgramPipeline != pipeline)
+    {
+        contextState_.boundProgramPipeline = pipeline;
+        glBindProgramPipeline(pipeline);
+    }
+    #endif
+}
+
+void GLStateManager::NotifyProgramPipelineRelease(GLProgramPipeline* programPipeline)
+{
+    #ifdef LLGL_OPENGL
+    if (programPipeline != nullptr)
+        InvalidateBoundGLObject(contextState_.boundProgramPipeline, programPipeline->GetID());
+    #endif
+}
+
+GLuint GLStateManager::GetBoundProgramPipeline() const
+{
+    return contextState_.boundProgramPipeline;
 }
 
 /* ----- Render pass ----- */
@@ -1496,7 +1555,7 @@ void GLStateManager::ClearBuffers(std::uint32_t numAttachments, const Attachment
             glClearBufferfv(
                 GL_COLOR,
                 static_cast<GLint>(attachments->colorAttachment),
-                attachments->clearValue.color.Ptr()
+                attachments->clearValue.color
             );
         }
         else if ((attachments->flags & ClearFlags::DepthStencil) == ClearFlags::DepthStencil)
@@ -1640,7 +1699,7 @@ void GLStateManager::DetermineLimits()
     /* Get maximum number of texture layers */
     GLint maxTextureImageUnits = 0;
     glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &maxTextureImageUnits);
-    limits_.maxTextureLayers = std::min(GLContextState::numTextureLayers, static_cast<GLuint>(maxTextureImageUnits));
+    limits_.maxTextureLayers = std::min(static_cast<GLuint>(GLContextState::numTextureLayers), static_cast<GLuint>(maxTextureImageUnits));
 
     /* Get maximum number of image units */
     #ifdef GL_ARB_shader_image_load_store
@@ -1648,7 +1707,7 @@ void GLStateManager::DetermineLimits()
     {
         GLint maxImageUnits = 0;
         glGetIntegerv(GL_MAX_IMAGE_UNITS, &maxImageUnits);
-        limits_.maxImageUnits = std::min(GLContextState::numImageUnits, static_cast<GLuint>(maxImageUnits));
+        limits_.maxImageUnits = std::min(static_cast<GLuint>(GLContextState::numImageUnits), static_cast<GLuint>(maxImageUnits));
     }
     #endif // /GL_ARB_shader_image_load_store
 
@@ -1763,15 +1822,15 @@ void GLStateManager::ClearAttachmentsWithRenderPass(
     std::uint32_t       numClearValues,
     const ClearValue*   clearValues)
 {
-    const GLClearValue defaultClearValue;
+    const ClearValue defaultClearValue;
     auto mask = renderPassGL.GetClearMask();
 
     GLIntermediateBufferWriteMasks intermediateMasks;
 
     /* Clear color attachments */
-    std::uint32_t idx = 0;
+    std::uint32_t clearValueIndex = 0;
     if ((mask & GL_COLOR_BUFFER_BIT) != 0)
-        ClearColorBuffers(renderPassGL.GetClearColorAttachments(), numClearValues, clearValues, idx, defaultClearValue, intermediateMasks);
+        clearValueIndex = ClearColorBuffers(renderPassGL.GetClearColorAttachments(), numClearValues, clearValues, defaultClearValue, intermediateMasks);
 
     /* Clear depth-stencil attachment */
     switch (mask & (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT))
@@ -1783,8 +1842,8 @@ void GLStateManager::ClearAttachmentsWithRenderPass(
             PrepareStencilMaskForClear(intermediateMasks);
 
             /* Clear depth and stencil buffer simultaneously */
-            if (idx < numClearValues)
-                glClearBufferfi(GL_DEPTH_STENCIL, 0, clearValues[idx].depth, static_cast<GLint>(clearValues[idx].stencil));
+            if (clearValueIndex < numClearValues)
+                glClearBufferfi(GL_DEPTH_STENCIL, 0, clearValues[clearValueIndex].depth, static_cast<GLint>(clearValues[clearValueIndex].stencil));
             else
                 glClearBufferfi(GL_DEPTH_STENCIL, 0, defaultClearValue.depth, defaultClearValue.stencil);
         }
@@ -1796,8 +1855,8 @@ void GLStateManager::ClearAttachmentsWithRenderPass(
             PrepareDepthMaskForClear(intermediateMasks);
 
             /* Clear only depth buffer */
-            if (idx < numClearValues)
-                glClearBufferfv(GL_DEPTH, 0, &(clearValues[idx].depth));
+            if (clearValueIndex < numClearValues)
+                glClearBufferfv(GL_DEPTH, 0, &(clearValues[clearValueIndex].depth));
             else
                 glClearBufferfv(GL_DEPTH, 0, &(defaultClearValue.depth));
         }
@@ -1809,13 +1868,16 @@ void GLStateManager::ClearAttachmentsWithRenderPass(
             PrepareStencilMaskForClear(intermediateMasks);
 
             /* Clear only stencil buffer */
-            if (idx < numClearValues)
+            if (clearValueIndex < numClearValues)
             {
-                GLint stencil = static_cast<GLint>(clearValues[idx].stencil);
+                const GLint stencil = static_cast<GLint>(clearValues[clearValueIndex].stencil);
                 glClearBufferiv(GL_STENCIL, 0, &stencil);
             }
             else
-                glClearBufferiv(GL_STENCIL, 0, &(defaultClearValue.stencil));
+            {
+                const GLint stencil = static_cast<GLint>(defaultClearValue.stencil);
+                glClearBufferiv(GL_STENCIL, 0, &stencil);
+            }
         }
         break;
     }
@@ -1828,41 +1890,35 @@ std::uint32_t GLStateManager::ClearColorBuffers(
     const std::uint8_t*             colorBuffers,
     std::uint32_t                   numClearValues,
     const ClearValue*               clearValues,
-    std::uint32_t&                  idx,
-    const GLClearValue&             defaultClearValue,
+    const ClearValue&               defaultClearValue,
     GLIntermediateBufferWriteMasks& intermediateMasks)
 {
-    std::uint32_t i = 0, n = 0;
+    std::uint32_t clearValueIndex = 0;
 
     /* Use specified clear values */
-    for (; i < numClearValues; ++i)
+    for_range(i, numClearValues)
     {
         /* Check if attachment list has ended */
-        if (colorBuffers[i] != 0xFF)
-        {
-            PrepareColorMaskForClear(intermediateMasks);
-            glClearBufferfv(GL_COLOR, static_cast<GLint>(colorBuffers[i]), clearValues[idx++].color.Ptr());
-            ++n;
-        }
-        else
-            return n;
+        if (colorBuffers[i] == 0xFF)
+            return clearValueIndex;
+
+        PrepareColorMaskForClear(intermediateMasks);
+        glClearBufferfv(GL_COLOR, static_cast<GLint>(colorBuffers[i]), clearValues[clearValueIndex].color);
+        ++clearValueIndex;
     }
 
     /* Use default clear values */
-    for (; i < LLGL_MAX_NUM_COLOR_ATTACHMENTS; ++i)
+    for_subrange(i, numClearValues, LLGL_MAX_NUM_COLOR_ATTACHMENTS)
     {
         /* Check if attachment list has ended */
-        if (colorBuffers[i] != 0xFF)
-        {
-            PrepareColorMaskForClear(intermediateMasks);
-            glClearBufferfv(GL_COLOR, static_cast<GLint>(colorBuffers[i]), defaultClearValue.color);
-            ++n;
-        }
-        else
-            return n;
+        if (colorBuffers[i] == 0xFF)
+            return clearValueIndex;
+
+        PrepareColorMaskForClear(intermediateMasks);
+        glClearBufferfv(GL_COLOR, static_cast<GLint>(colorBuffers[i]), defaultClearValue.color);
     }
 
-    return n;
+    return clearValueIndex;
 }
 
 

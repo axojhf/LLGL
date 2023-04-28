@@ -1,8 +1,8 @@
 /*
  * GLSampler.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GLSampler.h"
@@ -34,13 +34,13 @@ void GLSampler::SetName(const char* name)
 
 static GLenum GetGLSamplerMinFilter(const SamplerDescriptor& desc)
 {
-    if (desc.mipMapping)
+    if (desc.mipMapEnabled)
         return GLTypes::Map(desc.minFilter, desc.mipMapFilter);
     else
         return GLTypes::Map(desc.minFilter);
 }
 
-void GLSampler::SetDesc(const SamplerDescriptor& desc)
+void GLSampler::SamplerParameters(const SamplerDescriptor& desc)
 {
     /* Set texture coordinate wrap modes */
     glSamplerParameteri(id_, GL_TEXTURE_WRAP_S, GLTypes::Map(desc.addressModeU));
@@ -71,8 +71,8 @@ void GLSampler::SetDesc(const SamplerDescriptor& desc)
         glSamplerParameteri(id_, GL_TEXTURE_COMPARE_MODE, GL_NONE);
 
     /* Set border color */
-    #if defined LLGL_OPENGL || defined GL_ES_VERSION_3_2
-    glSamplerParameterfv(id_, GL_TEXTURE_BORDER_COLOR, desc.borderColor.Ptr());
+    #ifdef LLGL_SAMPLER_BORDER_COLOR
+    glSamplerParameterfv(id_, GL_TEXTURE_BORDER_COLOR, desc.borderColor);
     #endif
 }
 

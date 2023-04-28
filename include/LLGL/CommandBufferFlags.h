@@ -1,15 +1,15 @@
 /*
  * CommandBufferFlags.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_COMMAND_BUFFER_FLAGS_H
 #define LLGL_COMMAND_BUFFER_FLAGS_H
 
 
-#include "ColorRGBA.h"
+#include <cstdint>
 
 
 namespace LLGL
@@ -56,17 +56,6 @@ enum class StencilFace
     \note Only supported with: OpenGL, Vulkan, Metal.
     */
     Back,
-};
-
-/**
-\brief Pipeline binding point enumeration.
-\see CommandBuffer::SetResourceHeap
-*/
-enum class PipelineBindPoint
-{
-    Undefined,  //!< Automatically determine pipeline binding point for a resource heap.
-    Graphics,   //!< Graphics pipeline binding point.
-    Compute,    //!< Compute pipeline binding point.
 };
 
 
@@ -142,10 +131,18 @@ struct ClearValue
     ClearValue& operator = (const ClearValue&) = default;
 
     //! Constructor for color, depth, and stencil values.
-    inline ClearValue(const ColorRGBAf& color, float depth = 1.0f, std::uint32_t stencil = 0) :
-        color   { color   },
-        depth   { depth   },
-        stencil { stencil }
+    inline ClearValue(const float color[4], float depth = 1.0f, std::uint32_t stencil = 0) :
+        color   { color[0], color[1], color[2], color[3] },
+        depth   { depth                                  },
+        stencil { stencil                                }
+    {
+    }
+
+    //! Constructor for color, depth, and stencil values.
+    inline ClearValue(float r, float g, float b, float a, float depth = 1.0f, std::uint32_t stencil = 0) :
+        color   { r, g, b, a },
+        depth   { depth      },
+        stencil { stencil    }
     {
     }
 
@@ -169,13 +166,13 @@ struct ClearValue
     }
 
     //! Specifies the clear value to clear a color attachment. By default (0.0, 0.0, 0.0, 0.0).
-    ColorRGBAf      color   = { 0.0f, 0.0f, 0.0f, 0.0f };
+    float           color[4]    = { 0.0f, 0.0f, 0.0f, 0.0f };
 
     //! Specifies the clear value to clear a depth attachment. By default 1.0.
-    float           depth   = 1.0f;
+    float           depth       = 1.0f;
 
     //! Specifies the clear value to clear a stencil attachment. By default 0.
-    std::uint32_t   stencil = 0;
+    std::uint32_t   stencil     = 0;
 };
 
 /**
@@ -189,33 +186,32 @@ struct AttachmentClear
     AttachmentClear& operator = (const AttachmentClear&) = default;
 
     //! Constructor for a color attachment clear command.
-    inline AttachmentClear(const ColorRGBAf& color, std::uint32_t colorAttachment) :
+    inline AttachmentClear(const float color[4], std::uint32_t colorAttachment) :
         flags           { ClearFlags::Color },
-        colorAttachment { colorAttachment   }
+        colorAttachment { colorAttachment   },
+        clearValue      { color             }
     {
-        clearValue.color = color;
     }
 
     //! Constructor for a depth attachment clear command.
     inline AttachmentClear(float depth) :
-        flags { ClearFlags::Depth }
+        flags      { ClearFlags::Depth },
+        clearValue { depth             }
     {
-        clearValue.depth = depth;
     }
 
     //! Constructor for a stencil attachment clear command.
     inline AttachmentClear(std::uint32_t stencil) :
-        flags { ClearFlags::Stencil }
+        flags      { ClearFlags::Stencil },
+        clearValue { stencil             }
     {
-        clearValue.stencil = stencil;
     }
 
     //! Constructor for a depth-stencil attachment clear command.
     inline AttachmentClear(float depth, std::uint32_t stencil) :
-        flags { ClearFlags::DepthStencil }
+        flags      { ClearFlags::DepthStencil },
+        clearValue { depth, stencil           }
     {
-        clearValue.depth    = depth;
-        clearValue.stencil  = stencil;
     }
 
     /**

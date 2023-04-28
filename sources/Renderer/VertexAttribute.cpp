@@ -1,12 +1,12 @@
 /*
  * VertexAttribute.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <LLGL/VertexAttribute.h>
-#include "../Core/HelperMacros.h"
+#include "../Core/MacroUtils.h"
 
 
 namespace LLGL
@@ -14,7 +14,7 @@ namespace LLGL
 
 
 VertexAttribute::VertexAttribute(
-    const char*         name,
+    const StringView&   name,
     const Format        format,
     std::uint32_t       location,
     std::uint32_t       instanceDivisor,
@@ -29,11 +29,11 @@ VertexAttribute::VertexAttribute(
 }
 
 VertexAttribute::VertexAttribute(
-    const char*     semanticName,
-    std::uint32_t   semanticIndex,
-    const Format    format,
-    std::uint32_t   location,
-    std::uint32_t   instanceDivisor)
+    const StringView&   semanticName,
+    std::uint32_t       semanticIndex,
+    const Format        format,
+    std::uint32_t       location,
+    std::uint32_t       instanceDivisor)
 :
     name            { semanticName    },
     format          { format          },
@@ -44,27 +44,27 @@ VertexAttribute::VertexAttribute(
 }
 
 VertexAttribute::VertexAttribute(
-    const char*     name,
-    const Format    format,
-    std::uint32_t   location,
-    std::uint32_t   offset,
-    std::uint32_t   stride,
-    std::uint32_t   slot,
-    std::uint32_t   instanceDivisor)
+    const StringView&   name,
+    const Format        format,
+    std::uint32_t       location,
+    std::uint32_t       offset,
+    std::uint32_t       stride,
+    std::uint32_t       slot,
+    std::uint32_t       instanceDivisor)
 :
     VertexAttribute { name, 0, format, location, offset, stride, slot, instanceDivisor }
 {
 }
 
 VertexAttribute::VertexAttribute(
-    const char*     semanticName,
-    std::uint32_t   semanticIndex,
-    const Format    format,
-    std::uint32_t   location,
-    std::uint32_t   offset,
-    std::uint32_t   stride,
-    std::uint32_t   slot,
-    std::uint32_t   instanceDivisor)
+    const StringView&   semanticName,
+    std::uint32_t       semanticIndex,
+    const Format        format,
+    std::uint32_t       location,
+    std::uint32_t       offset,
+    std::uint32_t       stride,
+    std::uint32_t       slot,
+    std::uint32_t       instanceDivisor)
 :
     name            { semanticName    },
     format          { format          },

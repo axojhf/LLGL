@@ -1,8 +1,8 @@
 /*
  * Shader.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <LLGL/Shader.h>
@@ -15,26 +15,6 @@ namespace LLGL
 Shader::Shader(const ShaderType type) :
     type_ { type }
 {
-}
-
-long Shader::GetStageFlags() const
-{
-    switch (GetType())
-    {
-        case ShaderType::Undefined:         break;
-        case ShaderType::Vertex:            return StageFlags::VertexStage;
-        case ShaderType::TessControl:       return StageFlags::TessControlStage;
-        case ShaderType::TessEvaluation:    return StageFlags::TessEvaluationStage;
-        case ShaderType::Geometry:          return StageFlags::GeometryStage;
-        case ShaderType::Fragment:          return StageFlags::FragmentStage;
-        case ShaderType::Compute:           return StageFlags::ComputeStage;
-    }
-    return 0;
-}
-
-bool Shader::IsPostTessellationVertex() const
-{
-    return false; // dummy
 }
 
 

@@ -1,13 +1,13 @@
 /*
  * RenderSystemFlags.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <LLGL/RenderSystemFlags.h>
-#include <LLGL/Strings.h>
-#include "../Core/Helper.h"
+#include <LLGL/Utils/TypeNames.h>
+#include "../Core/CoreUtils.h"
 
 
 namespace LLGL
@@ -75,7 +75,6 @@ LLGL_EXPORT bool ValidateRenderingCaps(
             LLGL_CONTINUE_VALIDATION_IF(continueValidation);                \
         }
 
-    LLGL_VALIDATE_FEATURE( hasDirectResourceBinding,     "direct resource binding"    );
     LLGL_VALIDATE_FEATURE( hasRenderTargets,             "render targets"             );
     LLGL_VALIDATE_FEATURE( has3DTextures,                "3D textures"                );
     LLGL_VALIDATE_FEATURE( hasCubeTextures,              "cube textures"              );

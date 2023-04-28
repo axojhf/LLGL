@@ -20,7 +20,7 @@ fi
 ANDROID_ABI=x86_64
 ANDROID_API_LEVEL=21
 SOURCE_DIR="."
-BUILD_DIR="build"
+BUILD_DIR="build_android"
 ANDROID_CMAKE_TOOLCHAIN="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
 
 if [ "$#" -ge 1 ]; then
@@ -64,7 +64,7 @@ cmake "$RELATIVE_SOURCE_DIR" \
     -DLLGL_BUILD_EXAMPLES=ON \
     -DGaussLib_INCLUDE_DIR="/home/lh/Development/Projects/GaussianLib/repo/include" \
     -DLLGL_BUILD_STATIC_LIB=OFF \
-    -DLLGL_ANDROID_PLATFORM=ON \
+    -DLLGL_TARGET_PLATFORM=Android \
     -G "CodeBlocks - Unix Makefiles"
 
 )

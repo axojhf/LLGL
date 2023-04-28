@@ -1,8 +1,8 @@
 /*
  * ExampleBase.h
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_EXAMPLE_BASE_H
@@ -10,7 +10,10 @@
 
 
 #include <LLGL/LLGL.h>
-#include <LLGL/Utility.h>
+#include <LLGL/Utils/Utility.h>
+#include <LLGL/Utils/VertexFormat.h>
+#include <LLGL/Container/Strings.h>
+#include <LLGL/Container/ArrayView.h>
 #include <LLGL/Platform/Platform.h>
 #include <Gauss/Gauss.h>
 #include <iostream>
@@ -20,6 +23,7 @@
 #include <map>
 #include <type_traits>
 #include "GeometryUtility.h"
+#include "Stopwatch.h"
 
 #ifdef LLGL_OS_ANDROID
 #   include <android_native_app_glue.h>
@@ -49,6 +53,17 @@ bool SaveTextureWithRenderer(LLGL::RenderSystem& renderSys, LLGL::Texture& textu
 /*
  * Example base class
  */
+
+// Helper structure for examples to organize shaders for a PSO
+struct ShaderPipeline
+{
+    LLGL::Shader* vs = nullptr; // Vertex shader
+    LLGL::Shader* hs = nullptr; // Hull shader (aka. tessellation control shader)
+    LLGL::Shader* ds = nullptr; // Domain shader (aka. tessellation evaluation shader)
+    LLGL::Shader* gs = nullptr; // Geometry shader
+    LLGL::Shader* ps = nullptr; // Pixel shader (aka. fragment shader)
+    LLGL::Shader* cs = nullptr; // Compute shader
+};
 
 class ExampleBase
 {
@@ -109,14 +124,6 @@ private:
 
     };
 
-    struct ShaderProgramRecall
-    {
-        std::vector<TutorialShaderDescriptor>   shaderDescs;
-        std::vector<LLGL::Shader*>              shaders;
-        LLGL::VertexShaderAttributes            vertexAttribs;
-        LLGL::FragmentShaderAttributes          fragmentAttribs;
-    };
-
 private:
 
     #ifdef LLGL_OS_ANDROID
@@ -125,9 +132,6 @@ private:
 
     std::unique_ptr<LLGL::RenderingProfiler>    profilerObj_;
     std::unique_ptr<LLGL::RenderingDebugger>    debuggerObj_;
-
-    std::map< LLGL::ShaderProgram*,
-              ShaderProgramRecall >             shaderPrograms_;
 
     bool                                        loadingDone_        = false;
 
@@ -140,25 +144,25 @@ protected:
     friend class ResizeEventHandler;
 
     // Default background color for all tutorials
-    const LLGL::ColorRGBAf                      backgroundColor = { 0.1f, 0.1f, 0.4f };
+    const float                                 backgroundColor[4]  = { 0.1f, 0.1f, 0.4f };
 
     // Render system
-    std::unique_ptr<LLGL::RenderSystem>         renderer;
+    LLGL::RenderSystemPtr                       renderer;
 
     // Main swap-chain
-    LLGL::SwapChain*                            swapChain       = nullptr;
+    LLGL::SwapChain*                            swapChain           = nullptr;
 
     // Main command buffer
-    LLGL::CommandBuffer*                        commands        = nullptr;
+    LLGL::CommandBuffer*                        commands            = nullptr;
 
     // Command queue
-    LLGL::CommandQueue*                         commandQueue    = nullptr;
+    LLGL::CommandQueue*                         commandQueue        = nullptr;
 
     // User input event listener
     LLGL::Input                                 input;
 
     // Primary timer object
-    std::unique_ptr<LLGL::Timer>                timer;
+    Stopwatch                                   timer;
 
     // Rendering profiler (read only)
     const LLGL::RenderingProfiler&              profiler;
@@ -169,7 +173,7 @@ protected:
 protected:
 
     ExampleBase(
-        const std::wstring&     title,
+        const LLGL::UTF8String& title,
         const LLGL::Extent2D&   resolution  = { 800, 600 },
         std::uint32_t           samples     = 8,
         bool                    vsync       = true,
@@ -184,41 +188,65 @@ protected:
 
 private:
 
-    // Internal function to load a shader program
-    LLGL::ShaderProgram* LoadShaderProgramInternal(
-        const std::vector<TutorialShaderDescriptor>&    shaderDescs,
-        const std::vector<LLGL::VertexFormat>&          vertexFormats,
-        const LLGL::VertexFormat&                       streamOutputFormat,
-        const std::vector<LLGL::FragmentAttribute>&     fragmentAttribs,
-        const LLGL::ShaderMacro*                        defines,
-        bool                                            patchClippingOrigin
+    // Internal function to load a shader.
+    LLGL::Shader* LoadShaderInternal(
+        const TutorialShaderDescriptor&             shaderDesc,
+        const LLGL::ArrayView<LLGL::VertexFormat>&  vertexFormats,
+        const LLGL::VertexFormat&                   streamOutputFormat,
+        const std::vector<LLGL::FragmentAttribute>& fragmentAttribs,
+        const LLGL::ShaderMacro*                    defines,
+        bool                                        patchClippingOrigin
     );
 
 protected:
 
-    // Creats a shader program and loads all specified shaders from file.
-    LLGL::ShaderProgram* LoadShaderProgram(
-        const std::vector<TutorialShaderDescriptor>&    shaderDescs,
-        const std::vector<LLGL::VertexFormat>&          vertexFormats       = {},
-        const LLGL::VertexFormat&                       streamOutputFormat  = {},
-        const std::vector<LLGL::FragmentAttribute>&     fragmentAttribs     = {},
-        const LLGL::ShaderMacro*                        defines             = nullptr
+    // Loads a shader from file with optional vertex formats and stream-output format.
+    LLGL::Shader* LoadShader(
+        const TutorialShaderDescriptor&             shaderDesc,
+        const LLGL::ArrayView<LLGL::VertexFormat>&  vertexFormats       = {},
+        const LLGL::VertexFormat&                   streamOutputFormat  = {},
+        const LLGL::ShaderMacro*                    defines             = nullptr
     );
 
-    // Creats a shader program, loads all specified shaders from file, and adds 'ShaderCompileFlags::PatchClippingOrigin' to the compile flags.
-    LLGL::ShaderProgram* LoadShaderProgramAndPatchClippingOrigin(
-        const std::vector<TutorialShaderDescriptor>&    shaderDescs,
-        const std::vector<LLGL::VertexFormat>&          vertexFormats       = {},
-        const LLGL::VertexFormat&                       streamOutputFormat  = {},
-        const std::vector<LLGL::FragmentAttribute>&     fragmentAttribs     = {},
-        const LLGL::ShaderMacro*                        defines             = nullptr
+    // Loads a shader from file with fragment attributes.
+    LLGL::Shader* LoadShader(
+        const TutorialShaderDescriptor&             shaderDesc,
+        const std::vector<LLGL::FragmentAttribute>& fragmentAttribs,
+        const LLGL::ShaderMacro*                    defines             = nullptr
     );
 
-    // Reloads the specified shader program from the previously specified shader source files.
-    bool ReloadShaderProgram(LLGL::ShaderProgram*& shaderProgram);
+    // Load a shader from file and adds 'PatchClippingOrigin' to the compile flags if the screen origin is lower-left; see IsScreenOriginLowerLeft().
+    LLGL::Shader* LoadShaderAndPatchClippingOrigin(
+        const TutorialShaderDescriptor&             shaderDesc,
+        const LLGL::ArrayView<LLGL::VertexFormat>&  vertexFormats       = {},
+        const LLGL::VertexFormat&                   streamOutputFormat  = {},
+        const LLGL::ShaderMacro*                    defines             = nullptr
+    );
 
-    // Load standard shader program (with vertex- and fragment shaders).
-    LLGL::ShaderProgram* LoadStandardShaderProgram(const std::vector<LLGL::VertexFormat>& vertexFormats);
+    // Loads a vertex shader with standard filename convention.
+    LLGL::Shader* LoadStandardVertexShader(
+        const char*                                 entryPoint      = "VS",
+        const LLGL::ArrayView<LLGL::VertexFormat>&  vertexFormats   = {},
+        const LLGL::ShaderMacro*                    defines         = nullptr);
+
+    // Loads a fragment shader with standard filename convention.
+    LLGL::Shader* LoadStandardFragmentShader(
+        const char*                                 entryPoint      = "PS",
+        const std::vector<LLGL::FragmentAttribute>& fragmentAttribs = {},
+        const LLGL::ShaderMacro*                    defines         = nullptr
+    );
+
+    // Loads a compute shader with standard filename convention.
+    LLGL::Shader* LoadStandardComputeShader(
+        const char*                 entryPoint  = "CS",
+        const LLGL::ShaderMacro*    defines     = nullptr
+    );
+
+    // Loads a shader pipeline with vertex and fragment shaders and with standard filename convention.
+    ShaderPipeline LoadStandardShaderPipeline(const std::vector<LLGL::VertexFormat>& vertexFormats);
+
+    // Throws an exception if the specified PSO creation failed.
+    void ThrowIfFailed(LLGL::PipelineState* pso);
 
     // Load image from file, create texture, upload image into texture, and generate MIP-maps.
     LLGL::Texture* LoadTexture(
@@ -273,21 +301,33 @@ protected:
 
 protected:
 
-    template <typename VertexType>
-    LLGL::Buffer* CreateVertexBuffer(const std::vector<VertexType>& vertices, const LLGL::VertexFormat& vertexFormat)
+    template <typename Container>
+    std::size_t GetArraySize(const Container& container) const
+    {
+        return (container.size() * sizeof(typename Container::value_type));
+    }
+
+    template <typename T, std::size_t N>
+    std::size_t GetArraySize(const T (&container)[N]) const
+    {
+        return (N * sizeof(T));
+    }
+
+    template <typename Container>
+    LLGL::Buffer* CreateVertexBuffer(const Container& vertices, const LLGL::VertexFormat& vertexFormat)
     {
         return renderer->CreateBuffer(
-            LLGL::VertexBufferDesc(static_cast<std::uint32_t>(vertices.size() * sizeof(VertexType)), vertexFormat),
-            vertices.data()
+            LLGL::VertexBufferDesc(GetArraySize(vertices), vertexFormat),
+            &vertices[0]
         );
     }
 
-    template <typename IndexType>
-    LLGL::Buffer* CreateIndexBuffer(const std::vector<IndexType>& indices, const LLGL::Format format)
+    template <typename Container>
+    LLGL::Buffer* CreateIndexBuffer(const Container& indices, const LLGL::Format format)
     {
         return renderer->CreateBuffer(
-            LLGL::IndexBufferDesc(static_cast<std::uint32_t>(indices.size() * sizeof(IndexType)), format),
-            indices.data()
+            LLGL::IndexBufferDesc(GetArraySize(indices), format),
+            &indices[0]
         );
     }
 

@@ -1,13 +1,17 @@
 /*
  * RenderSystem.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "../Platform/Module.h"
-#include "../Core/Helper.h"
+#include "../Core/CoreUtils.h"
+#include "../Core/StringUtils.h"
+#include "../Core/Assertion.h"
+#include "RenderTargetUtils.h"
 #include <LLGL/Platform/Platform.h>
+#include <LLGL/Utils/ForRange.h>
 #include <LLGL/Format.h>
 #include <LLGL/ImageFlags.h>
 #include <LLGL/StaticLimits.h>
@@ -15,7 +19,8 @@
 #include "BuildID.h"
 
 #include <LLGL/RenderSystem.h>
-#include <array>
+#include <inttypes.h>
+#include <string>
 #include <map>
 
 #ifdef LLGL_ENABLE_DEBUG_LAYER
@@ -36,7 +41,25 @@ namespace LLGL
 
 /* ----- Render system ----- */
 
+struct RenderSystem::Pimpl
+{
+    int                     rendererID = 0;
+    std::string             name;
+    RendererInfo            info;
+    RenderingCapabilities   caps;
+};
+
 static std::map<RenderSystem*, std::unique_ptr<Module>> g_renderSystemModules;
+
+RenderSystem::RenderSystem() :
+    pimpl_ { new Pimpl{} }
+{
+}
+
+RenderSystem::~RenderSystem()
+{
+    delete pimpl_;
+}
 
 #ifdef LLGL_BUILD_STATIC_LIB
 
@@ -50,8 +73,10 @@ std::vector<std::string> RenderSystem::FindModules()
 std::vector<std::string> RenderSystem::FindModules()
 {
     /* Iterate over all known modules and return those that are available on the current platform */
-    static const char* knownModules[] =
+    constexpr const char* knownModules[] =
     {
+        "Null",
+
         #if defined(LLGL_OS_IOS) || defined(LLGL_OS_ANDROID)
         "OpenGLES3",
         #else
@@ -106,7 +131,7 @@ static int LoadRenderSystemRendererID(Module& module, const RenderSystemDescript
     return RendererID::Undefined;
 }
 
-static std::string LoadRenderSystemName(Module& module, const RenderSystemDescriptor& renderSystemDesc)
+static const char* LoadRenderSystemName(Module& module, const RenderSystemDescriptor& renderSystemDesc)
 {
     /* Load "LLGL_RenderSystem_Name" procedure */
     LLGL_PROC_INTERFACE(const char*, PFN_RENDERSYSTEM_NAME, (const void*));
@@ -120,23 +145,29 @@ static std::string LoadRenderSystemName(Module& module, const RenderSystemDescri
 static RenderSystem* LoadRenderSystem(Module& module, const std::string& moduleFilename, const RenderSystemDescriptor& renderSystemDesc)
 {
     /* Load "LLGL_RenderSystem_Alloc" procedure */
-    LLGL_PROC_INTERFACE(void*, PFN_RENDERSYSTEM_ALLOC, (const void*));
+    LLGL_PROC_INTERFACE(void*, PFN_RENDERSYSTEM_ALLOC, (const void*, int));
 
     auto RenderSystem_Alloc = reinterpret_cast<PFN_RENDERSYSTEM_ALLOC>(module.LoadProcedure("LLGL_RenderSystem_Alloc"));
     if (!RenderSystem_Alloc)
-        throw std::runtime_error("failed to load <LLGL_RenderSystem_Alloc> procedure from module: " + moduleFilename);
+        throw std::runtime_error("failed to load 'LLGL_RenderSystem_Alloc' procedure from module: " + moduleFilename);
 
     /* Allocate render system */
-    auto renderSystem = reinterpret_cast<RenderSystem*>(RenderSystem_Alloc(&renderSystemDesc));
+    auto renderSystem = reinterpret_cast<RenderSystem*>(RenderSystem_Alloc(&renderSystemDesc, static_cast<int>(sizeof(RenderSystemDescriptor))));
     if (!renderSystem)
         throw std::runtime_error("failed to allocate render system from module: " + moduleFilename);
 
     return renderSystem;
 }
 
+static RenderSystemDeleter::RenderSystemDeleterFuncPtr LoadRenderSystemDeleter(Module& module)
+{
+    /* Load "LLGL_RenderSystem_Free" procedure */
+    return reinterpret_cast<RenderSystemDeleter::RenderSystemDeleterFuncPtr>(module.LoadProcedure("LLGL_RenderSystem_Free"));
+}
+
 #endif // /LLGL_BUILD_STATIC_LIB
 
-std::unique_ptr<RenderSystem> RenderSystem::Load(
+RenderSystemPtr RenderSystem::Load(
     const RenderSystemDescriptor&   renderSystemDesc,
     RenderingProfiler*              profiler,
     RenderingDebugger*              debugger)
@@ -151,16 +182,17 @@ std::unique_ptr<RenderSystem> RenderSystem::Load(
     #ifdef LLGL_BUILD_STATIC_LIB
 
     /* Allocate render system */
-    auto renderSystem = std::unique_ptr<RenderSystem>(
+    auto renderSystem = RenderSystemPtr
+    {
         reinterpret_cast<RenderSystem*>(StaticModule::AllocRenderSystem(renderSystemDesc))
-    );
+    };
 
     if (profiler != nullptr || debugger != nullptr)
     {
         #ifdef LLGL_ENABLE_DEBUG_LAYER
 
         /* Create debug layer render system */
-        renderSystem = MakeUnique<DbgRenderSystem>(std::move(renderSystem), profiler, debugger);
+        renderSystem = RenderSystemPtr{ new DbgRenderSystem(std::move(renderSystem), profiler, debugger) };
 
         #else
 
@@ -169,8 +201,8 @@ std::unique_ptr<RenderSystem> RenderSystem::Load(
         #endif // /LLGL_ENABLE_DEBUG_LAYER
     }
 
-    renderSystem->name_         = StaticModule::GetRendererName(renderSystemDesc.moduleName);
-    renderSystem->rendererID_   = StaticModule::GetRendererID(renderSystemDesc.moduleName);
+    renderSystem->pimpl_->name          = StaticModule::GetRendererName(renderSystemDesc.moduleName);
+    renderSystem->pimpl_->rendererID    = StaticModule::GetRendererID(renderSystemDesc.moduleName);
 
     /* Return new render system and unique pointer */
     return renderSystem;
@@ -191,14 +223,18 @@ std::unique_ptr<RenderSystem> RenderSystem::Load(
     try
     {
         /* Allocate render system */
-        auto renderSystem = std::unique_ptr<RenderSystem>(LoadRenderSystem(*module, moduleFilename, renderSystemDesc));
+        auto renderSystem = RenderSystemPtr
+        {
+            LoadRenderSystem(*module, moduleFilename, renderSystemDesc),
+            RenderSystemDeleter{ LoadRenderSystemDeleter(*module) }
+        };
 
         if (profiler != nullptr || debugger != nullptr)
         {
             #ifdef LLGL_ENABLE_DEBUG_LAYER
 
             /* Create debug layer render system */
-            renderSystem = MakeUnique<DbgRenderSystem>(std::move(renderSystem), profiler, debugger);
+            renderSystem = RenderSystemPtr{ new DbgRenderSystem(std::move(renderSystem), profiler, debugger) };
 
             #else
 
@@ -207,8 +243,8 @@ std::unique_ptr<RenderSystem> RenderSystem::Load(
             #endif // /LLGL_ENABLE_DEBUG_LAYER
         }
 
-        renderSystem->name_         = LoadRenderSystemName(*module,renderSystemDesc);
-        renderSystem->rendererID_   = LoadRenderSystemRendererID(*module,renderSystemDesc);
+        renderSystem->pimpl_->name          = LoadRenderSystemName(*module,renderSystemDesc);
+        renderSystem->pimpl_->rendererID    = LoadRenderSystemRendererID(*module,renderSystemDesc);
 
         /* Store new module inside internal map */
         g_renderSystemModules[renderSystem.get()] = std::move(module);
@@ -225,19 +261,35 @@ std::unique_ptr<RenderSystem> RenderSystem::Load(
     #endif // /LLGL_BUILD_STATIC_LIB
 }
 
-void RenderSystem::Unload(std::unique_ptr<RenderSystem>&& renderSystem)
+void RenderSystem::Unload(RenderSystemPtr&& renderSystem)
 {
     auto it = g_renderSystemModules.find(renderSystem.get());
     if (it != g_renderSystemModules.end())
     {
-        renderSystem.release();
+        /* Delete render system first, then release module */
+        renderSystem.reset();
         g_renderSystemModules.erase(it);
     }
 }
 
-void RenderSystem::SetConfiguration(const RenderSystemConfiguration& config)
+int RenderSystem::GetRendererID() const
 {
-    config_ = config;
+    return pimpl_->rendererID;
+}
+
+const char* RenderSystem::GetName() const
+{
+    return pimpl_->name.c_str();
+}
+
+const RendererInfo& RenderSystem::GetRendererInfo() const
+{
+    return pimpl_->info;
+}
+
+const RenderingCapabilities& RenderSystem::GetRenderingCaps() const
+{
+    return pimpl_->caps;
 }
 
 
@@ -247,24 +299,20 @@ void RenderSystem::SetConfiguration(const RenderSystemConfiguration& config)
 
 void RenderSystem::SetRendererInfo(const RendererInfo& info)
 {
-    info_ = info;
+    pimpl_->info = info;
 }
 
 void RenderSystem::SetRenderingCaps(const RenderingCapabilities& caps)
 {
-    caps_ = caps;
+    pimpl_->caps = caps;
 }
 
-void RenderSystem::AssertCreateBuffer(const BufferDescriptor& desc, std::uint64_t maxSize)
+void RenderSystem::AssertCreateBuffer(const BufferDescriptor& bufferDesc, std::uint64_t maxSize)
 {
-    /* Validate size */
-    if (desc.size > maxSize)
-    {
-        throw std::runtime_error(
-            "cannot create buffer with size of " + std::to_string(desc.size) +
-            " byte(s) while limit is " + std::to_string(maxSize)
-        );
-    }
+    LLGL_ASSERT(
+        (bufferDesc.size <= maxSize),
+        "buffer descriptor with size of 0x%016" PRIX64 " exceeded limit of 0x%016" PRIX64, bufferDesc.size, maxSize
+    );
 
     /* Validate binding flags */
     const long validBindFlags =
@@ -280,31 +328,23 @@ void RenderSystem::AssertCreateBuffer(const BufferDescriptor& desc, std::uint64_
         BindFlags::CopyDst
     );
 
-    if ((desc.bindFlags & (~validBindFlags)) != 0)
-    {
-        throw std::invalid_argument(
-            "cannot create buffer with invalid binding flags: "
-            "0x" + ToHex(static_cast<std::uint32_t>(desc.bindFlags))
-        );
-    }
+    LLGL_ASSERT(
+        ((bufferDesc.bindFlags & (~validBindFlags)) == 0),
+        "buffer descriptor with invalid binding flags 0x%08X", bufferDesc.bindFlags
+    );
 }
 
-static void AssertCreateResourceArrayCommon(std::uint32_t numResources, void* const * resourceArray, const std::string& resourceName)
+static void AssertCreateResourceArrayCommon(std::uint32_t numResources, void* const * resourceArray, const char* resourceName)
 {
     /* Validate number of buffers */
-    if (numResources == 0)
-        throw std::invalid_argument("cannot create " + resourceName + " array with zero " + resourceName + "s");
+    LLGL_ASSERT(!(numResources == 0), "cannot create %s array with zero elements", resourceName);
 
     /* Validate array pointer */
-    if (resourceArray == nullptr)
-        throw std::invalid_argument("cannot create " + resourceName + " array with invalid array pointer");
+    LLGL_ASSERT(!(resourceArray == nullptr), "cannot create %s array with null pointer for array", resourceName);
 
     /* Validate pointers in array */
-    for (std::uint32_t i = 0; i < numResources; ++i)
-    {
-        if (resourceArray[i] == nullptr)
-            throw std::invalid_argument("cannot create " + resourceName + " array with invalid pointer in array");
-    }
+    for_range(i, numResources)
+        LLGL_ASSERT(!(resourceArray[i] == nullptr), "cannot create %s array with null pointer for array element [%u]", resourceName, i);
 }
 
 void RenderSystem::AssertCreateBufferArray(std::uint32_t numBuffers, Buffer* const * bufferArray)
@@ -313,118 +353,74 @@ void RenderSystem::AssertCreateBufferArray(std::uint32_t numBuffers, Buffer* con
     AssertCreateResourceArrayCommon(numBuffers, reinterpret_cast<void* const*>(bufferArray), "buffer");
 }
 
-void RenderSystem::AssertCreateShader(const ShaderDescriptor& desc)
+void RenderSystem::AssertCreateShader(const ShaderDescriptor& shaderDesc)
 {
-    if (desc.source == nullptr)
-        throw std::invalid_argument("cannot create shader with <source> being a null pointer");
-    if (desc.sourceType == ShaderSourceType::BinaryBuffer && desc.sourceSize == 0)
-        throw std::invalid_argument("cannot create shader from binary buffer with <sourceSize> being zero");
-}
-
-static void AssertShaderType(Shader* shader, const char* shaderName, const ShaderType type, const char* typeName)
-{
-    if (shader != nullptr)
-    {
-        if (shader->GetType() != type)
-        {
-            throw std::invalid_argument(
-                "cannot create shader program with '" + std::string(shaderName) +
-                "' not being of type <LLGL::ShaderType::" + std::string(typeName) + ">"
-            );
-        }
-    }
-}
-
-void RenderSystem::AssertCreateShaderProgram(const ShaderProgramDescriptor& desc)
-{
-    AssertShaderType(desc.vertexShader,         "vertexShader",         ShaderType::Vertex,         "Vertex"        );
-    AssertShaderType(desc.tessControlShader,    "tessControlShader",    ShaderType::TessControl,    "TessControl"   );
-    AssertShaderType(desc.tessEvaluationShader, "tessEvaluationShader", ShaderType::TessEvaluation, "TessEvaluation");
-    AssertShaderType(desc.geometryShader,       "geometryShader",       ShaderType::Geometry,       "Geometry"      );
-    AssertShaderType(desc.fragmentShader,       "fragmentShader",       ShaderType::Fragment,       "Fragment"      );
-    AssertShaderType(desc.computeShader,        "computeShader",        ShaderType::Compute,        "Compute"       );
-
-    if (desc.computeShader != nullptr)
-    {
-        if ( desc.vertexShader         != nullptr ||
-             desc.tessControlShader    != nullptr ||
-             desc.tessEvaluationShader != nullptr ||
-             desc.geometryShader       != nullptr ||
-             desc.fragmentShader       != nullptr )
-        {
-            throw std::invalid_argument(
-                "cannot create shader program with 'computeShader' in conjunction with any other shader"
-            );
-        }
-    }
-    else
-    {
-        if (desc.vertexShader == nullptr)
-            throw std::invalid_argument("cannot create shader program without vertex shader");
-
-        if ( ( desc.tessControlShader != nullptr && desc.tessEvaluationShader == nullptr ) ||
-             ( desc.tessControlShader == nullptr && desc.tessEvaluationShader != nullptr ) )
-        {
-            throw std::invalid_argument(
-                "cannot create shader program with 'tessControlShader' and 'tessEvaluationShader' being partially specified"
-            );
-        }
-    }
-}
-
-[[noreturn]]
-static void ErrTooManyColorAttachments(const char* contextInfo)
-{
-    throw std::invalid_argument(
-        "too many color attachments for " + std::string(contextInfo) +
-        " (exceeded limits of " + std::to_string(LLGL_MAX_NUM_COLOR_ATTACHMENTS) + ")"
+    LLGL_ASSERT(
+        !(shaderDesc.source == nullptr),
+        "cannot create shader with <source> being a null pointer"
+    );
+    LLGL_ASSERT(
+        !(shaderDesc.sourceType == ShaderSourceType::BinaryBuffer && shaderDesc.sourceSize == 0),
+        "cannot create shader from binary buffer with <sourceSize> being zero"
     );
 }
 
-void RenderSystem::AssertCreateRenderTarget(const RenderTargetDescriptor& desc)
+// Returns the number of color attachments in the specified render target descriptor
+static std::size_t CountColorAttachments(const RenderTargetDescriptor& renderTargetDesc)
 {
-    if (desc.attachments.size() == LLGL_MAX_NUM_COLOR_ATTACHMENTS + 1)
+    std::size_t n = 0;
+    for (const auto& attachment : renderTargetDesc.attachments)
+    {
+        if (IsColorFormat(GetAttachmentFormat(attachment)))
+            ++n;
+    }
+    return n;
+}
+
+// Returns the number of depth-stencil attachments in the specified render target descriptor
+static std::size_t CountDepthStencilAttachments(const RenderTargetDescriptor& renderTargetDesc)
+{
+    std::size_t n = 0;
+    for (const auto& attachment : renderTargetDesc.attachments)
+    {
+        if (IsDepthOrStencilFormat(GetAttachmentFormat(attachment)))
+            ++n;
+    }
+    return n;
+}
+
+void RenderSystem::AssertCreateRenderTarget(const RenderTargetDescriptor& renderTargetDesc)
+{
+    if (renderTargetDesc.attachments.size() > LLGL_MAX_NUM_COLOR_ATTACHMENTS)
     {
         /* Check if there is one depth-stencil attachment */
-        for (const auto& attachment : desc.attachments)
-        {
-            if (attachment.type != AttachmentType::Color)
-                return;
-        }
-        ErrTooManyColorAttachments("render target");
+        const auto numColorAttachments = CountColorAttachments(renderTargetDesc);
+        LLGL_ASSERT(
+            !(numColorAttachments > LLGL_MAX_NUM_COLOR_ATTACHMENTS),
+            "render target descriptor with %zu color attachments exceeded limit of %u", numColorAttachments, LLGL_MAX_NUM_COLOR_ATTACHMENTS
+        );
     }
-    else if (desc.attachments.size() > LLGL_MAX_NUM_COLOR_ATTACHMENTS + 1)
-        ErrTooManyColorAttachments("render target");
-}
-
-void RenderSystem::AssertCreateRenderPass(const RenderPassDescriptor& desc)
-{
-    if (desc.colorAttachments.size() > LLGL_MAX_NUM_COLOR_ATTACHMENTS)
-        ErrTooManyColorAttachments("render pass");
-}
-
-void RenderSystem::AssertImageDataSize(std::size_t dataSize, std::size_t requiredDataSize, const char* info)
-{
-    if (dataSize < requiredDataSize)
+    else if (renderTargetDesc.attachments.size() > 1)
     {
-        std::string s;
-
-        /* Build error message */
-        s += "image data size is too small";
-        if (info)
-        {
-            s += " for ";
-            s += info;
-        }
-
-        s += " (";
-        s += std::to_string(requiredDataSize);
-        s += " byte(s) are required, but only ";
-        s += std::to_string(dataSize);
-        s += " is specified)";
-
-        throw std::invalid_argument(s);
+        /* Check there are not more than one depth-stencil attachment */
+        const auto numDepthStencilAttachments = CountDepthStencilAttachments(renderTargetDesc);
+        LLGL_ASSERT(
+            !(numDepthStencilAttachments > 1),
+            "render target descriptor with %zu depth-stencil attachments exceeded limit of 1", numDepthStencilAttachments
+        );
     }
+}
+
+void RenderSystem::AssertImageDataSize(std::size_t dataSize, std::size_t requiredDataSize, const char* useCase)
+{
+    LLGL_ASSERT(
+        !(dataSize < requiredDataSize),
+        "image data size is too small%s%s; %zu byte(s) are required, but only %zu is specified",
+        (useCase != nullptr && *useCase != '\0' ? " for" : ""),
+        (useCase != nullptr && *useCase != '\0' ? useCase : ""),
+        requiredDataSize,
+        dataSize
+    );
 }
 
 static void CopyRowAlignedData(void* dstData, const void* srcData, std::size_t dstSize, std::size_t dstStride, std::size_t srcStride)
@@ -470,8 +466,16 @@ void RenderSystem::CopyTextureImageData(
 
         /* Convert mapped data into requested format */
         auto tempData = ConvertImageBuffer(
-            SrcImageDescriptor{ srcTexFormat.format, srcTexFormat.dataType, data, srcImageSize },
-            dstImageDesc.format, dstImageDesc.dataType, GetConfiguration().threadCount
+            SrcImageDescriptor
+            {
+                srcTexFormat.format,
+                srcTexFormat.dataType,
+                data,
+                srcImageSize
+            },
+            dstImageDesc.format,
+            dstImageDesc.dataType,
+            Constants::maxThreadCount
         );
 
         /* Copy temporary data into output buffer */

@@ -1,12 +1,12 @@
 /*
  * Test_Performance.cpp
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <LLGL/LLGL.h>
-#include <LLGL/Image.h>
+#include <LLGL/Utils/Image.h>
 #include <vector>
 #include <functional>
 #include <iostream>
@@ -59,15 +59,15 @@ class PerformanceTest
 
     private:
 
-        std::unique_ptr<LLGL::RenderSystem> renderer;
-        LLGL::SwapChain*                    swapChain       = nullptr;
-        LLGL::CommandQueue*                 commandQueue    = nullptr;
-        LLGL::CommandBuffer*                commands        = nullptr;
+        LLGL::RenderSystemPtr       renderer;
+        LLGL::SwapChain*            swapChain       = nullptr;
+        LLGL::CommandQueue*         commandQueue    = nullptr;
+        LLGL::CommandBuffer*        commands        = nullptr;
 
-        LLGL::QueryHeap*                    timerQuery      = nullptr;
-        std::vector<LLGL::Texture*>         textures;
+        LLGL::QueryHeap*            timerQuery      = nullptr;
+        std::vector<LLGL::Texture*> textures;
 
-        TestConfig                          config;
+        TestConfig                  config;
 
     private:
 

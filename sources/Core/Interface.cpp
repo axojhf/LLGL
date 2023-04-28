@@ -1,16 +1,15 @@
 /*
  * Interface.cpp
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <LLGL/Interface.h>
 #include <LLGL/RenderSystem.h>
 #include <LLGL/Window.h>
 #include <LLGL/Canvas.h>
-#include <LLGL/Input.h>
-#include <LLGL/Timer.h>
+#include <LLGL/Utils/Input.h>
 #include <LLGL/Display.h>
 
 
@@ -38,7 +37,6 @@ LLGL_IMPLEMENT_INTERFACE( Window::EventListener,    Interface         )
 LLGL_IMPLEMENT_INTERFACE( Input,                    Interface         )
 LLGL_IMPLEMENT_INTERFACE( Canvas,                   Surface           )
 LLGL_IMPLEMENT_INTERFACE( Canvas::EventListener,    Interface         )
-LLGL_IMPLEMENT_INTERFACE( Timer,                    Interface         )
 LLGL_IMPLEMENT_INTERFACE( Display,                  Interface         )
 LLGL_IMPLEMENT_INTERFACE( ResourceHeap,             RenderSystemChild )
 LLGL_IMPLEMENT_INTERFACE( Resource,                 RenderSystemChild )
@@ -53,8 +51,8 @@ LLGL_IMPLEMENT_INTERFACE( PipelineState,            RenderSystemChild )
 LLGL_IMPLEMENT_INTERFACE( QueryHeap,                RenderSystemChild )
 LLGL_IMPLEMENT_INTERFACE( RenderTarget,             RenderSystemChild )
 LLGL_IMPLEMENT_INTERFACE( RenderPass,               RenderSystemChild )
+LLGL_IMPLEMENT_INTERFACE( Report,                   Interface         )
 LLGL_IMPLEMENT_INTERFACE( Shader,                   RenderSystemChild )
-LLGL_IMPLEMENT_INTERFACE( ShaderProgram,            RenderSystemChild )
 LLGL_IMPLEMENT_INTERFACE( SwapChain,                RenderTarget      )
 
 

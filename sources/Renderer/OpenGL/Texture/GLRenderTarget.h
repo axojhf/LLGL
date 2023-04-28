@@ -1,8 +1,8 @@
 /*
  * GLRenderTarget.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_GL_RENDER_TARGET_H
@@ -60,21 +60,21 @@ class GLRenderTarget final : public RenderTarget
         void CreateFramebufferWithAttachments(const RenderTargetDescriptor& desc);
         void CreateFramebufferWithNoAttachments(const RenderTargetDescriptor& desc);
 
-        void AttachAllTextures(const std::vector<AttachmentDescriptor>& attachmentDescs, GLenum* internalFormats);
+        void AttachAllTextures(const std::vector<AttachmentDescriptor>& attachmentDescs, GLenum* outInternalFormats);
         void AttachAllDepthStencilBuffers(const std::vector<AttachmentDescriptor>& attachmentDescs);
 
         void AttachDepthBuffer();
         void AttachStencilBuffer();
         void AttachDepthStencilBuffer();
-        void AttachTexture(Texture& texture, const AttachmentDescriptor& attachmentDesc, GLenum& internalFormat);
+        void AttachTexture(Texture& texture, const AttachmentDescriptor& attachmentDesc, GLenum& outInternalFormat);
 
         void InitRenderbufferStorage(GLRenderbuffer& renderbuffer, GLenum internalFormat);
 
         void CreateAndAttachRenderbuffer(GLenum internalFormat, GLenum attachment);
 
-        GLenum MakeFramebufferAttachment(const AttachmentType type);
+        GLenum MakeFramebufferAttachment(const Format format);
         GLenum MakeFramebufferColorAttachment();
-        GLenum MakeFramebufferDepthStencilAttachment(bool depth, bool stencil);
+        GLenum MakeFramebufferDepthStencilAttachment(const Format format);
 
         void CreateRenderbuffersMS(const GLenum* internalFormats);
         void CreateRenderbufferMS(GLenum attachment, GLenum internalFormat);

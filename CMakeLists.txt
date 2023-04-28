@@ -2,6 +2,50 @@
 # === CMake lists for the LLGL - (09/07/2015) ===
 
 cmake_minimum_required(VERSION 3.7)
+
+# === Target platforms ===
+
+if("${CMAKE_GENERATOR_PLATFORM}" STREQUAL "x64")
+    set(LLGL_BUILD_64BIT ON)
+else()
+    set(LLGL_BUILD_64BIT OFF)
+endif()
+
+if(NOT DEFINED LLGL_TARGET_PLATFORM)
+    if("${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
+        set(LLGL_TARGET_PLATFORM "Android")
+    elseif(WIN32)
+        if(LLGL_BUILD_64BIT)
+            set(LLGL_TARGET_PLATFORM "Win64")
+        else()
+            set(LLGL_TARGET_PLATFORM "Win32")
+        endif()
+    elseif(APPLE)
+        if("${CMAKE_SYSTEM_NAME}" STREQUAL "iOS")
+            set(LLGL_TARGET_PLATFORM "iOS")
+        else()
+            set(LLGL_TARGET_PLATFORM "macOS")
+        endif()
+    elseif(UNIX)
+        set(LLGL_TARGET_PLATFORM "Linux")
+    endif()
+endif()
+
+set(LLGL_IOS_PLATFORM OFF)
+set(LLGL_ANDROID_PLATFORM OFF)
+
+if(${LLGL_TARGET_PLATFORM} STREQUAL "iOS")
+    set(LLGL_IOS_PLATFORM ON)
+elseif(${LLGL_TARGET_PLATFORM} STREQUAL "Android")
+    if(NOT DEFINED ENV{ANDROID_NDK_HOME})
+        message(FATAL_ERROR "Cannot build for Android platform: Missing environment variable 'ANDROID_NDK_HOME'")
+    endif()
+    set(LLGL_ANDROID_PLATFORM ON)
+endif()
+
+
+# === Project ===
+
 project(LLGL)
 
 set(CMAKE_CXX_STANDARD 11)
@@ -19,7 +63,7 @@ set(EXAMPLE_PROJECTS_DIR "${PROJECT_SOURCE_DIR}/examples/Cpp")
 
 # === Preprocessor definitions ===
 
-if(DEFINED LLGL_IOS_PLATFORM OR DEFINED LLGL_ANDROID_PLATFORM)
+if(LLGL_IOS_PLATFORM OR LLGL_ANDROID_PLATFORM)
     set(LLGL_MOBILE_PLATFORM ON)
 else()
     set(LLGL_MOBILE_PLATFORM OFF)
@@ -89,7 +133,6 @@ endif()
 
 # === Initialize summary variables ===
 
-set(SUMMARY_TARGET_PLATFORM "Unknown")
 set(SUMMARY_LIBRARY_TYPE "Unknown")
 set(SUMMARY_TARGET_ARCH "Unknown")
 
@@ -115,6 +158,8 @@ option(LLGL_ENABLE_UTILITY "Enable utility functions (LLGL/Utility.h)" ON)
 option(LLGL_ENABLE_SPIRV_REFLECT "Enable shader reflection of SPIR-V modules (requires the SPIRV submodule)" OFF)
 option(LLGL_ENABLE_JIT_COMPILER "Enable Just-in-Time (JIT) compilation for emulated deferred command buffers (experimental)" OFF)
 
+option(LLGL_PREFER_STL_CONTAINERS "Prefers C++ STL containers over custom containers, e.g. std::vector over SmallVector<T>" OFF)
+
 option(LLGL_GL_ENABLE_EXT_PLACEHOLDERS "Enable OpenGL extension placeholders" ON)
 option(LLGL_GL_ENABLE_VENDOR_EXT "Enable vendor specific OpenGL extensions (e.g. GL_NV_..., GL_AMD_... etc.)" ON)
 option(LLGL_GL_ENABLE_DSA_EXT "Enable OpenGL direct state access (DSA) extension if available" ON)
@@ -124,6 +169,12 @@ option(LLGL_GL_INCLUDE_EXTERNAL "Include additional OpenGL header files from 'ex
 option(LLGL_BUILD_STATIC_LIB "Build LLGL as static lib (Only allows a single render system!)" OFF)
 option(LLGL_BUILD_TESTS "Include test projects" OFF)
 option(LLGL_BUILD_EXAMPLES "Include example projects" OFF)
+
+option(LLGL_BUILD_RENDERER_NULL "Include Null renderer project" ON)
+
+if(APPLE)
+    option(LLGL_MACOS_ENABLE_COREVIDEO "Enable CoreVideo framework (for refresh rate of built-in displays)" ON)
+endif()
 
 if(LLGL_MOBILE_PLATFORM)
     option(LLGL_BUILD_RENDERER_OPENGLES3 "Include OpenGLES 3 renderer project" ON)
@@ -185,6 +236,10 @@ if(LLGL_BUILD_STATIC_LIB)
     ADD_DEFINE(LLGL_BUILD_STATIC_LIB)
 endif()
 
+if(LLGL_PREFER_STL_CONTAINERS)
+    ADD_DEFINE(LLGL_PREFER_STL_CONTAINERS)
+endif()
+
 if(WIN32)
     if(${LLGL_D3D11_ENABLE_FEATURELEVEL} STREQUAL "Direct3D 11.3")
         ADD_DEFINE(LLGL_D3D11_ENABLE_FEATURELEVEL=3)
@@ -201,6 +256,10 @@ if(APPLE AND LLGL_BUILD_RENDERER_OPENGL)
     ADD_DEFINE(GL_SILENCE_DEPRECATION)
 endif()
 
+if(LLGL_MACOS_ENABLE_COREVIDEO)
+    ADD_DEFINE(LLGL_MACOS_ENABLE_COREVIDEO)
+endif()
+
 if(LLGL_MOBILE_PLATFORM)
     set(ARCH_ARM64 ON)
     set(SUMMARY_TARGET_ARCH "ARM64")
@@ -215,8 +274,12 @@ endif()
 
 # === Global files ===
 
+set(FilesMsvcNatvis ${PROJECT_SOURCE_DIR}/LLGL.natvis)
+
 # Common files
 file(GLOB FilesInclude                      ${PROJECT_INCLUDE_DIR}/LLGL/*.*)
+file(GLOB FilesIncludeContainer             ${PROJECT_INCLUDE_DIR}/LLGL/Container/*.*)
+file(GLOB FilesIncludeUtils                 ${PROJECT_INCLUDE_DIR}/LLGL/Utils/*.*)
 file(GLOB FilesIncludePlatformBase          ${PROJECT_INCLUDE_DIR}/LLGL/Platform/*.*)
 file(GLOB FilesCore                         ${PROJECT_SOURCE_DIR}/sources/Core/*.*)
 file(GLOB FilesPlatformBase                 ${PROJECT_SOURCE_DIR}/sources/Platform/*.*)
@@ -240,6 +303,10 @@ endif()
 
 if(LLGL_ENABLE_DEBUG_LAYER)
     file(GLOB FilesRendererDbg              ${PROJECT_SOURCE_DIR}/sources/Renderer/DebugLayer/*.*)
+    file(GLOB FilesRendererDbgBuffer        ${PROJECT_SOURCE_DIR}/sources/Renderer/DebugLayer/Buffer/*.*)
+    file(GLOB FilesRendererDbgRenderState   ${PROJECT_SOURCE_DIR}/sources/Renderer/DebugLayer/RenderState/*.*)
+    file(GLOB FilesRendererDbgShader        ${PROJECT_SOURCE_DIR}/sources/Renderer/DebugLayer/Shader/*.*)
+    file(GLOB FilesRendererDbgTexture       ${PROJECT_SOURCE_DIR}/sources/Renderer/DebugLayer/Texture/*.*)
 endif()
 
 if(WIN32)
@@ -258,6 +325,14 @@ elseif(UNIX)
     endif()
 endif()
 
+# Null renderer files
+file(GLOB FilesRendererNull                 ${PROJECT_SOURCE_DIR}/sources/Renderer/Null/*.*)
+file(GLOB FilesRendererNullBuffer           ${PROJECT_SOURCE_DIR}/sources/Renderer/Null/Buffer/*.*)
+file(GLOB FilesRendererNullCommand          ${PROJECT_SOURCE_DIR}/sources/Renderer/Null/Command/*.*)
+file(GLOB FilesRendererNullRenderState      ${PROJECT_SOURCE_DIR}/sources/Renderer/Null/RenderState/*.*)
+file(GLOB FilesRendererNullShader           ${PROJECT_SOURCE_DIR}/sources/Renderer/Null/Shader/*.*)
+file(GLOB FilesRendererNullTexture          ${PROJECT_SOURCE_DIR}/sources/Renderer/Null/Texture/*.*)
+
 # OpenGL renderer files
 file(GLOB FilesRendererGL                   ${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/*.*)
 file(GLOB FilesRendererGLBuffer             ${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/Buffer/*.*)
@@ -270,33 +345,48 @@ file(GLOB FilesRendererGLTexture            ${PROJECT_SOURCE_DIR}/sources/Render
 file(GLOB FilesRendererGLCoreProfile        ${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/GLCoreProfile/*.*)
 file(GLOB FilesRendererGLESProfile          ${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/GLESProfile/*.*)
 
+# Remove selected files if GL2X is disabled
+if(NOT LLGL_GL_ENABLE_OPENGL2X)
+    list(
+        REMOVE_ITEM FilesRendererGLBuffer
+        "${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/Buffer/GL2XVertexArray.cpp"
+        "${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/Buffer/GL2XVertexArray.h"
+    )
+    list(
+        REMOVE_ITEM FilesRendererGLTexture
+        "${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/Texture/GL2XSampler.cpp"
+        "${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/Texture/GL2XSampler.h"
+    )
+endif()
+
+# Remove selected files for GLES3 renderer
+set(FilesRendererGLES3Shader ${FilesRendererGLShader})
+list(
+    REMOVE_ITEM FilesRendererGLES3Shader
+    "${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/Shader/GLSeparableShader.cpp"
+    "${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/Shader/GLSeparableShader.h"
+    "${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/Shader/GLProgramPipeline.cpp"
+    "${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/Shader/GLProgramPipeline.h"
+)
+
 if(WIN32)
     file(GLOB FilesRendererGLPlatform       ${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/Platform/Win32/*.*)
     file(GLOB FilesIncludePlatform          ${PROJECT_INCLUDE_DIR}/LLGL/Platform/Win32/*.*)
-    if(LLGL_BUILD_64BIT)
-        set(SUMMARY_TARGET_PLATFORM "Win64")
-    else()
-        set(SUMMARY_TARGET_PLATFORM "Win32")
-    endif()
 elseif(APPLE)
     if(LLGL_MOBILE_PLATFORM)
         file(GLOB FilesRendererGLPlatform   ${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/Platform/IOS/*.*)
         file(GLOB FilesIncludePlatform      ${PROJECT_INCLUDE_DIR}/LLGL/Platform/IOS/*.*)
-        set(SUMMARY_TARGET_PLATFORM "iOS")
     else()
         file(GLOB FilesRendererGLPlatform   ${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/Platform/MacOS/*.*)
         file(GLOB FilesIncludePlatform      ${PROJECT_INCLUDE_DIR}/LLGL/Platform/MacOS/*.*)
-        set(SUMMARY_TARGET_PLATFORM "macOS")
     endif()
 elseif(UNIX)
     if(LLGL_ANDROID_PLATFORM)
         file(GLOB FilesRendererGLPlatform   ${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/Platform/Android/*.*)
         file(GLOB FilesIncludePlatform      ${PROJECT_INCLUDE_DIR}/LLGL/Platform/Android/*.*)
-        set(SUMMARY_TARGET_PLATFORM "Android")
     else()
         file(GLOB FilesRendererGLPlatform   ${PROJECT_SOURCE_DIR}/sources/Renderer/OpenGL/Platform/Linux/*.*)
         file(GLOB FilesIncludePlatform      ${PROJECT_INCLUDE_DIR}/LLGL/Platform/Linux/*.*)
-        set(SUMMARY_TARGET_PLATFORM "Linux")
     endif()
 endif()
 
@@ -364,19 +454,21 @@ set(FilesTest_D3D12 ${TestProjectsPath}/Test_D3D12.cpp)
 set(FilesTest_Vulkan ${TestProjectsPath}/Test_Vulkan.cpp)
 set(FilesTest_Metal ${TestProjectsPath}/Test_Metal.cpp)
 set(FilesTest_Compute ${TestProjectsPath}/Test_Compute.cpp)
+set(FilesTest_Container ${TestProjectsPath}/Test_Container.cpp)
 set(FilesTest_Performance ${TestProjectsPath}/Test_Performance.cpp)
 set(FilesTest_Display ${TestProjectsPath}/Test_Display.cpp)
 set(FilesTest_Image ${TestProjectsPath}/Test_Image.cpp)
 set(FilesTest_BlendStates ${TestProjectsPath}/Test_BlendStates.cpp)
 set(FilesTest_JIT ${TestProjectsPath}/Test_JIT.cpp)
 set(FilesTest_ShaderReflect ${TestProjectsPath}/Test_ShaderReflect.cpp)
+set(FilesTest_SeparateShaders ${TestProjectsPath}/Test_SeparateShaders.cpp)
 set(FilesTest_iOS ${TestProjectsPath}/Test_iOS.mm)
 
 # Example project files
 file(GLOB FilesExampleBase ${EXAMPLE_PROJECTS_DIR}/ExampleBase/*.*)
 
 if(LLGL_ANDROID_PLATFORM)
-    set(ANDROID_APP_GLUE_DIR "${ANDROID_NDK}/sources/android/native_app_glue")
+    set(ANDROID_APP_GLUE_DIR "$ENV{ANDROID_NDK_HOME}/sources/android/native_app_glue")
     set(FilesAndroidNativeAppGlue "${ANDROID_APP_GLUE_DIR}/android_native_app_glue.c" "${ANDROID_APP_GLUE_DIR}/android_native_app_glue.h")
 endif()
 
@@ -406,14 +498,19 @@ set(FilesExample_StencilBuffer ${EXAMPLE_PROJECTS_DIR}/StencilBuffer/Example.cpp
 set(FilesExample_Animation ${EXAMPLE_PROJECTS_DIR}/Animation/Example.cpp)
 set(FilesExample_VolumeRendering ${EXAMPLE_PROJECTS_DIR}/VolumeRendering/Example.cpp)
 set(FilesExample_PrimitiveRestart ${EXAMPLE_PROJECTS_DIR}/PrimitiveRestart/Example.cpp)
+set(FilesExample_ResourceBinding ${EXAMPLE_PROJECTS_DIR}/ResourceBinding/Example.cpp)
 
 # Mobile example project files
-set(FilesExample_HelloAndroid ${EXAMPLE_PROJECTS_DIR}/HelloAndroid/Example.cpp)
+set(FilesExample_HelloAndroid ${EXAMPLE_PROJECTS_DIR}/HelloAndroid/cpp/Example.cpp)
 
 
 # === Source group folders ===
 
+source_group("NatVis" FILES ${FilesMsvcNatvis})
+
 source_group("Include" FILES ${FilesInclude})
+source_group("Include\\Container" FILES ${FilesIncludeContainer})
+source_group("Include\\Utils" FILES ${FilesIncludeUtils})
 source_group("Sources\\Core" FILES ${FilesCore})
 
 if(LLGL_ENABLE_JIT_COMPILER)
@@ -428,7 +525,18 @@ source_group("Sources\\Renderer" FILES ${FilesRenderer})
 
 if(LLGL_ENABLE_DEBUG_LAYER)
     source_group("Sources\\Renderer\\DebugLayer" FILES ${FilesRendererDbg})
+    source_group("Sources\\Renderer\\DebugLayer\\Buffer" FILES ${FilesRendererDbgBuffer})
+    source_group("Sources\\Renderer\\DebugLayer\\RenderState" FILES ${FilesRendererDbgRenderState})
+    source_group("Sources\\Renderer\\DebugLayer\\Shader" FILES ${FilesRendererDbgShader})
+    source_group("Sources\\Renderer\\DebugLayer\\Texture" FILES ${FilesRendererDbgTexture})
 endif()
+
+source_group("Sources\\Null" FILES ${FilesRendererNull})
+source_group("Sources\\Null\\Buffer" FILES ${FilesRendererNullBuffer})
+source_group("Sources\\Null\\Command" FILES ${FilesRendererNullCommand})
+source_group("Sources\\Null\\RenderState" FILES ${FilesRendererNullRenderState})
+source_group("Sources\\Null\\Shader" FILES ${FilesRendererNullShader})
+source_group("Sources\\Null\\Texture" FILES ${FilesRendererNullTexture})
 
 source_group("Sources\\OpenGL" FILES ${FilesRendererGL})
 source_group("Sources\\OpenGL\\Buffer" FILES ${FilesRendererGLBuffer})
@@ -498,6 +606,8 @@ endif()
 set(
     FilesLLGL
     ${FilesInclude}
+    ${FilesIncludeContainer}
+    ${FilesIncludeUtils}
     ${FilesIncludePlatformBase}
     ${FilesIncludePlatform}
     ${FilesCore}
@@ -505,6 +615,10 @@ set(
     ${FilesPlatform}
     ${FilesRenderer}
 )
+
+if(MSVC)
+    set(FilesLLGL ${FilesLLGL} ${FilesMsvcNatvis})
+endif()
 
 if(LLGL_ENABLE_JIT_COMPILER)
     set(
@@ -517,8 +631,26 @@ if(LLGL_ENABLE_JIT_COMPILER)
 endif()
 
 if(LLGL_ENABLE_DEBUG_LAYER)
-    set(FilesLLGL ${FilesLLGL} ${FilesRendererDbg})
+    set(
+        FilesLLGL
+        ${FilesLLGL}
+        ${FilesRendererDbg}
+        ${FilesRendererDbgBuffer}
+        ${FilesRendererDbgRenderState}
+        ${FilesRendererDbgShader}
+        ${FilesRendererDbgTexture}
+    )
 endif()
+
+set(
+    FilesNull
+    ${FilesRendererNull}
+    ${FilesRendererNullBuffer}
+    ${FilesRendererNullCommand}
+    ${FilesRendererNullRenderState}
+    ${FilesRendererNullShader}
+    ${FilesRendererNullTexture}
+)
 
 set(
     FilesGL
@@ -543,7 +675,7 @@ set(
     ${FilesRendererGLPlatform}
     ${FilesRendererGLPlatformBase}
     ${FilesRendererGLRenderState}
-    ${FilesRendererGLShader}
+    ${FilesRendererGLES3Shader}
     ${FilesRendererGLTexture}
     ${FilesRendererGLESProfile}
 )
@@ -604,8 +736,12 @@ else()
     set(SUMMARY_LIBRARY_TYPE "Shared")
     add_library(LLGL SHARED ${FilesLLGL})
 endif()
+set(LLGL_ALL_TARGETS LLGL)
 
-target_include_directories(LLGL PUBLIC ${PROJECT_INCLUDE_DIR})
+include(GNUInstallDirs)
+target_include_directories(LLGL INTERFACE
+                           $<BUILD_INTERFACE:${PROJECT_INCLUDE_DIR}>
+                           $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 if(LLGL_ANDROID_PLATFORM)
     target_link_libraries(LLGL android log)
@@ -613,7 +749,10 @@ elseif(LLGL_IOS_PLATFORM)
     target_link_libraries(LLGL PUBLIC "-framework Foundation -framework UIKit")
 elseif(APPLE)
     find_library(COCOA_LIBRARY Cocoa)
-    target_link_libraries(LLGL ${COCOA_LIBRARY} "-framework CoreVideo")
+    target_link_libraries(LLGL ${COCOA_LIBRARY})
+    if(LLGL_MACOS_ENABLE_COREVIDEO)
+        target_link_libraries(LLGL "-framework CoreVideo")
+    endif()
 elseif(UNIX)
     target_link_libraries(LLGL X11 pthread Xrandr)
 endif()
@@ -621,6 +760,23 @@ endif()
 set_target_properties(LLGL PROPERTIES LINKER_LANGUAGE CXX DEBUG_POSTFIX "D")
 
 set(LLGL_DEPENDENCIES LLGL)
+
+if(LLGL_BUILD_RENDERER_NULL)
+    # Null Renderer
+    if(LLGL_BUILD_STATIC_LIB)
+        add_library(LLGL_Null STATIC ${FilesNull})
+        set(LLGL_DEPENDENCIES ${LLGL_DEPENDENCIES} LLGL_Null)
+    else()
+        add_library(LLGL_Null SHARED ${FilesNull})
+    endif()
+    
+    set_target_properties(LLGL_Null PROPERTIES LINKER_LANGUAGE CXX DEBUG_POSTFIX "D")
+    target_link_libraries(LLGL_Null LLGL ${OPENGL_LIBRARIES})
+    
+    ADD_DEFINE(LLGL_BUILD_RENDERER_NULL)
+
+    list(APPEND LLGL_ALL_TARGETS LLGL_Null)
+endif()
 
 if(LLGL_BUILD_RENDERER_OPENGLES3)
     # OpenGLES Renderer
@@ -645,6 +801,8 @@ if(LLGL_BUILD_RENDERER_OPENGLES3)
         
         ADD_DEFINE(LLGL_BUILD_RENDERER_OPENGLES3)
         ADD_PROJECT_DEFINE(LLGL_OpenGLES3 LLGL_OPENGLES3)
+
+        list(APPEND LLGL_ALL_TARGETS LLGL_OpenGLES3)
     else()
         message("Missing OpenGLES -> LLGL_OpenGLES3 renderer will be excluded from project")
     endif()
@@ -673,6 +831,8 @@ if(LLGL_BUILD_RENDERER_OPENGL)
         
         ADD_DEFINE(LLGL_BUILD_RENDERER_OPENGL)
         ADD_PROJECT_DEFINE(LLGL_OpenGL LLGL_OPENGL)
+
+        list(APPEND LLGL_ALL_TARGETS LLGL_OpenGL)
     else()
         message("Missing OpenGL -> LLGL_OpenGL renderer will be excluded from project")
     endif()
@@ -695,6 +855,8 @@ if(NOT APPLE AND LLGL_BUILD_RENDERER_VULKAN)
         target_link_libraries(LLGL_Vulkan LLGL ${Vulkan_LIBRARY})
         
         ADD_DEFINE(LLGL_BUILD_RENDERER_VULKAN)
+        
+        list(APPEND LLGL_ALL_TARGETS LLGL_Vulkan)
     else()
         message("Missing Vulkan -> LLGL_Vulkan renderer will be excluded from project")
     endif()
@@ -726,6 +888,8 @@ if(APPLE AND LLGL_BUILD_RENDERER_METAL)
         endif()
         
         ADD_DEFINE(LLGL_BUILD_RENDERER_METAL)
+        
+        list(APPEND LLGL_ALL_TARGETS LLGL_Metal)
     else()
         message("Missing Metal/MetalKit -> LLGL_Metal renderer will be excluded from project")
     endif()
@@ -745,6 +909,8 @@ if(WIN32)
         target_link_libraries(LLGL_Direct3D11 LLGL d3d11 dxgi D3DCompiler)
         
         ADD_DEFINE(LLGL_BUILD_RENDERER_DIRECT3D11)
+        
+        list(APPEND LLGL_ALL_TARGETS LLGL_Direct3D11)
     endif()
     
     if(LLGL_BUILD_RENDERER_DIRECT3D12)
@@ -761,6 +927,8 @@ if(WIN32)
         target_compile_definitions(LLGL_Direct3D12 PUBLIC -DLLGL_DX_ENABLE_D3D12)
         
         ADD_DEFINE(LLGL_BUILD_RENDERER_DIRECT3D12)
+        
+        list(APPEND LLGL_ALL_TARGETS LLGL_Direct3D12)
     endif()
 endif()
 
@@ -784,6 +952,7 @@ if(GaussLib_INCLUDE_DIR)
             ADD_EXAMPLE_PROJECT(Test_Vulkan "${FilesTest_Vulkan}" "${LLGL_DEPENDENCIES}")
         endif()
         ADD_EXAMPLE_PROJECT(Test_Compute "${FilesTest_Compute}" "${LLGL_DEPENDENCIES}")
+        ADD_EXAMPLE_PROJECT(Test_Container "${FilesTest_Container}" "${LLGL_DEPENDENCIES}")
         ADD_EXAMPLE_PROJECT(Test_Performance "${FilesTest_Performance}" "${LLGL_DEPENDENCIES}")
         ADD_EXAMPLE_PROJECT(Test_Display "${FilesTest_Display}" "${LLGL_DEPENDENCIES}")
         ADD_EXAMPLE_PROJECT(Test_Image "${FilesTest_Image}" "${LLGL_DEPENDENCIES}")
@@ -791,6 +960,7 @@ if(GaussLib_INCLUDE_DIR)
         ADD_EXAMPLE_PROJECT(Test_Window "${FilesTest_Window}" "${LLGL_DEPENDENCIES}")
         ADD_EXAMPLE_PROJECT(Test_JIT "${FilesTest_JIT}" "${LLGL_DEPENDENCIES}")
         ADD_EXAMPLE_PROJECT(Test_ShaderReflect "${FilesTest_ShaderReflect}" "${LLGL_DEPENDENCIES}")
+        ADD_EXAMPLE_PROJECT(Test_SeparateShaders "${FilesTest_SeparateShaders}" "${LLGL_DEPENDENCIES}")
     endif()
 
     # Example Projects
@@ -808,6 +978,7 @@ if(GaussLib_INCLUDE_DIR)
         set(EXAMPLE_PROJECT_LIBS ${LLGL_DEPENDENCIES} ExampleBase)
         
         if(LLGL_ANDROID_PLATFORM)
+            set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -u ANativeActivity_onCreate")
             ADD_MOBILE_EXAMPLE_PROJECT(Example_HelloAndroid "${FilesExample_HelloAndroid}" "${EXAMPLE_PROJECT_LIBS}")
         else()
             ADD_EXAMPLE_PROJECT(Example_HelloTriangle "${FilesExample_HelloTriangle}" "${EXAMPLE_PROJECT_LIBS}")
@@ -832,6 +1003,7 @@ if(GaussLib_INCLUDE_DIR)
             ADD_EXAMPLE_PROJECT(Example_Animation "${FilesExample_Animation}" "${EXAMPLE_PROJECT_LIBS}")
             ADD_EXAMPLE_PROJECT(Example_VolumeRendering "${FilesExample_VolumeRendering}" "${EXAMPLE_PROJECT_LIBS}")
             ADD_EXAMPLE_PROJECT(Example_PrimitiveRestart "${FilesExample_PrimitiveRestart}" "${EXAMPLE_PROJECT_LIBS}")
+            ADD_EXAMPLE_PROJECT(Example_ResourceBinding "${FilesExample_ResourceBinding}" "${EXAMPLE_PROJECT_LIBS}")
         endif()
     endif()
 else()
@@ -848,37 +1020,46 @@ if(WIN32 AND LLGL_BUILD_WRAPPER_CSHARP)
     add_subdirectory(Wrapper/CSharp)
 endif()
 
+# Install targets, headers, and CMake config files
+install(TARGETS ${LLGL_ALL_TARGETS} EXPORT LLGLTargets RUNTIME LIBRARY ARCHIVE)
+install(DIRECTORY "${PROJECT_INCLUDE_DIR}/" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+install(EXPORT LLGLTargets NAMESPACE LLGL:: DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/LLGL")
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Config.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/LLGLConfig.cmake"
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LLGL
+)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/LLGLConfig.cmake" DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/LLGL")
+
 # Summary Information
 message("~~~ Build Summary ~~~")
 
-message("Target Platform: ${SUMMARY_TARGET_PLATFORM}")
+message("Target Platform: ${LLGL_TARGET_PLATFORM}")
 message("Target Architecture: ${SUMMARY_TARGET_ARCH}")
 message("Target Library: ${SUMMARY_LIBRARY_TYPE}")
 
-set(RENDERER_COUNT 0)
+if(LLGL_BUILD_RENDERER_NULL)
+    message("Build Renderer: Null")
+endif()
 
 if(LLGL_BUILD_RENDERER_OPENGL AND OpenGL_FOUND)
     message("Build Renderer: OpenGL")
-    math(EXPR RENDERER_COUNT "${RENDERER_COUNT}+1")
 endif()
 
 if(LLGL_BUILD_RENDERER_OPENGLES3 AND OPENGLES_FOUND)
     message("Build Renderer: OpenGLES 3")
-    math(EXPR RENDERER_COUNT "${RENDERER_COUNT}+1")
 endif()
 
 if(NOT APPLE AND LLGL_BUILD_RENDERER_VULKAN AND VULKAN_FOUND)
-    math(EXPR RENDERER_COUNT "${RENDERER_COUNT}+1")
     message("Build Renderer: Vulkan")
 endif()
 
 if(APPLE AND LLGL_BUILD_RENDERER_METAL)
-    math(EXPR RENDERER_COUNT "${RENDERER_COUNT}+1")
     message("Build Renderer: Metal")
 endif()
 
 if(LLGL_BUILD_RENDERER_DIRECT3D11)
-    math(EXPR RENDERER_COUNT "${RENDERER_COUNT}+1")
     if(${LLGL_D3D11_ENABLE_FEATURELEVEL} STREQUAL "Direct3D 11.3")
         message("Build Renderer: Direct3D 11.3")
     elseif(${LLGL_D3D11_ENABLE_FEATURELEVEL} STREQUAL "Direct3D 11.2")
@@ -891,17 +1072,12 @@ if(LLGL_BUILD_RENDERER_DIRECT3D11)
 endif()
 
 if(LLGL_BUILD_RENDERER_DIRECT3D12)
-    math(EXPR RENDERER_COUNT "${RENDERER_COUNT}+1")
     message("Build Renderer: Direct3D 12.0")
 endif()
 
 if(WIN32 AND LLGL_BUILD_WRAPPER_CSHARP)
     message("Build Wrapper: C#")
 endif()
-
-#if(LLGL_BUILD_STATIC_LIB AND NOT(${RENDERER_COUNT} EQUAL 1))
-#    message(SEND_ERROR "Static library only supports one single render backend, but multiple are specified!")
-#endif()
 
 if(LLGL_ENABLE_SPIRV_REFLECT)
     message("Including Submodule: SPIRV-Headers")

@@ -1,8 +1,8 @@
 /*
  * MTCommandBuffer.mm
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "MTCommandBuffer.h"
@@ -14,12 +14,15 @@
 #include "RenderState/MTComputePSO.h"
 #include "RenderState/MTResourceHeap.h"
 #include "RenderState/MTBuiltinPSOFactory.h"
+#include "RenderState/MTDescriptorCache.h"
+#include "RenderState/MTConstantsCache.h"
+#include "Shader/MTShader.h"
 #include "Texture/MTTexture.h"
 #include "Texture/MTSampler.h"
 #include "Texture/MTRenderTarget.h"
-#include "Shader/MTShaderProgram.h"
 #include "../CheckedCast.h"
 #include <LLGL/TypeInfo.h>
+#include <LLGL/Utils/ForRange.h>
 #include <algorithm>
 #include <limits.h>
 
@@ -35,7 +38,7 @@ for smaller buffers an emulated CPU copy operation will be used.
 static const NSUInteger g_minFillBufferForKernel = 64;
 
 // Default value when no compute PSO is bound.
-static const MTLSize g_defaultNumThreadsPerGroup { 1, 1, 1 };
+static const MTLSize g_defaultNumThreadsPerGroup{ 1, 1, 1 };
 
 MTCommandBuffer::MTCommandBuffer(id<MTLDevice> device, id<MTLCommandQueue> cmdQueue, const CommandBufferDescriptor& desc) :
     device_            { device                                                    },
@@ -73,23 +76,23 @@ void MTCommandBuffer::Begin()
     ];
 
     /* Reset schedulers and pools */
-    encoderScheduler_.Reset(cmdBuffer_);
+    context_.Reset(cmdBuffer_);
     stagingBufferPool_.Reset();
 
     /* Reset references */
-    numThreadsPerGroup_     = &g_defaultNumThreadsPerGroup;
-    numPatchControlPoints_  = 0;
-    tessPipelineState_      = nil;
+    numThreadsPerGroup_ = &g_defaultNumThreadsPerGroup;
 }
 
 void MTCommandBuffer::End()
 {
-    encoderScheduler_.Flush();
+    context_.Flush();
     PresentDrawables();
 
     /* Commit native buffer right after encoding for immediate command buffers */
     if (IsImmediateCmdBuffer())
         [cmdBuffer_ commit];
+
+    ResetRenderStates();
 }
 
 void MTCommandBuffer::Execute(CommandBuffer& deferredCommandBuffer)
@@ -114,9 +117,9 @@ void MTCommandBuffer::UpdateBuffer(
     stagingBufferPool_.Write(data, static_cast<NSUInteger>(dataSize), srcBuffer, srcOffset);
 
     /* Encode blit command to copy staging buffer region to destination buffer */
-    encoderScheduler_.PauseRenderEncoder();
+    context_.PauseRenderEncoder();
     {
-        auto blitEncoder = encoderScheduler_.BindBlitEncoder();
+        auto blitEncoder = context_.BindBlitEncoder();
         [blitEncoder
             copyFromBuffer:     srcBuffer
             sourceOffset:       srcOffset
@@ -125,7 +128,7 @@ void MTCommandBuffer::UpdateBuffer(
             size:               static_cast<NSUInteger>(dataSize)
         ];
     }
-    encoderScheduler_.ResumeRenderEncoder();
+    context_.ResumeRenderEncoder();
 }
 
 void MTCommandBuffer::CopyBuffer(
@@ -138,9 +141,9 @@ void MTCommandBuffer::CopyBuffer(
     auto& dstBufferMT = LLGL_CAST(MTBuffer&, dstBuffer);
     auto& srcBufferMT = LLGL_CAST(MTBuffer&, srcBuffer);
 
-    encoderScheduler_.PauseRenderEncoder();
+    context_.PauseRenderEncoder();
     {
-        auto blitEncoder = encoderScheduler_.BindBlitEncoder();
+        auto blitEncoder = context_.BindBlitEncoder();
         [blitEncoder
             copyFromBuffer:     srcBufferMT.GetNative()
             sourceOffset:       static_cast<NSUInteger>(srcOffset)
@@ -149,7 +152,7 @@ void MTCommandBuffer::CopyBuffer(
             size:               static_cast<NSUInteger>(size)
         ];
     }
-    encoderScheduler_.ResumeRenderEncoder();
+    context_.ResumeRenderEncoder();
 }
 
 void MTCommandBuffer::CopyBufferFromTexture(
@@ -180,9 +183,9 @@ void MTCommandBuffer::CopyBufferFromTexture(
     MTTypes::Convert(srcSize, srcRegion.extent);
 
     /* Encode blit commands to copy texture form buffer */
-    encoderScheduler_.PauseRenderEncoder();
+    context_.PauseRenderEncoder();
     {
-        auto blitEncoder = encoderScheduler_.BindBlitEncoder();
+        auto blitEncoder = context_.BindBlitEncoder();
         for (std::uint32_t arrayLayer = 0; arrayLayer < srcRegion.subresource.numArrayLayers; ++arrayLayer)
         {
             [blitEncoder
@@ -199,7 +202,7 @@ void MTCommandBuffer::CopyBufferFromTexture(
             dstOffset += layerStride;
         }
     }
-    encoderScheduler_.ResumeRenderEncoder();
+    context_.ResumeRenderEncoder();
 }
 
 void MTCommandBuffer::FillBuffer(
@@ -260,9 +263,9 @@ void MTCommandBuffer::CopyTexture(
     MTLSize srcSize;
     MTTypes::Convert(srcSize, extent);
 
-    encoderScheduler_.PauseRenderEncoder();
+    context_.PauseRenderEncoder();
     {
-        auto blitEncoder = encoderScheduler_.BindBlitEncoder();
+        auto blitEncoder = context_.BindBlitEncoder();
         [blitEncoder
             copyFromTexture:    srcTextureMT.GetNative()
             sourceSlice:        srcLocation.arrayLayer
@@ -275,7 +278,7 @@ void MTCommandBuffer::CopyTexture(
             destinationOrigin:  dstOrigin
         ];
     }
-    encoderScheduler_.ResumeRenderEncoder();
+    context_.ResumeRenderEncoder();
 }
 
 void MTCommandBuffer::CopyTextureFromBuffer(
@@ -306,9 +309,9 @@ void MTCommandBuffer::CopyTextureFromBuffer(
     MTTypes::Convert(srcSize, dstRegion.extent);
 
     /* Encode blit commands to copy texture form buffer */
-    encoderScheduler_.PauseRenderEncoder();
+    context_.PauseRenderEncoder();
     {
-        auto blitEncoder = encoderScheduler_.BindBlitEncoder();
+        auto blitEncoder = context_.BindBlitEncoder();
         for (std::uint32_t arrayLayer = 0; arrayLayer < dstRegion.subresource.numArrayLayers; ++arrayLayer)
         {
             [blitEncoder
@@ -325,7 +328,7 @@ void MTCommandBuffer::CopyTextureFromBuffer(
             srcOffset += layerStride;
         }
     }
-    encoderScheduler_.ResumeRenderEncoder();
+    context_.ResumeRenderEncoder();
 }
 
 void MTCommandBuffer::GenerateMips(Texture& texture)
@@ -333,12 +336,12 @@ void MTCommandBuffer::GenerateMips(Texture& texture)
     auto& textureMT = LLGL_CAST(MTTexture&, texture);
     if ([textureMT.GetNative() mipmapLevelCount] > 1)
     {
-        encoderScheduler_.PauseRenderEncoder();
+        context_.PauseRenderEncoder();
         {
-            auto blitEncoder = encoderScheduler_.BindBlitEncoder();
+            auto blitEncoder = context_.BindBlitEncoder();
             [blitEncoder generateMipmapsForTexture:textureMT.GetNative()];
         }
-        encoderScheduler_.ResumeRenderEncoder();
+        context_.ResumeRenderEncoder();
     }
 }
 
@@ -351,12 +354,12 @@ void MTCommandBuffer::GenerateMips(Texture& texture, const TextureSubresource& s
         // Create temporary subresource texture to generate MIP-maps only on that range
         id<MTLTexture> intermediateTexture = textureMT.CreateSubresourceView(subresource);
 
-        encoderScheduler_.PauseRenderEncoder();
+        context_.PauseRenderEncoder();
         {
-            auto blitEncoder = encoderScheduler_.BindBlitEncoder();
+            auto blitEncoder = context_.BindBlitEncoder();
             [blitEncoder generateMipmapsForTexture:intermediateTexture];
         }
-        encoderScheduler_.ResumeRenderEncoder();
+        context_.ResumeRenderEncoder();
 
         [intermediateTexture release];
     }
@@ -366,22 +369,22 @@ void MTCommandBuffer::GenerateMips(Texture& texture, const TextureSubresource& s
 
 void MTCommandBuffer::SetViewport(const Viewport& viewport)
 {
-    encoderScheduler_.SetViewports(&viewport, 1u);
+    context_.SetViewports(&viewport, 1u);
 }
 
 void MTCommandBuffer::SetViewports(std::uint32_t numViewports, const Viewport* viewports)
 {
-    encoderScheduler_.SetViewports(viewports, numViewports);
+    context_.SetViewports(viewports, numViewports);
 }
 
 void MTCommandBuffer::SetScissor(const Scissor& scissor)
 {
-    encoderScheduler_.SetScissorRects(&scissor, 1u);
+    context_.SetScissorRects(&scissor, 1u);
 }
 
 void MTCommandBuffer::SetScissors(std::uint32_t numScissors, const Scissor* scissors)
 {
-    encoderScheduler_.SetScissorRects(scissors, numScissors);
+    context_.SetScissorRects(scissors, numScissors);
 }
 
 /* ----- Input Assembly ------ */
@@ -389,13 +392,13 @@ void MTCommandBuffer::SetScissors(std::uint32_t numScissors, const Scissor* scis
 void MTCommandBuffer::SetVertexBuffer(Buffer& buffer)
 {
     auto& bufferMT = LLGL_CAST(MTBuffer&, buffer);
-    encoderScheduler_.SetVertexBuffer(bufferMT.GetNative(), 0);
+    context_.SetVertexBuffer(bufferMT.GetNative(), 0);
 }
 
 void MTCommandBuffer::SetVertexBufferArray(BufferArray& bufferArray)
 {
     auto& bufferArrayMT = LLGL_CAST(MTBufferArray&, bufferArray);
-    encoderScheduler_.SetVertexBuffers(
+    context_.SetVertexBuffers(
         bufferArrayMT.GetIDArray().data(),
         bufferArrayMT.GetOffsets().data(),
         static_cast<NSUInteger>(bufferArrayMT.GetIDArray().size())
@@ -420,36 +423,28 @@ void MTCommandBuffer::SetIndexBuffer(Buffer& buffer, const Format format, std::u
 
 /* ----- Resources ----- */
 
-void MTCommandBuffer::SetResourceHeap(
-    ResourceHeap&           resourceHeap,
-    std::uint32_t           firstSet,
-    const PipelineBindPoint bindPoint)
+void MTCommandBuffer::SetResourceHeap(ResourceHeap& resourceHeap, std::uint32_t descriptorSet)
 {
+    if (boundPipelineState_ == nullptr)
+        return /*Invalid state*/;
+
     auto& resourceHeapMT = LLGL_CAST(MTResourceHeap&, resourceHeap);
-    if (resourceHeapMT.HasGraphicsResources() && bindPoint != PipelineBindPoint::Compute)
-        encoderScheduler_.SetGraphicsResourceHeap(&resourceHeapMT, firstSet);
-    if (resourceHeapMT.HasComputeResources() && bindPoint != PipelineBindPoint::Graphics)
-        encoderScheduler_.SetComputeResourceHeap(&resourceHeapMT, firstSet);
+    if (boundPipelineState_->IsGraphicsPSO())
+    {
+        if (resourceHeapMT.HasGraphicsResources())
+            context_.SetGraphicsResourceHeap(&resourceHeapMT, descriptorSet);
+    }
+    else
+    {
+        if (resourceHeapMT.HasComputeResources())
+            context_.SetComputeResourceHeap(&resourceHeapMT, descriptorSet);
+    }
 }
 
-void MTCommandBuffer::SetResource(Resource& resource, std::uint32_t slot, long /*bindFlags*/, long stageFlags)
+void MTCommandBuffer::SetResource(std::uint32_t descriptor, Resource& resource)
 {
-    #if 0//TODO: store direct binding in <MTEncoderScheduler>
-    switch (resource.GetResourceType())
-    {
-        case ResourceType::Undefined:
-            break;
-        case ResourceType::Buffer:
-            SetBuffer(LLGL_CAST(MTBuffer&, resource), slot, stageFlags);
-            break;
-        case ResourceType::Texture:
-            SetTexture(LLGL_CAST(MTTexture&, resource), slot, stageFlags);
-            break;
-        case ResourceType::Sampler:
-            SetSampler(LLGL_CAST(MTSampler&, resource), slot, stageFlags);
-            break;
-    }
-    #endif
+    if (descriptorCache_ != nullptr)
+        descriptorCache_->SetResource(descriptor, resource);
 }
 
 void MTCommandBuffer::ResetResourceSlots(
@@ -464,7 +459,6 @@ void MTCommandBuffer::ResetResourceSlots(
 
 /* ----- Render Passes ----- */
 
-//TODO: process <clearValues>!!!
 void MTCommandBuffer::BeginRenderPass(
     RenderTarget&       renderTarget,
     const RenderPass*   renderPass,
@@ -478,43 +472,44 @@ void MTCommandBuffer::BeginRenderPass(
         QueueDrawable(swapChainMT.GetMTKView().currentDrawable);
 
         /* Get next render pass descriptor from MetalKit view */
-        MTKView* view = swapChainMT.GetMTKView();
-        encoderScheduler_.BindRenderEncoder(view.currentRenderPassDescriptor, true);
+        if (renderPass != nullptr)
+        {
+            auto* renderPassMT = LLGL_CAST(const MTRenderPass*, renderPass);
+            context_.BindRenderEncoder(swapChainMT.GetAndUpdateNativeRenderPass(*renderPassMT, numClearValues, clearValues), true);
+        }
+        else
+            context_.BindRenderEncoder(swapChainMT.GetNativeRenderPass(), true);
     }
     else
     {
         /* Get render pass descriptor from render target */
         auto& renderTargetMT = LLGL_CAST(MTRenderTarget&, renderTarget);
-        encoderScheduler_.BindRenderEncoder(renderTargetMT.GetNative(), true);
+        if (renderPass != nullptr)
+        {
+            auto* renderPassMT = LLGL_CAST(const MTRenderPass*, renderPass);
+            context_.BindRenderEncoder(renderTargetMT.GetAndUpdateNativeRenderPass(*renderPassMT, numClearValues, clearValues), true);
+        }
+        else
+            context_.BindRenderEncoder(renderTargetMT.GetNativeRenderPass(), true);
     }
 }
 
 void MTCommandBuffer::EndRenderPass()
 {
-    encoderScheduler_.Flush();
-}
-
-static MTLClearColor ToMTLClearColor(const ColorRGBAf& color)
-{
-    return MTLClearColorMake(
-        static_cast<double>(color.r),
-        static_cast<double>(color.g),
-        static_cast<double>(color.b),
-        static_cast<double>(color.a)
-    );
+    context_.Flush();
 }
 
 void MTCommandBuffer::Clear(long flags, const ClearValue& clearValue)
 {
-    if (encoderScheduler_.GetRenderEncoder() != nil && flags != 0)
+    if (context_.GetRenderEncoder() != nil && flags != 0)
     {
         /* Make new render pass descriptor with current clear values */
-        auto renderPassDesc = encoderScheduler_.CopyRenderPassDesc();
+        auto renderPassDesc = context_.CopyRenderPassDesc();
 
         if ((flags & ClearFlags::Color) != 0)
         {
             renderPassDesc.colorAttachments[0].loadAction   = MTLLoadActionClear;
-            renderPassDesc.colorAttachments[0].clearColor   = ToMTLClearColor(clearValue.color);
+            renderPassDesc.colorAttachments[0].clearColor   = MTTypes::ToMTLClearColor(clearValue.color);
         }
 
         if ((flags & ClearFlags::Depth) != 0)
@@ -530,7 +525,7 @@ void MTCommandBuffer::Clear(long flags, const ClearValue& clearValue)
         }
 
         /* Begin with new render pass to clear buffers */
-        encoderScheduler_.BindRenderEncoder(renderPassDesc);
+        context_.BindRenderEncoder(renderPassDesc);
         [renderPassDesc release];
     }
 }
@@ -543,7 +538,7 @@ static void FillMTRenderPassDesc(MTLRenderPassDescriptor* renderPassDesc, const 
         /* Clear color buffer */
         auto colorBuffer = attachment.colorAttachment;
         renderPassDesc.colorAttachments[colorBuffer].loadAction = MTLLoadActionClear;
-        renderPassDesc.colorAttachments[colorBuffer].clearColor = ToMTLClearColor(attachment.clearValue.color);
+        renderPassDesc.colorAttachments[colorBuffer].clearColor = MTTypes::ToMTLClearColor(attachment.clearValue.color);
     }
     else if ((attachment.flags & ClearFlags::Depth) != 0)
     {
@@ -561,16 +556,16 @@ static void FillMTRenderPassDesc(MTLRenderPassDescriptor* renderPassDesc, const 
 
 void MTCommandBuffer::ClearAttachments(std::uint32_t numAttachments, const AttachmentClear* attachments)
 {
-    if (encoderScheduler_.GetRenderEncoder() != nil && numAttachments > 0)
+    if (context_.GetRenderEncoder() != nil && numAttachments > 0)
     {
         /* Make new render pass descriptor with current clear values */
-        auto renderPassDesc = encoderScheduler_.CopyRenderPassDesc();
+        auto renderPassDesc = context_.CopyRenderPassDesc();
 
-        for (std::uint32_t i = 0; i < numAttachments; ++i)
+        for_range(i, numAttachments)
             FillMTRenderPassDesc(renderPassDesc, attachments[i]);
 
         /* Begin with new render pass to clear buffers */
-        encoderScheduler_.BindRenderEncoder(renderPassDesc);
+        context_.BindRenderEncoder(renderPassDesc);
         [renderPassDesc release];
     }
 }
@@ -592,11 +587,17 @@ void MTCommandBuffer::SetPipelineState(PipelineState& pipelineState)
 {
     /* Set graphics pipeline with encoder scheduler */
     auto& pipelineStateMT = LLGL_CAST(MTPipelineState&, pipelineState);
+    boundPipelineState_ = &pipelineStateMT;
+
+    /* Store and reset descriptor cache */
+    descriptorCache_    = pipelineStateMT.GetDescriptorCache();
+    constantsCache_     = pipelineStateMT.GetConstantsCache();
+
     if (pipelineStateMT.IsGraphicsPSO())
     {
         /* Schedule graphics pipeline and store primitive type for draw commands */
         auto& graphicsPSO = LLGL_CAST(MTGraphicsPSO&, pipelineStateMT);
-        encoderScheduler_.SetGraphicsPSO(&graphicsPSO);
+        context_.SetGraphicsPSO(&graphicsPSO);
 
         /* Store current primitive type and tessellation data */
         primitiveType_          = graphicsPSO.GetMTLPrimitiveType();
@@ -608,41 +609,30 @@ void MTCommandBuffer::SetPipelineState(PipelineState& pipelineState)
     {
         /* Set compute pipeline with encoder scheduler */
         auto& computePSO = LLGL_CAST(MTComputePSO&, pipelineStateMT);
-        encoderScheduler_.SetComputePSO(&computePSO);
+        context_.SetComputePSO(&computePSO);
 
         /* Store reference to work group size of shader program */
-        if (auto shaderProgram = computePSO.GetShaderProgram())
-            numThreadsPerGroup_ = &(shaderProgram->GetNumThreadsPerGroup());
+        if (auto computeShader = computePSO.GetComputeShader())
+            numThreadsPerGroup_ = &(computeShader->GetNumThreadsPerGroup());
         else
             numThreadsPerGroup_ = &g_defaultNumThreadsPerGroup;
     }
 }
 
-void MTCommandBuffer::SetBlendFactor(const ColorRGBAf& color)
+void MTCommandBuffer::SetBlendFactor(const float color[4])
 {
-    encoderScheduler_.SetBlendColor(color.Ptr());
+    context_.SetBlendColor(color);
 }
 
 void MTCommandBuffer::SetStencilReference(std::uint32_t reference, const StencilFace stencilFace)
 {
-    encoderScheduler_.SetStencilRef(reference, stencilFace);
+    context_.SetStencilRef(reference, stencilFace);
 }
 
-void MTCommandBuffer::SetUniform(
-    UniformLocation location,
-    const void*     data,
-    std::uint32_t   dataSize)
+void MTCommandBuffer::SetUniforms(std::uint32_t first, const void* data, std::uint16_t dataSize)
 {
-    // dummy
-}
-
-void MTCommandBuffer::SetUniforms(
-    UniformLocation location,
-    std::uint32_t   count,
-    const void*     data,
-    std::uint32_t   dataSize)
-{
-    // dummy
+    if (constantsCache_ != nullptr)
+        constantsCache_->SetUniforms(first, data, dataSize);
 }
 
 /* ----- Queries ----- */
@@ -703,7 +693,7 @@ void MTCommandBuffer::Draw(std::uint32_t numVertices, std::uint32_t firstVertex)
     }
     else
     {
-        auto renderEncoder = encoderScheduler_.GetRenderEncoderAndFlushState();
+        auto renderEncoder = context_.FlushAndGetRenderEncoder();
         [renderEncoder
             drawPrimitives: primitiveType_
             vertexStart:    static_cast<NSUInteger>(firstVertex)
@@ -736,7 +726,7 @@ void MTCommandBuffer::DrawIndexed(std::uint32_t numIndices, std::uint32_t firstI
     }
     else
     {
-        auto renderEncoder = encoderScheduler_.GetRenderEncoderAndFlushState();
+        auto renderEncoder = context_.FlushAndGetRenderEncoder();
         [renderEncoder
             drawIndexedPrimitives:  primitiveType_
             indexCount:             static_cast<NSUInteger>(numIndices)
@@ -779,7 +769,7 @@ void MTCommandBuffer::DrawInstanced(std::uint32_t numVertices, std::uint32_t fir
     }
     else
     {
-        auto renderEncoder = encoderScheduler_.GetRenderEncoderAndFlushState();
+        auto renderEncoder = context_.FlushAndGetRenderEncoder();
         [renderEncoder
             drawPrimitives: primitiveType_
             vertexStart:    static_cast<NSUInteger>(firstVertex)
@@ -824,7 +814,7 @@ void MTCommandBuffer::DrawIndexedInstanced(std::uint32_t numIndices, std::uint32
     }
     else
     {
-        auto renderEncoder = encoderScheduler_.GetRenderEncoderAndFlushState();
+        auto renderEncoder = context_.FlushAndGetRenderEncoder();
         [renderEncoder
             drawIndexedPrimitives:  primitiveType_
             indexCount:             static_cast<NSUInteger>(numIndices)
@@ -864,7 +854,7 @@ void MTCommandBuffer::DrawIndirect(Buffer& buffer, std::uint64_t offset)
     }
     else
     {
-        auto renderEncoder = encoderScheduler_.GetRenderEncoderAndFlushState();
+        auto renderEncoder = context_.FlushAndGetRenderEncoder();
         [renderEncoder
             drawPrimitives:         primitiveType_
             indirectBuffer:         bufferMT.GetNative()
@@ -897,7 +887,7 @@ void MTCommandBuffer::DrawIndirect(Buffer& buffer, std::uint64_t offset, std::ui
     }
     else
     {
-        auto renderEncoder = encoderScheduler_.GetRenderEncoderAndFlushState();
+        auto renderEncoder = context_.FlushAndGetRenderEncoder();
         while (numCommands-- > 0)
         {
             [renderEncoder
@@ -932,7 +922,7 @@ void MTCommandBuffer::DrawIndexedIndirect(Buffer& buffer, std::uint64_t offset)
     }
     else
     {
-        auto renderEncoder = encoderScheduler_.GetRenderEncoderAndFlushState();
+        auto renderEncoder = context_.FlushAndGetRenderEncoder();
         [renderEncoder
             drawIndexedPrimitives:  primitiveType_
             indexType:              indexType_
@@ -970,7 +960,7 @@ void MTCommandBuffer::DrawIndexedIndirect(Buffer& buffer, std::uint64_t offset, 
     }
     else
     {
-        auto renderEncoder = encoderScheduler_.GetRenderEncoderAndFlushState();
+        auto renderEncoder = context_.FlushAndGetRenderEncoder();
         while (numCommands-- > 0)
         {
             [renderEncoder
@@ -990,7 +980,7 @@ void MTCommandBuffer::DrawIndexedIndirect(Buffer& buffer, std::uint64_t offset, 
 
 void MTCommandBuffer::Dispatch(std::uint32_t numWorkGroupsX, std::uint32_t numWorkGroupsY, std::uint32_t numWorkGroupsZ)
 {
-    auto computeEncoder = encoderScheduler_.GetComputeEncoderAndFlushState();
+    auto computeEncoder = context_.FlushAndGetComputeEncoder();
     [computeEncoder
         dispatchThreadgroups:   MTLSizeMake(numWorkGroupsX, numWorkGroupsY, numWorkGroupsZ)
         threadsPerThreadgroup:  *numThreadsPerGroup_
@@ -1000,7 +990,7 @@ void MTCommandBuffer::Dispatch(std::uint32_t numWorkGroupsX, std::uint32_t numWo
 void MTCommandBuffer::DispatchIndirect(Buffer& buffer, std::uint64_t offset)
 {
     auto& bufferMT = LLGL_CAST(MTBuffer&, buffer);
-    auto computeEncoder = encoderScheduler_.GetComputeEncoderAndFlushState();
+    auto computeEncoder = context_.FlushAndGetComputeEncoder();
     [computeEncoder
         dispatchThreadgroupsWithIndirectBuffer: bufferMT.GetNative()
         indirectBufferOffset:                   static_cast<NSUInteger>(offset)
@@ -1071,112 +1061,14 @@ void MTCommandBuffer::PresentDrawables()
     drawables_.clear();
 }
 
-#if 0//TODO: store direct binding in <MTEncoderScheduler>
-void MTCommandBuffer::SetBuffer(MTBuffer& bufferMT, std::uint32_t slot, long stageFlags)
-{
-    if (auto renderEncoder = encoderScheduler_.GetRenderEncoder())
-    {
-        if ((stageFlags & StageFlags::VertexStage) != 0)
-        {
-            [renderEncoder
-                setVertexBuffer:    bufferMT.GetNative()
-                offset:             0
-                atIndex:            static_cast<NSUInteger>(slot)
-            ];
-        }
-        if ((stageFlags & StageFlags::FragmentStage) != 0)
-        {
-            [renderEncoder
-                setFragmentBuffer:  bufferMT.GetNative()
-                offset:             0
-                atIndex:            static_cast<NSUInteger>(slot)
-            ];
-        }
-    }
-    else if (auto computeEncoder = encoderScheduler_.GetComputeEncoder())
-    {
-        if ((stageFlags & StageFlags::ComputeStage) != 0)
-        {
-            [computeEncoder
-                setBuffer:  bufferMT.GetNative()
-                offset:     0
-                atIndex:    static_cast<NSUInteger>(slot)
-            ];
-        }
-    }
-}
-
-void MTCommandBuffer::SetTexture(MTTexture& textureMT, std::uint32_t slot, long stageFlags)
-{
-    if (auto renderEncoder = encoderScheduler_.GetRenderEncoder())
-    {
-        if ((stageFlags & StageFlags::VertexStage) != 0)
-        {
-            [renderEncoder
-                setVertexTexture:   textureMT.GetNative()
-                atIndex:            static_cast<NSUInteger>(slot)
-            ];
-        }
-        if ((stageFlags & StageFlags::FragmentStage) != 0)
-        {
-            [renderEncoder
-                setFragmentTexture: textureMT.GetNative()
-                atIndex:            static_cast<NSUInteger>(slot)
-            ];
-        }
-    }
-    else if (auto computeEncoder = encoderScheduler_.GetComputeEncoder())
-    {
-        if ((stageFlags & StageFlags::ComputeStage) != 0)
-        {
-            [computeEncoder
-                setTexture: textureMT.GetNative()
-                atIndex:    static_cast<NSUInteger>(slot)
-            ];
-        }
-    }
-}
-
-void MTCommandBuffer::SetSampler(MTSampler& samplerMT, std::uint32_t slot, long stageFlags)
-{
-    if (auto renderEncoder  = encoderScheduler_.GetRenderEncoder())
-    {
-        if ((stageFlags & StageFlags::VertexStage) != 0)
-        {
-            [renderEncoder
-                setVertexSamplerState:      samplerMT.GetNative()
-                atIndex:                    static_cast<NSUInteger>(slot)
-            ];
-        }
-        if ((stageFlags & StageFlags::FragmentStage) != 0)
-        {
-            [renderEncoder
-                setFragmentSamplerState:    samplerMT.GetNative()
-                atIndex:                    static_cast<NSUInteger>(slot)
-            ];
-        }
-    }
-    else if (auto computeEncoder = encoderScheduler_.GetComputeEncoder())
-    {
-        if ((stageFlags & StageFlags::ComputeStage) != 0)
-        {
-            [computeEncoder
-                setSamplerState:    samplerMT.GetNative()
-                atIndex:            static_cast<NSUInteger>(slot)
-            ];
-        }
-    }
-}
-#endif
-
 void MTCommandBuffer::FillBufferByte1(MTBuffer& bufferMT, const NSRange& range, std::uint8_t value)
 {
-    encoderScheduler_.PauseRenderEncoder();
+    context_.PauseRenderEncoder();
     {
-        auto blitEncoder = encoderScheduler_.BindBlitEncoder();
+        auto blitEncoder = context_.BindBlitEncoder();
         [blitEncoder fillBuffer:bufferMT.GetNative() range:range value:value];
     }
-    encoderScheduler_.ResumeRenderEncoder();
+    context_.ResumeRenderEncoder();
 }
 
 void MTCommandBuffer::FillBufferByte4(MTBuffer& bufferMT, const NSRange& range, std::uint32_t value)
@@ -1198,12 +1090,12 @@ void MTCommandBuffer::FillBufferByte4Emulated(MTBuffer& bufferMT, const NSRange&
     UpdateBuffer(bufferMT, range.location, localBuffer, range.length);
 }
 
-//TODO: manage binding of compute PSO in MTEncoderScheduler
+//TODO: manage binding of compute PSO in MTCommandContext
 void MTCommandBuffer::FillBufferByte4Accelerated(MTBuffer& bufferMT, const NSRange& range, std::uint32_t value)
 {
-    encoderScheduler_.PauseRenderEncoder();
+    context_.PauseRenderEncoder();
     {
-        auto computeEncoder = encoderScheduler_.BindComputeEncoder();
+        auto computeEncoder = context_.BindComputeEncoder();
 
         /* Bind compute PSO with kernel to fill buffer */
         id<MTLComputePipelineState> pso = MTBuiltinPSOFactory::Get().GetComputePSO(MTBuiltinComputePSO::FillBufferByte4);
@@ -1217,7 +1109,7 @@ void MTCommandBuffer::FillBufferByte4Accelerated(MTBuffer& bufferMT, const NSRan
         const NSUInteger numValues = range.length / sizeof(std::uint32_t);
         DispatchThreads1D(computeEncoder, pso, numValues);
     }
-    encoderScheduler_.ResumeRenderEncoder();
+    context_.ResumeRenderEncoder();
 }
 
 void MTCommandBuffer::DispatchTessellatorStage(NSUInteger numPatchesAndInstances)
@@ -1228,12 +1120,12 @@ void MTCommandBuffer::DispatchTessellatorStage(NSUInteger numPatchesAndInstances
         tessFactorBuffer_.Grow(tessFactorSize_ * numPatchesAndInstances);
 
         /* Encode kernel dispatch to generate tessellation factors for each patch */
-        encoderScheduler_.PauseRenderEncoder();
+        context_.PauseRenderEncoder();
         {
-            auto computeEncoder = encoderScheduler_.BindComputeEncoder();
+            auto computeEncoder = context_.BindComputeEncoder();
 
             /* Rebind resource heap to bind compute stage resources to the new compute command encoder */
-            encoderScheduler_.RebindResourceHeap(computeEncoder);
+            context_.RebindResourceHeap(computeEncoder);
 
             /* Disaptch kernel to generate patch tessellation factors */
             [computeEncoder setComputePipelineState: tessPipelineState_];
@@ -1241,13 +1133,13 @@ void MTCommandBuffer::DispatchTessellatorStage(NSUInteger numPatchesAndInstances
 
             DispatchThreads1D(computeEncoder, tessPipelineState_, numPatchesAndInstances);
         }
-        encoderScheduler_.ResumeRenderEncoder();
+        context_.ResumeRenderEncoder();
     }
 }
 
 id<MTLRenderCommandEncoder> MTCommandBuffer::GetRenderEncoderForPatches(NSUInteger numPatches)
 {
-    auto renderEncoder = encoderScheduler_.GetRenderEncoderAndFlushState();
+    auto renderEncoder = context_.FlushAndGetRenderEncoder();
 
     [renderEncoder
         setTessellationFactorBuffer:    tessFactorBuffer_.GetNative()
@@ -1298,6 +1190,15 @@ void MTCommandBuffer::DispatchThreads1D(
             ];
         }
     }
+}
+
+void MTCommandBuffer::ResetRenderStates()
+{
+    numPatchControlPoints_  = 0;
+    tessPipelineState_      = nil;
+    boundPipelineState_     = nullptr;
+    descriptorCache_        = nullptr;
+    constantsCache_         = nullptr;
 }
 
 

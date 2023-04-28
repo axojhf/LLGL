@@ -1,8 +1,8 @@
 /*
  * VKComputePSO.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_VK_COMPUTE_PSO_H
@@ -23,19 +23,11 @@ class VKComputePSO final : public VKPipelineState
 
     public:
 
-        VKComputePSO(
-            const VKPtr<VkDevice>&              device,
-            const ComputePipelineDescriptor&    desc,
-            VkPipelineLayout                    defaultPipelineLayout
-        );
+        VKComputePSO(VkDevice device, const ComputePipelineDescriptor& desc);
 
     private:
 
-        void CreateVkPipeline(
-            VkDevice                            device,
-            VkPipelineLayout                    pipelineLayout,
-            const ComputePipelineDescriptor&    desc
-        );
+        void CreateVkPipeline(VkDevice device, const ComputePipelineDescriptor& desc);
 
 };
 

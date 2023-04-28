@@ -1,8 +1,8 @@
 /*
  * GLImmediateCommandBuffer.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_GL_IMMEDIATE_COMMAND_BUFFER_H
@@ -10,8 +10,6 @@
 
 
 #include "GLCommandBuffer.h"
-#include "../RenderState/GLState.h"
-#include "../OpenGL.h"
 #include <memory>
 
 
@@ -111,13 +109,8 @@ class GLImmediateCommandBuffer final : public GLCommandBuffer
 
         /* ----- Resources ----- */
 
-        void SetResourceHeap(
-            ResourceHeap&           resourceHeap,
-            std::uint32_t           firstSet        = 0,
-            const PipelineBindPoint bindPoint       = PipelineBindPoint::Undefined
-        ) override;
-
-        void SetResource(Resource& resource, std::uint32_t slot, long bindFlags, long stageFlags = StageFlags::AllStages) override;
+        void SetResourceHeap(ResourceHeap& resourceHeap, std::uint32_t descriptorSet = 0) override;
+        void SetResource(std::uint32_t descriptor, Resource& resource) override;
 
         void ResetResourceSlots(
             const ResourceType  resourceType,
@@ -144,21 +137,9 @@ class GLImmediateCommandBuffer final : public GLCommandBuffer
         /* ----- Pipeline States ----- */
 
         void SetPipelineState(PipelineState& pipelineState) override;
-        void SetBlendFactor(const ColorRGBAf& color) override;
+        void SetBlendFactor(const float color[4]) override;
         void SetStencilReference(std::uint32_t reference, const StencilFace stencilFace = StencilFace::FrontAndBack) override;
-
-        void SetUniform(
-            UniformLocation location,
-            const void*     data,
-            std::uint32_t   dataSize
-        ) override;
-
-        void SetUniforms(
-            UniformLocation location,
-            std::uint32_t   count,
-            const void*     data,
-            std::uint32_t   dataSize
-        ) override;
+        void SetUniforms(std::uint32_t first, const void* data, std::uint16_t dataSize) override;
 
         /* ----- Queries ----- */
 
@@ -212,8 +193,7 @@ class GLImmediateCommandBuffer final : public GLCommandBuffer
 
     private:
 
-        GLStateManager* stateMngr_  = nullptr;
-        GLRenderState   renderState_;
+        GLStateManager* stateMngr_ = nullptr;
 
 };
 

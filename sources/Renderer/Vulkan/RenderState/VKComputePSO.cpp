@@ -1,15 +1,16 @@
 /*
  * VKComputePSO.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "VKComputePSO.h"
-#include "../Shader/VKShaderProgram.h"
+#include "../Shader/VKShader.h"
 #include "../VKTypes.h"
 #include "../VKCore.h"
 #include "../../CheckedCast.h"
+#include "../../PipelineStateUtils.h"
 #include <LLGL/PipelineStateFlags.h>
 #include <cstddef>
 
@@ -18,19 +19,12 @@ namespace LLGL
 {
 
 
-VKComputePSO::VKComputePSO(
-    const VKPtr<VkDevice>&              device,
-    const ComputePipelineDescriptor&    desc,
-    VkPipelineLayout                    defaultPipelineLayout)
+VKComputePSO::VKComputePSO(VkDevice device, const ComputePipelineDescriptor& desc)
 :
-    VKPipelineState { device, VK_PIPELINE_BIND_POINT_COMPUTE }
+    VKPipelineState { device, VK_PIPELINE_BIND_POINT_COMPUTE, GetShadersAsArray(desc), desc.pipelineLayout }
 {
     /* Create Vulkan compute pipeline object */
-    CreateVkPipeline(
-        device,
-        GetVkPipelineLayoutOrDefault(desc.pipelineLayout, defaultPipelineLayout),
-        desc
-    );
+    CreateVkPipeline(device, desc);
 }
 
 
@@ -38,23 +32,16 @@ VKComputePSO::VKComputePSO(
  * ======= Private: =======
  */
 
-void VKComputePSO::CreateVkPipeline(
-    VkDevice                            device,
-    VkPipelineLayout                    pipelineLayout,
-    const ComputePipelineDescriptor&    desc)
+void VKComputePSO::CreateVkPipeline(VkDevice device, const ComputePipelineDescriptor& desc)
 {
-    /* Get shader program object */
-    auto shaderProgramVK = LLGL_CAST(const VKShaderProgram*, desc.shaderProgram);
-    if (!shaderProgramVK)
-        throw std::invalid_argument("failed to create compute pipeline due to missing shader program");
+    /* Get compute shader */
+    auto computeShaderVK = LLGL_CAST(VKShader*, desc.computeShader);
+    if (!computeShaderVK)
+        throw std::invalid_argument("cannot create Vulkan compute pipeline without compute shader");
 
     /* Get shader stages */
-    std::uint32_t shaderStageCount = 1;
     VkPipelineShaderStageCreateInfo shaderStageCreateInfo;
-    shaderProgramVK->FillShaderStageCreateInfos(&shaderStageCreateInfo, shaderStageCount);
-
-    if (shaderStageCount != 1)
-        throw std::invalid_argument("invalid number of shader stages for Vulkan compute pipeline");
+    GetShaderCreateInfoAndOptionalPermutation(*computeShaderVK, shaderStageCreateInfo);
 
     /* Create graphics pipeline state object */
     VkComputePipelineCreateInfo createInfo;
@@ -63,11 +50,11 @@ void VKComputePSO::CreateVkPipeline(
         createInfo.pNext                = nullptr;
         createInfo.flags                = 0;
         createInfo.stage                = shaderStageCreateInfo;
-        createInfo.layout               = pipelineLayout;
+        createInfo.layout               = GetVkPipelineLayout();
         createInfo.basePipelineHandle   = VK_NULL_HANDLE;
         createInfo.basePipelineIndex    = 0;
     }
-    auto result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &createInfo, nullptr, GetVkPipelineAddress());
+    auto result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &createInfo, nullptr, ReleaseAndGetAddressOfVkPipeline());
     VKThrowIfFailed(result, "failed to create Vulkan compute pipeline");
 }
 

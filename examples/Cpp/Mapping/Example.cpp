@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_Mapping)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
@@ -21,7 +21,7 @@ class Example_Mapping : public ExampleBase
     const LLGL::Extent3D    srcTexture0Size     = { 64, 64, 1 }; // 64 * 4 = 256 = Proper row alignment (especially for D3D12)
     const LLGL::Extent3D    srcTexture1Size     = { 50, 20, 1 }; // 50 * 4 = 200 = Improper row alignment
 
-    LLGL::ShaderProgram*    shaderProgram       = nullptr;
+    ShaderPipeline          shaderPipeline;
     LLGL::PipelineLayout*   pipelineLayout      = nullptr;
     LLGL::PipelineState*    pipeline            = nullptr;
     LLGL::Buffer*           vertexBuffer        = nullptr;
@@ -33,7 +33,7 @@ class Example_Mapping : public ExampleBase
     LLGL::Texture*          dstTextures[2]      = {};       // Destination textures for display
 
     LLGL::Sampler*          samplerState        = nullptr;
-    LLGL::ResourceHeap*     resourceHeaps[2]    = {};
+    LLGL::ResourceHeap*     resourceHeap        = nullptr;
 
     int                     dstTextureIndex     = 0;        // Index into the 'dstTextures' array
 
@@ -44,7 +44,7 @@ public:
     {
         // Create all graphics objects
         auto vertexFormat = CreateBuffers();
-        shaderProgram = LoadStandardShaderProgram({ vertexFormat });
+        shaderPipeline = LoadStandardShaderPipeline({ vertexFormat });
         CreatePipelines();
         CreateContentBuffer();
         CreateSourceTextures();
@@ -69,13 +69,13 @@ private:
         // Define vertex buffer data
         struct Vertex
         {
-            Gs::Vector2f position;
-            Gs::Vector2f texCoord;
+            float position[2];
+            float texCoord[2];
         };
 
         const float s = 1;//0.5f;
 
-        std::vector<Vertex> vertices =
+        const Vertex vertices[] =
         {
             { { -s,  s }, { 0, 0 } },
             { { -s, -s }, { 0, 1 } },
@@ -86,6 +86,28 @@ private:
         // Create vertex buffer
         vertexBuffer = CreateVertexBuffer(vertices, vertexFormat);
 
+        // Read vertex buffer back to CPU memory for validation
+        Vertex readbackVertices[4] = {};
+        renderer->ReadBuffer(*vertexBuffer, 0, readbackVertices, sizeof(readbackVertices));
+
+        auto MatchReadbackVerticesPosition = [&readbackVertices, &vertices](int v, int c)
+        {
+            if (readbackVertices[v].position[c] != vertices[v].position[c])
+                std::cerr << "Readback data mismatch: Expected vertices[" << v << "].position[" << c << "] to be " << vertices[v].position[c] << ", but got " << readbackVertices[v].position[c] << std::endl;
+        };
+
+        auto MatchReadbackVerticesTexCoord = [&readbackVertices, &vertices](int v, int c)
+        {
+            if (readbackVertices[v].texCoord[c] != vertices[v].texCoord[c])
+                std::cerr << "Readback data mismatch: Expected vertices[" << v << "].texCoord[" << c << "] to be " << vertices[v].texCoord[c] << ", but got " << readbackVertices[v].texCoord[c] << std::endl;
+        };
+
+        for (int i = 0; i < 8; ++i)
+        {
+            MatchReadbackVerticesPosition(i / 2, i % 2);
+            MatchReadbackVerticesTexCoord(i / 2, i % 2);
+        }
+
         return vertexFormat;
     }
 
@@ -94,7 +116,7 @@ private:
         // Create pipeline layout
         LLGL::PipelineLayoutDescriptor layoutDesc;
         {
-            layoutDesc.bindings =
+            layoutDesc.heapBindings =
             {
                 LLGL::BindingDescriptor{ LLGL::ResourceType::Texture, LLGL::BindFlags::Sampled, LLGL::StageFlags::FragmentStage, 0 },
                 LLGL::BindingDescriptor{ LLGL::ResourceType::Sampler, 0,                        LLGL::StageFlags::FragmentStage, (IsVulkan() || IsMetal() ? 1u : 0u) },
@@ -105,7 +127,8 @@ private:
         // Create graphics pipeline
         LLGL::GraphicsPipelineDescriptor pipelineDesc;
         {
-            pipelineDesc.shaderProgram      = shaderProgram;
+            pipelineDesc.vertexShader       = shaderPipeline.vs;
+            pipelineDesc.fragmentShader     = shaderPipeline.ps;
             pipelineDesc.pipelineLayout     = pipelineLayout;
             pipelineDesc.primitiveTopology  = LLGL::PrimitiveTopology::TriangleStrip;
         }
@@ -177,15 +200,17 @@ private:
         samplerState = renderer->CreateSampler(samplerDesc);
 
         // Create resource heap
-        for (int i = 0; i < 2; ++i)
+        const LLGL::ResourceViewDescriptor resourceViews[] =
         {
-            LLGL::ResourceHeapDescriptor resourceHeapDesc;
-            {
-                resourceHeapDesc.pipelineLayout = pipelineLayout;
-                resourceHeapDesc.resourceViews  = { dstTextures[i], samplerState };
-            }
-            resourceHeaps[i] = renderer->CreateResourceHeap(resourceHeapDesc);
+            dstTextures[0], samplerState,
+            dstTextures[1], samplerState,
+        };
+        LLGL::ResourceHeapDescriptor resourceHeapDesc;
+        {
+            resourceHeapDesc.pipelineLayout     = pipelineLayout;
+            resourceHeapDesc.numResourceViews   = sizeof(resourceViews) / sizeof(resourceViews[0]);
         }
+        resourceHeap = renderer->CreateResourceHeap(resourceHeapDesc, resourceViews);
     }
 
     void GenerateTextureContent()
@@ -329,7 +354,7 @@ private:
 
                 // Set graphics pipeline and vertex buffer
                 commands->SetPipelineState(*pipeline);
-                commands->SetResourceHeap(*resourceHeaps[dstTextureIndex]);
+                commands->SetResourceHeap(*resourceHeap, dstTextureIndex);
 
                 // Draw fullscreen quad
                 commands->Draw(4, 0);

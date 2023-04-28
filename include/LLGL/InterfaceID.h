@@ -1,8 +1,8 @@
 /*
  * InterfaceID.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_INTERFACE_ID_H
@@ -34,9 +34,9 @@ struct InterfaceID
         Window,                 //!< Extends Interface. \see Window
         Window_EventListener,   //!< Extends Interface. \see Window::EventListener
         Input,                  //!< Extends Interface. \see Input
-        Timer,                  //!< Extends Interface. \see Timer
         RenderSystem,           //!< Extends Interface. \see RenderSystem
         RenderSystemChild,      //!< Extends Interface. \see RenderSystemChild
+        Report,                 //!< Extends Interface. \see Report
         Buffer,                 //!< Extends RenderSystemChild. \see Buffer
         BufferArray,            //!< Extends RenderSystemChild. \see BufferArray
         CommandBuffer,          //!< Extends RenderSystemChild. \see CommandBuffer
@@ -50,7 +50,6 @@ struct InterfaceID
         ResourceHeap,           //!< Extends RenderSystemChild. \see ResourceHeap
         Sampler,                //!< Extends RenderSystemChild. \see Sampler
         Shader,                 //!< Extends RenderSystemChild. \see Shader
-        ShaderProgram,          //!< Extends RenderSystemChild. \see ShaderProgram
         Texture,                //!< Extends RenderSystemChild. \see Texture
         RenderTarget,           //!< Extends RenderSystemChild. \see RenderTarget
         SwapChain,              //!< Extends RenderTarget. \see SwapChain

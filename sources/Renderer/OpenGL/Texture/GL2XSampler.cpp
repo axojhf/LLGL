@@ -1,14 +1,14 @@
 /*
  * GL2XSampler.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GL2XSampler.h"
 #include "../GLTypes.h"
 #include "../Ext/GLExtensions.h"
-#include "../../../Core/HelperMacros.h"
+#include "../../../Core/MacroUtils.h"
 #include <algorithm>
 
 
@@ -18,7 +18,7 @@ namespace LLGL
 
 static GLenum GetGLSamplerMinFilter(const SamplerDescriptor& desc)
 {
-    if (desc.mipMapping)
+    if (desc.mipMapEnabled)
         return GLTypes::Map(desc.minFilter, desc.mipMapFilter);
     else
         return GLTypes::Map(desc.minFilter);
@@ -30,7 +30,7 @@ static bool IsGLTextureWrapUsingBorder(GLenum mode)
     return (mode == GL_CLAMP || mode == GL_CLAMP_TO_BORDER);
 }
 
-void GL2XSampler::SetDesc(const SamplerDescriptor& desc)
+void GL2XSampler::SamplerParameters(const SamplerDescriptor& desc)
 {
     /* Store texture coordinate wrap modes */
     wrapS_              = GLTypes::Map(desc.addressModeU);
@@ -57,10 +57,10 @@ void GL2XSampler::SetDesc(const SamplerDescriptor& desc)
         compareMode_    = GL_NONE;
 
     /* Set border color */
-    borderColor_[0]     = (std::max)(0.0f, (std::min)(desc.borderColor.r, 1.0f));
-    borderColor_[1]     = (std::max)(0.0f, (std::min)(desc.borderColor.g, 1.0f));
-    borderColor_[2]     = (std::max)(0.0f, (std::min)(desc.borderColor.b, 1.0f));
-    borderColor_[3]     = (std::max)(0.0f, (std::min)(desc.borderColor.a, 1.0f));
+    borderColor_[0]     = (std::max)(0.0f, (std::min)(desc.borderColor[0], 1.0f));
+    borderColor_[1]     = (std::max)(0.0f, (std::min)(desc.borderColor[1], 1.0f));
+    borderColor_[2]     = (std::max)(0.0f, (std::min)(desc.borderColor[2], 1.0f));
+    borderColor_[3]     = (std::max)(0.0f, (std::min)(desc.borderColor[3], 1.0f));
     borderColorUsed_    = (IsGLTextureWrapUsingBorder(wrapS_) || IsGLTextureWrapUsingBorder(wrapT_) || IsGLTextureWrapUsingBorder(wrapR_));
 }
 

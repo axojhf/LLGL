@@ -1,16 +1,17 @@
 /*
  * GL2XSampler.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_GL2X_SAMPLER_H
 #define LLGL_GL2X_SAMPLER_H
 
 
-#include "../OpenGL.h"
 #include <LLGL/Sampler.h>
+#include "../OpenGL.h"
+#include <memory>
 
 
 namespace LLGL
@@ -24,7 +25,7 @@ class GL2XSampler final : public Sampler
     public:
 
         // Converts and stores the sampler descriptor to GL states.
-        void SetDesc(const SamplerDescriptor& desc);
+        void SamplerParameters(const SamplerDescriptor& desc);
 
         // Binds all attributes of this sampler to the specified GL texture object.
         void BindTexParameters(GLenum target, const GL2XSampler* prevSampler = nullptr) const;
@@ -51,6 +52,8 @@ class GL2XSampler final : public Sampler
         bool    borderColorUsed_    = false;
 
 };
+
+using GL2XSamplerPtr = std::unique_ptr<GL2XSampler>;
 
 
 } // /namespace LLGL

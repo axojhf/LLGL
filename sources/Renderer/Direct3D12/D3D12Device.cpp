@@ -1,8 +1,8 @@
 /*
  * D3D12Device.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D12Device.h"
@@ -90,16 +90,6 @@ ComPtr<ID3D12PipelineState> D3D12Device::CreateDXComputePipelineState(const D3D1
     DXThrowIfCreateFailed(hr, "ID3D12PipelineState");
 
     return pipelineState;
-}
-
-ComPtr<ID3D12DescriptorHeap> D3D12Device::CreateDXDescriptorHeap(const D3D12_DESCRIPTOR_HEAP_DESC& desc)
-{
-    ComPtr<ID3D12DescriptorHeap> descHeap;
-
-    auto hr = device_->CreateDescriptorHeap(&desc, IID_PPV_ARGS(descHeap.ReleaseAndGetAddressOf()));
-    DXThrowIfCreateFailed(hr, "ID3D12DescriptorHeap");
-
-    return descHeap;
 }
 
 ComPtr<ID3D12QueryHeap> D3D12Device::CreateDXQueryHeap(const D3D12_QUERY_HEAP_DESC& desc)

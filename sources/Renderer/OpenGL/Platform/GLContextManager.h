@@ -1,8 +1,8 @@
 /*
  * GLContextManager.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_GL_CONTEXT_MANAGER_H
@@ -11,6 +11,7 @@
 
 #include "GLContext.h"
 #include <LLGL/RendererConfiguration.h>
+#include <vector>
 
 
 namespace LLGL
@@ -69,9 +70,6 @@ class GLContextManager
 
         // Initializes the default render states for the specified GL state manager.
         void InitRenderStates(GLStateManager& stateMngr);
-
-        // Loads all GL extensions.
-        void LoadGLExtensions(bool hasGLCoreProfile);
 
     private:
 

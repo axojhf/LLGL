@@ -1,8 +1,8 @@
 /*
  * D3D11Shader.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D11_SHADER_H
@@ -10,10 +10,11 @@
 
 
 #include <LLGL/Shader.h>
-#include <LLGL/ShaderProgramFlags.h>
+#include <LLGL/ShaderReflection.h>
 #include <LLGL/VertexAttribute.h>
 #include <LLGL/BufferFlags.h>
 #include "../../DXCommon/ComPtr.h"
+#include "../../DXCommon/DXReport.h"
 #include <vector>
 #include <string>
 #include <d3d11.h>
@@ -52,6 +53,19 @@ union D3D11NativeShader
     ComPtr<ID3D11ComputeShader>     cs;
 };
 
+struct D3D11ConstantReflection
+{
+    std::string name;   // Name of the constant buffer field.
+    UINT        offset; // Offset (in bytes) within the constant buffer.
+    UINT        size;   // Size (in bytes) of this uniform.
+};
+
+struct D3D11ConstantBufferReflection
+{
+    UINT                                    slot;
+    UINT                                    size;
+    std::vector<D3D11ConstantReflection>    fields;
+};
 
 class D3D11Shader final : public Shader
 {
@@ -60,15 +74,16 @@ class D3D11Shader final : public Shader
 
         void SetName(const char* name) override;
 
-        bool HasErrors() const override;
+        const Report* GetReport() const override;
 
-        std::string GetReport() const override;
+        bool Reflect(ShaderReflection& reflection) const override;
 
     public:
 
         D3D11Shader(ID3D11Device* device, const ShaderDescriptor& desc);
 
-        bool Reflect(ShaderReflection& reflection) const;
+        // Returns a list of all reflected constant buffers including their fields.
+        HRESULT ReflectAndCacheConstantBuffers(const std::vector<D3D11ConstantBufferReflection>** outConstantBuffers);
 
         // Returns the native D3D shader object.
         inline const D3D11NativeShader& GetNative() const
@@ -117,15 +132,19 @@ class D3D11Shader final : public Shader
 
         HRESULT ReflectShaderByteCode(ShaderReflection& reflection) const;
 
+        HRESULT ReflectConstantBuffers(std::vector<D3D11ConstantBufferReflection>& outConstantBuffers) const;
+
     private:
 
-        D3D11NativeShader           native_;
+        D3D11NativeShader                           native_;
 
-        ComPtr<ID3DBlob>            byteCode_;
-        ComPtr<ID3DBlob>            errors_;
-        bool                        hasErrors_  = false;
+        ComPtr<ID3DBlob>                            byteCode_;
+        DXReport                                    report_;
 
-        ComPtr<ID3D11InputLayout>   inputLayout_;
+        ComPtr<ID3D11InputLayout>                   inputLayout_;
+
+        HRESULT                                     cbufferReflectionResult_    = S_FALSE;
+        std::vector<D3D11ConstantBufferReflection>  cbufferReflections_;
 
 };
 

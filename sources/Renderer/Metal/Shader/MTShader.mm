@@ -1,13 +1,14 @@
 /*
  * MTShader.mm
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "MTShader.h"
 #include "../MTTypes.h"
 #include <LLGL/Platform/Platform.h>
+#include <LLGL/Utils/ForRange.h>
 #include <cstring>
 #include <set>
 
@@ -17,25 +18,25 @@ namespace LLGL
 
 
 MTShader::MTShader(id<MTLDevice> device, const ShaderDescriptor& desc) :
-    Shader { desc.type }
+    Shader  { desc.type },
+    device_ { device    }
 {
-    if (!Compile(device, desc))
-        hasErrors_ = true;
-
-    /* Build vertex input layout */
-    BuildInputLayout(desc.vertex.inputAttribs.size(), desc.vertex.inputAttribs.data());
-
-    /* Store work group size for compute shaders */
-    if (desc.type == ShaderType::Compute)
+    if (Compile(device, desc))
     {
-        const auto& workGroupSize = desc.compute.workGroupSize;
-        numThreadsPerGroup_ = MTLSizeMake(workGroupSize.width, workGroupSize.height, workGroupSize.depth);
+        /* Build vertex input layout */
+        BuildInputLayout(desc.vertex.inputAttribs.size(), desc.vertex.inputAttribs.data());
+
+        /* Store work group size for compute shaders */
+        if (desc.type == ShaderType::Compute)
+        {
+            const auto& workGroupSize = desc.compute.workGroupSize;
+            numThreadsPerGroup_ = MTLSizeMake(workGroupSize.width, workGroupSize.height, workGroupSize.depth);
+        }
     }
 }
 
 MTShader::~MTShader()
 {
-    ReleaseError();
     if (vertexDesc_)
         [vertexDesc_ release];
     if (native_)
@@ -64,27 +65,30 @@ static MTLLanguageVersion GetMTLLanguageVersion(const ShaderDescriptor& desc)
     throw std::invalid_argument("invalid Metal shader version specified");
 }
 
-bool MTShader::HasErrors() const
+const Report* MTShader::GetReport() const
 {
-    return hasErrors_;
+    return (report_ ? &report_ : nullptr);
 }
 
-std::string MTShader::GetReport() const
+bool MTShader::Reflect(ShaderReflection& reflection) const
 {
-    std::string s;
-
-    if (error_ != nullptr)
-    {
-        NSString* errorMsg = [error_ localizedDescription];
-        s = [errorMsg cStringUsingEncoding:NSUTF8StringEncoding];
-    }
-
-    return s;
+    if (GetType() == ShaderType::Compute)
+        return ReflectComputePipeline(reflection);
+    else
+        return false; // Metal shader reflection not supported for render pipeline
 }
 
 bool MTShader::IsPostTessellationVertex() const
 {
     return (GetType() == ShaderType::Vertex && native_ != nil && [native_ patchType] != MTLPatchTypeNone);
+}
+
+NSUInteger MTShader::GetNumPatchControlPoints() const
+{
+    if (IsPostTessellationVertex())
+        return [native_ patchControlPointCount];
+    else
+        return 0;
 }
 
 
@@ -137,20 +141,25 @@ bool MTShader::CompileSource(id<MTLDevice> device, const ShaderDescriptor& shade
     MTLCompileOptions* opt = ToMTLCompileOptions(shaderDesc);
 
     /* Load shader library */
-    ReleaseError();
-    error_ = [NSError alloc];
+    NSError* error = [NSError alloc];
 
     library_ = [device
         newLibraryWithSource:   sourceString
         options:                opt
-        error:                  &error_
+        error:                  &error
     ];
 
     [sourceString release];
     [opt release];
 
     /* Load shader function with entry point */
-    return LoadFunction(shaderDesc.entryPoint);
+    const bool success = LoadFunction(shaderDesc.entryPoint);
+
+    const StringView errorText = [[error localizedDescription] cStringUsingEncoding:NSUTF8StringEncoding];
+    report_.Reset(errorText, !success);
+    [error release];
+
+    return success;
 }
 
 //TODO: this is untested!!!
@@ -177,12 +186,11 @@ bool MTShader::CompileBinary(id<MTLDevice> device, const ShaderDescriptor& shade
         throw std::runtime_error("cannot compile Metal shader without source");
 
     /* Load shader library */
-    ReleaseError();
-    error_ = [NSError alloc];
+    NSError* error = [NSError alloc];
 
     library_ = [device
         newLibraryWithData: reinterpret_cast<dispatch_data_t>(dispatchData)
-        error:              &error_
+        error:              &error
     ];
 
     if (source != nullptr)
@@ -191,7 +199,13 @@ bool MTShader::CompileBinary(id<MTLDevice> device, const ShaderDescriptor& shade
     [dispatchData release];
 
     /* Load shader function with entry point */
-    return LoadFunction(shaderDesc.entryPoint);
+    const bool success = LoadFunction(shaderDesc.entryPoint);
+
+    const StringView errorText = [[error localizedDescription] cStringUsingEncoding:NSUTF8StringEncoding];
+    report_.Reset(errorText, !success);
+    [error release];
+
+    return success;
 }
 
 // Converts the vertex attribute to a Metal vertex buffer layout
@@ -234,7 +248,7 @@ void MTShader::BuildInputLayout(std::size_t numVertexAttribs, const VertexAttrib
     /* Convert vertex attributes to Metal vertex buffer layouts and attribute descriptors */
     std::set<std::uint32_t> slotOccupied;
 
-    for (std::size_t i = 0; i < numVertexAttribs; ++i)
+    for_range(i, numVertexAttribs)
     {
         const auto& attr = vertexAttribs[i];
 
@@ -243,15 +257,6 @@ void MTShader::BuildInputLayout(std::size_t numVertexAttribs, const VertexAttrib
             Convert(vertexDesc_.layouts[attr.slot], attr, isPatchControlPoint);
 
         Convert(vertexDesc_.attributes[attr.location], attr);
-    }
-}
-
-void MTShader::ReleaseError()
-{
-    if (error_ != nullptr)
-    {
-        [error_ release];
-        error_ = nullptr;
     }
 }
 
@@ -266,15 +271,85 @@ bool MTShader::LoadFunction(const char* entryPoint)
         /* Load shader function with entry point name */
         native_ = [library_ newFunctionWithName:entryPointStr];
         if (native_)
-        {
-            ReleaseError();
             result = true;
-        }
 
         [entryPointStr release];
     }
 
     return result;
+}
+
+static ResourceType ToResourceType(MTLArgumentType type)
+{
+    switch (type)
+    {
+        case MTLArgumentTypeBuffer:     return ResourceType::Buffer;
+        case MTLArgumentTypeTexture:    return ResourceType::Texture;
+        case MTLArgumentTypeSampler:    return ResourceType::Sampler;
+        default:                        return ResourceType::Undefined;
+    }
+}
+
+static long GetShaderArgumentBindFlags(MTLArgument* arg, const ResourceType resourceType)
+{
+    long bindFlags = 0;
+
+    bool isRead     = (arg.access != MTLArgumentAccessWriteOnly);
+    bool isWritten  = (arg.access != MTLArgumentAccessReadOnly);
+
+    if (resourceType == ResourceType::Buffer || resourceType == ResourceType::Texture)
+    {
+        if (isRead)
+            bindFlags |= BindFlags::Sampled;
+        if (isWritten)
+            bindFlags |= BindFlags::Storage;
+    }
+
+    return bindFlags;
+}
+
+static void ReflectShaderArgument(MTLArgument* arg, ShaderReflection& reflection, long stageFlags)
+{
+    auto resourceType = ToResourceType(arg.type);
+    if (resourceType != ResourceType::Undefined)
+    {
+        ShaderResourceReflection resource;
+        {
+            resource.binding.name       = [arg.name UTF8String];
+            resource.binding.type       = resourceType;
+            resource.binding.bindFlags  = GetShaderArgumentBindFlags(arg, resourceType);
+            resource.binding.stageFlags = stageFlags;
+            resource.binding.slot       = static_cast<std::uint32_t>(arg.index);
+            resource.binding.arraySize  = static_cast<std::uint32_t>(arg.arrayLength);
+            if (resourceType == ResourceType::Buffer)
+                resource.constantBufferSize = static_cast<std::uint32_t>(arg.bufferDataSize);
+        }
+        reflection.resources.push_back(resource);
+    }
+}
+
+bool MTShader::ReflectComputePipeline(ShaderReflection& reflection) const
+{
+    /* Create temporary compute pipeline state to retrieve shader reflection */
+    MTLAutoreleasedComputePipelineReflection psoReflect = nullptr;
+    MTLPipelineOption opt = (MTLPipelineOptionArgumentInfo | MTLPipelineOptionBufferTypeInfo);
+
+    id<MTLComputePipelineState> pso = [device_
+        newComputePipelineStateWithFunction:    GetNative()
+        options:                                opt
+        reflection:                             &psoReflect
+        error:                                  nullptr
+    ];
+
+    if (pso != nil)
+    {
+        for (MTLArgument* arg in psoReflect.arguments)
+            ReflectShaderArgument(arg, reflection, StageFlags::ComputeStage);
+        [pso release];
+        return true;
+    }
+
+    return false;
 }
 
 

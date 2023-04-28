@@ -1,13 +1,14 @@
 /*
  * MTComputePSO.mm
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "MTComputePSO.h"
+#include "MTPipelineLayout.h"
 #include "../MTCore.h"
-#include "../Shader/MTShaderProgram.h"
+#include "../Shader/MTShader.h"
 #include "../../CheckedCast.h"
 #include <LLGL/PipelineStateFlags.h>
 #include <string>
@@ -19,20 +20,20 @@ namespace LLGL
 
 
 MTComputePSO::MTComputePSO(id<MTLDevice> device, const ComputePipelineDescriptor& desc) :
-    MTPipelineState { false }
+    MTPipelineState { /*isGraphicsPSO:*/ false, desc.pipelineLayout }
 {
     /* Get native shader functions */
-    shaderProgram_ = LLGL_CAST(const MTShaderProgram*, desc.shaderProgram);
-    if (!shaderProgram_)
-        throw std::invalid_argument("failed to create compute pipeline state due to missing shader program");
+    computeShader_  = LLGL_CAST(const MTShader*, desc.computeShader);
+    if (!computeShader_)
+        throw std::invalid_argument("cannot create Metal compute pipeline without compute shader");
 
-    id<MTLFunction> kernelFunc = shaderProgram_->GetKernelMTLFunction();
+    id<MTLFunction> kernelFunc = computeShader_->GetNative();
     if (!kernelFunc)
-        throw std::invalid_argument("failed to create compute pipeline due to missing compute shader in shader program");
+        throw std::invalid_argument("cannot create Metal compute pipeline without valid compute kernel function");
 
     /* Create native compute pipeline state */
     NSError* error = nullptr;
-    computePipelineState_ = [device newComputePipelineStateWithFunction:kernelFunc error:&error];
+    computePipelineState_ = CreateNativeComputePipelineState(device, kernelFunc, error);
     if (!computePipelineState_)
         MTThrowIfCreateFailed(error, "MTLComputePipelineState");
 }
@@ -40,6 +41,36 @@ MTComputePSO::MTComputePSO(id<MTLDevice> device, const ComputePipelineDescriptor
 void MTComputePSO::Bind(id<MTLComputeCommandEncoder> computeEncoder)
 {
     [computeEncoder setComputePipelineState:computePipelineState_];
+
+    if (auto* pipelineLayout = GetPipelineLayout())
+        pipelineLayout->SetStaticKernelSamplers(computeEncoder);
+}
+
+
+/*
+ * ======= Private: =======
+ */
+
+id<MTLComputePipelineState> MTComputePSO::CreateNativeComputePipelineState(
+    id<MTLDevice>   device,
+    id<MTLFunction> function,
+    NSError*&       error)
+{
+    if (NeedsConstantsCache())
+    {
+        /* Create PSO with reflection to generate constants cache */
+        MTLAutoreleasedComputePipelineReflection reflection = nil;
+        id<MTLComputePipelineState> pso = [device
+            newComputePipelineStateWithFunction:    function
+            options:                                (MTLPipelineOptionArgumentInfo | MTLPipelineOptionBufferTypeInfo)
+            reflection:                             &reflection
+            error:                                  &error
+        ];
+        CreateConstantsCacheForComputePipeline(reflection);
+        return pso;
+    }
+    else
+        return [device newComputePipelineStateWithFunction:function error:&error];
 }
 
 

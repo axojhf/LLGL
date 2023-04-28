@@ -1,8 +1,8 @@
 /*
  * D3D12RenderTarget.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D12_RENDER_TARGET_H
@@ -61,9 +61,8 @@ class D3D12RenderTarget final : public RenderTarget
 
         void CreateSubresource(
             ID3D12Device*                   device,
-            const AttachmentType            attachmentType,
             D3D12Resource&                  resource,
-            DXGI_FORMAT                     format,
+            const Format                    format,
             const TextureType               textureType,
             UINT                            mipLevel,
             UINT                            arrayLayer,

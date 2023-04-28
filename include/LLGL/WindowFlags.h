@@ -1,17 +1,17 @@
 /*
  * WindowFlags.h
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_WINDOW_FLAGS_H
 #define LLGL_WINDOW_FLAGS_H
 
 
-#include "Types.h"
-#include "Constants.h"
-#include <string>
+#include <LLGL/Types.h>
+#include <LLGL/Constants.h>
+#include <LLGL/Container/Strings.h>
 #include <cstdint>
 
 
@@ -23,7 +23,7 @@ namespace LLGL
 struct WindowDescriptor
 {
     //! Window title as unicode string.
-    std::wstring    title;
+    UTF8String      title;
 
     //! Window position (relative to the client area).
     Offset2D        position;

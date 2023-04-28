@@ -1,8 +1,8 @@
 /*
  * D3D11RenderSystem.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D11RenderSystem.h"
@@ -14,7 +14,8 @@
 #include "../CheckedCast.h"
 #include "../TextureUtils.h"
 #include "../../Core/Vendor.h"
-#include "../../Core/Helper.h"
+#include "../../Core/CoreUtils.h"
+#include "../../Core/StringUtils.h"
 #include "../../Core/Assertion.h"
 #include <sstream>
 #include <iomanip>
@@ -76,17 +77,14 @@ D3D11RenderSystem::~D3D11RenderSystem()
 
 /* ----- Swap-chain ----- */
 
-SwapChain* D3D11RenderSystem::CreateSwapChain(const SwapChainDescriptor& desc, const std::shared_ptr<Surface>& surface)
+SwapChain* D3D11RenderSystem::CreateSwapChain(const SwapChainDescriptor& swapChainDesc, const std::shared_ptr<Surface>& surface)
 {
-    return TakeOwnership(
-        swapChains_,
-        MakeUnique<D3D11SwapChain>(factory_.Get(), device_, desc, surface)
-    );
+    return swapChains_.emplace<D3D11SwapChain>(factory_.Get(), device_, swapChainDesc, surface);
 }
 
 void D3D11RenderSystem::Release(SwapChain& swapChain)
 {
-    RemoveFromUniqueSet(swapChains_, &swapChain);
+    swapChains_.erase(&swapChain);
 }
 
 /* ----- Command queues ----- */
@@ -98,15 +96,12 @@ CommandQueue* D3D11RenderSystem::GetCommandQueue()
 
 /* ----- Command buffers ----- */
 
-CommandBuffer* D3D11RenderSystem::CreateCommandBuffer(const CommandBufferDescriptor& desc)
+CommandBuffer* D3D11RenderSystem::CreateCommandBuffer(const CommandBufferDescriptor& commandBufferDesc)
 {
-    if ((desc.flags & (CommandBufferFlags::ImmediateSubmit)) != 0)
+    if ((commandBufferDesc.flags & (CommandBufferFlags::ImmediateSubmit)) != 0)
     {
         /* Create command buffer with immediate context */
-        return TakeOwnership(
-            commandBuffers_,
-            MakeUnique<D3D11CommandBuffer>(device_.Get(), context_, stateMngr_, desc)
-        );
+        return commandBuffers_.emplace<D3D11CommandBuffer>(device_.Get(), context_, stateMngr_, commandBufferDesc);
     }
     else
     {
@@ -115,62 +110,68 @@ CommandBuffer* D3D11RenderSystem::CreateCommandBuffer(const CommandBufferDescrip
         auto hr = device_->CreateDeferredContext(0, deferredContext.ReleaseAndGetAddressOf());
         DXThrowIfCreateFailed(hr, "ID3D11DeviceContext", "for deferred command buffer");
 
+        /* Create state manager dedicated to deferred context */
+        auto deferredStateMngr = std::make_shared<D3D11StateManager>(device_.Get(), deferredContext);
+
         /* Create command buffer with deferred context and dedicated state manager */
-        return TakeOwnership(
-            commandBuffers_,
-            MakeUnique<D3D11CommandBuffer>(device_.Get(), deferredContext, std::make_shared<D3D11StateManager>(device_.Get(), deferredContext, context_.Get()), desc)
-        );
+        return commandBuffers_.emplace<D3D11CommandBuffer>(device_.Get(), deferredContext, deferredStateMngr, commandBufferDesc);
     }
 }
 
 void D3D11RenderSystem::Release(CommandBuffer& commandBuffer)
 {
-    RemoveFromUniqueSet(commandBuffers_, &commandBuffer);
+    commandBuffers_.erase(&commandBuffer);
 }
 
 /* ----- Buffers ------ */
 
-static std::unique_ptr<D3D11Buffer> MakeD3D11Buffer(ID3D11Device* device, const BufferDescriptor& desc, const void* initialData)
+Buffer* D3D11RenderSystem::CreateBuffer(const BufferDescriptor& bufferDesc, const void* initialData)
 {
-    /* Make respective buffer type */
-    if (DXBindFlagsNeedBufferWithRV(desc.bindFlags))
-        return MakeUnique<D3D11BufferWithRV>(device, desc, initialData);
+    AssertCreateBuffer(bufferDesc, UINT_MAX);
+    if (DXBindFlagsNeedBufferWithRV(bufferDesc.bindFlags))
+        return buffers_.emplace<D3D11BufferWithRV>(device_.Get(), bufferDesc, initialData);
     else
-        return MakeUnique<D3D11Buffer>(device, desc, initialData);
-}
-
-Buffer* D3D11RenderSystem::CreateBuffer(const BufferDescriptor& desc, const void* initialData)
-{
-    AssertCreateBuffer(desc, UINT_MAX);
-    return TakeOwnership(buffers_, MakeD3D11Buffer(device_.Get(), desc, initialData));
+        return buffers_.emplace<D3D11Buffer>(device_.Get(), bufferDesc, initialData);
 }
 
 BufferArray* D3D11RenderSystem::CreateBufferArray(std::uint32_t numBuffers, Buffer* const * bufferArray)
 {
     AssertCreateBufferArray(numBuffers, bufferArray);
-    return TakeOwnership(bufferArrays_, MakeUnique<D3D11BufferArray>(numBuffers, bufferArray));
+    return bufferArrays_.emplace<D3D11BufferArray>(numBuffers, bufferArray);
 }
 
 void D3D11RenderSystem::Release(Buffer& buffer)
 {
-    RemoveFromUniqueSet(buffers_, &buffer);
+    buffers_.erase(&buffer);
 }
 
 void D3D11RenderSystem::Release(BufferArray& bufferArray)
 {
-    RemoveFromUniqueSet(bufferArrays_, &bufferArray);
+    bufferArrays_.erase(&bufferArray);
 }
 
-void D3D11RenderSystem::WriteBuffer(Buffer& dstBuffer, std::uint64_t dstOffset, const void* data, std::uint64_t dataSize)
+void D3D11RenderSystem::WriteBuffer(Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t dataSize)
 {
-    auto& dstBufferD3D = LLGL_CAST(D3D11Buffer&, dstBuffer);
-    dstBufferD3D.UpdateSubresource(context_.Get(), data, static_cast<UINT>(dataSize), static_cast<UINT>(dstOffset));
+    auto& bufferD3D = LLGL_CAST(D3D11Buffer&, buffer);
+    bufferD3D.UpdateSubresource(context_.Get(), data, static_cast<UINT>(dataSize), static_cast<UINT>(offset));
+}
+
+void D3D11RenderSystem::ReadBuffer(Buffer& buffer, std::uint64_t offset, void* data, std::uint64_t dataSize)
+{
+    auto& bufferD3D = LLGL_CAST(D3D11Buffer&, buffer);
+    bufferD3D.ReadSubresource(context_.Get(), data, static_cast<UINT>(dataSize), static_cast<UINT>(offset));
 }
 
 void* D3D11RenderSystem::MapBuffer(Buffer& buffer, const CPUAccess access)
 {
     auto& bufferD3D = LLGL_CAST(D3D11Buffer&, buffer);
     return bufferD3D.Map(context_.Get(), access);
+}
+
+void* D3D11RenderSystem::MapBuffer(Buffer& buffer, const CPUAccess access, std::uint64_t offset, std::uint64_t length)
+{
+    auto& bufferD3D = LLGL_CAST(D3D11Buffer&, buffer);
+    return bufferD3D.Map(context_.Get(), access, static_cast<UINT>(offset), static_cast<UINT>(length));
 }
 
 void D3D11RenderSystem::UnmapBuffer(Buffer& buffer)
@@ -183,54 +184,33 @@ void D3D11RenderSystem::UnmapBuffer(Buffer& buffer)
 
 Texture* D3D11RenderSystem::CreateTexture(const TextureDescriptor& textureDesc, const SrcImageDescriptor* imageDesc)
 {
-    /* Create texture object and store type */
-    auto texture = MakeUnique<D3D11Texture>(textureDesc);
+    /* Create texture object */
+    auto* textureD3D = textures_.emplace<D3D11Texture>(device_.Get(), textureDesc);
 
-    /* Bulid generic texture */
-    switch (textureDesc.type)
-    {
-        case TextureType::Texture1D:
-        case TextureType::Texture1DArray:
-            CreateAndInitializeGpuTexture1D(*texture, textureDesc, imageDesc);
-            break;
-        case TextureType::Texture2D:
-        case TextureType::Texture2DArray:
-        case TextureType::TextureCube:
-        case TextureType::TextureCubeArray:
-            CreateAndInitializeGpuTexture2D(*texture, textureDesc, imageDesc);
-            break;
-        case TextureType::Texture3D:
-            CreateAndInitializeGpuTexture3D(*texture, textureDesc, imageDesc);
-            break;
-        case TextureType::Texture2DMS:
-        case TextureType::Texture2DMSArray:
-            CreateAndInitializeGpuTexture2DMS(*texture, textureDesc);
-            break;
-        default:
-            throw std::invalid_argument("failed to create texture with invalid texture type");
-            break;
-    }
+    /* Initialize texture data with or without initial image data */
+    InitializeGpuTexture(*textureD3D, textureDesc, imageDesc);
 
     /* Generate MIP-maps if enabled */
     if (imageDesc != nullptr && MustGenerateMipsOnCreate(textureDesc))
-        D3D11MipGenerator::Get().GenerateMips(context_.Get(), *texture);
+        D3D11MipGenerator::Get().GenerateMips(context_.Get(), *textureD3D);
 
-    return TakeOwnership(textures_, std::move(texture));
+    return textureD3D;
 }
 
 void D3D11RenderSystem::Release(Texture& texture)
 {
-    RemoveFromUniqueSet(textures_, &texture);
+    textures_.erase(&texture);
 }
 
 void D3D11RenderSystem::WriteTexture(Texture& texture, const TextureRegion& textureRegion, const SrcImageDescriptor& imageDesc)
 {
+    auto& textureD3D = LLGL_CAST(D3D11Texture&, texture);
     switch (texture.GetType())
     {
         case TextureType::Texture1D:
         case TextureType::Texture1DArray:
-            UpdateGenericTexture(
-                texture,
+            textureD3D.UpdateSubresource(
+                context_.Get(),
                 textureRegion.subresource.baseMipLevel,
                 textureRegion.subresource.baseArrayLayer,
                 CD3D11_BOX(
@@ -249,8 +229,8 @@ void D3D11RenderSystem::WriteTexture(Texture& texture, const TextureRegion& text
         case TextureType::TextureCube:
         case TextureType::Texture2DArray:
         case TextureType::TextureCubeArray:
-            UpdateGenericTexture(
-                texture,
+            textureD3D.UpdateSubresource(
+                context_.Get(),
                 textureRegion.subresource.baseMipLevel,
                 textureRegion.subresource.baseArrayLayer,
                 CD3D11_BOX(
@@ -270,8 +250,8 @@ void D3D11RenderSystem::WriteTexture(Texture& texture, const TextureRegion& text
             break;
 
         case TextureType::Texture3D:
-            UpdateGenericTexture(
-                texture,
+            textureD3D.UpdateSubresource(
+                context_.Get(),
                 textureRegion.subresource.baseMipLevel,
                 0,
                 CD3D11_BOX(
@@ -314,87 +294,81 @@ void D3D11RenderSystem::ReadTexture(Texture& texture, const TextureRegion& textu
 
 /* ----- Sampler States ---- */
 
-Sampler* D3D11RenderSystem::CreateSampler(const SamplerDescriptor& desc)
+Sampler* D3D11RenderSystem::CreateSampler(const SamplerDescriptor& samplerDesc)
 {
-    return TakeOwnership(samplers_, MakeUnique<D3D11Sampler>(device_.Get(), desc));
+    return samplers_.emplace<D3D11Sampler>(device_.Get(), samplerDesc);
 }
 
 void D3D11RenderSystem::Release(Sampler& sampler)
 {
-    RemoveFromUniqueSet(samplers_, &sampler);
+    samplers_.erase(&sampler);
 }
 
 /* ----- Resource Heaps ----- */
 
-ResourceHeap* D3D11RenderSystem::CreateResourceHeap(const ResourceHeapDescriptor& desc)
+ResourceHeap* D3D11RenderSystem::CreateResourceHeap(const ResourceHeapDescriptor& resourceHeapDesc, const ArrayView<ResourceViewDescriptor>& initialResourceViews)
 {
-    const bool hasDeviceContextD3D11_1 = (GetMinorVersion() >= 1);
-    return TakeOwnership(resourceHeaps_, MakeUnique<D3D11ResourceHeap>(desc, hasDeviceContextD3D11_1));
+    return resourceHeaps_.emplace<D3D11ResourceHeap>(resourceHeapDesc, initialResourceViews);
 }
 
 void D3D11RenderSystem::Release(ResourceHeap& resourceHeap)
 {
-    RemoveFromUniqueSet(resourceHeaps_, &resourceHeap);
+    resourceHeaps_.erase(&resourceHeap);
+}
+
+std::uint32_t D3D11RenderSystem::WriteResourceHeap(ResourceHeap& resourceHeap, std::uint32_t firstDescriptor, const ArrayView<ResourceViewDescriptor>& resourceViews)
+{
+    auto& resourceHeapD3D = LLGL_CAST(D3D11ResourceHeap&, resourceHeap);
+    return resourceHeapD3D.WriteResourceViews(firstDescriptor, resourceViews);
 }
 
 /* ----- Render Passes ----- */
 
-RenderPass* D3D11RenderSystem::CreateRenderPass(const RenderPassDescriptor& desc)
+RenderPass* D3D11RenderSystem::CreateRenderPass(const RenderPassDescriptor& renderPassDesc)
 {
-    return TakeOwnership(renderPasses_, MakeUnique<D3D11RenderPass>(desc));
+    return renderPasses_.emplace<D3D11RenderPass>(renderPassDesc);
 }
 
 void D3D11RenderSystem::Release(RenderPass& renderPass)
 {
-    RemoveFromUniqueSet(renderPasses_, &renderPass);
+    renderPasses_.erase(&renderPass);
 }
 
 /* ----- Render Targets ----- */
 
-RenderTarget* D3D11RenderSystem::CreateRenderTarget(const RenderTargetDescriptor& desc)
+RenderTarget* D3D11RenderSystem::CreateRenderTarget(const RenderTargetDescriptor& renderTargetDesc)
 {
-    return TakeOwnership(renderTargets_, MakeUnique<D3D11RenderTarget>(device_.Get(), desc));
+    return renderTargets_.emplace<D3D11RenderTarget>(device_.Get(), renderTargetDesc);
 }
 
 void D3D11RenderSystem::Release(RenderTarget& renderTarget)
 {
-    RemoveFromUniqueSet(renderTargets_, &renderTarget);
+    renderTargets_.erase(&renderTarget);
 }
 
 /* ----- Shader ----- */
 
-Shader* D3D11RenderSystem::CreateShader(const ShaderDescriptor& desc)
+Shader* D3D11RenderSystem::CreateShader(const ShaderDescriptor& shaderDesc)
 {
-    AssertCreateShader(desc);
-    return TakeOwnership(shaders_, MakeUnique<D3D11Shader>(device_.Get(), desc));
-}
-
-ShaderProgram* D3D11RenderSystem::CreateShaderProgram(const ShaderProgramDescriptor& desc)
-{
-    AssertCreateShaderProgram(desc);
-    return TakeOwnership(shaderPrograms_, MakeUnique<D3D11ShaderProgram>(device_.Get(), desc));
+    AssertCreateShader(shaderDesc);
+    return shaders_.emplace<D3D11Shader>(device_.Get(), shaderDesc);
 }
 
 void D3D11RenderSystem::Release(Shader& shader)
 {
-    RemoveFromUniqueSet(shaders_, &shader);
-}
-
-void D3D11RenderSystem::Release(ShaderProgram& shaderProgram)
-{
-    RemoveFromUniqueSet(shaderPrograms_, &shaderProgram);
+    shaders_.erase(&shader);
 }
 
 /* ----- Pipeline Layouts ----- */
 
-PipelineLayout* D3D11RenderSystem::CreatePipelineLayout(const PipelineLayoutDescriptor& desc)
+PipelineLayout* D3D11RenderSystem::CreatePipelineLayout(const PipelineLayoutDescriptor& pipelineLayoutDesc)
 {
-    return TakeOwnership(pipelineLayouts_, MakeUnique<D3D11PipelineLayout>(desc));
+    return pipelineLayouts_.emplace<D3D11PipelineLayout>(device_.Get(), pipelineLayoutDesc);
 }
 
 void D3D11RenderSystem::Release(PipelineLayout& pipelineLayout)
 {
-    RemoveFromUniqueSet(pipelineLayouts_, &pipelineLayout);
+    pipelineLayouts_.erase(&pipelineLayout);
 }
 
 /* ----- Pipeline States ----- */
@@ -404,13 +378,13 @@ PipelineState* D3D11RenderSystem::CreatePipelineState(const Blob& /*serializedCa
     return nullptr;//TODO
 }
 
-PipelineState* D3D11RenderSystem::CreatePipelineState(const GraphicsPipelineDescriptor& desc, std::unique_ptr<Blob>* /*serializedCache*/)
+PipelineState* D3D11RenderSystem::CreatePipelineState(const GraphicsPipelineDescriptor& pipelineStateDesc, std::unique_ptr<Blob>* /*serializedCache*/)
 {
     #if LLGL_D3D11_ENABLE_FEATURELEVEL >= 3
     if (device3_)
     {
         /* Create graphics pipeline for Direct3D 11.3 */
-        return TakeOwnership(pipelineStates_, MakeUnique<D3D11GraphicsPSO3>(device3_.Get(), desc));
+        return pipelineStates_.emplace<D3D11GraphicsPSO3>(device3_.Get(), pipelineStateDesc);
     }
     #endif
 
@@ -418,7 +392,7 @@ PipelineState* D3D11RenderSystem::CreatePipelineState(const GraphicsPipelineDesc
     if (device2_)
     {
         /* Create graphics pipeline for Direct3D 11.1 (there is no dedicated class for 11.2) */
-        return TakeOwnership(pipelineStates_, MakeUnique<D3D11GraphicsPSO1>(device2_.Get(), desc));
+        return pipelineStates_.emplace<D3D11GraphicsPSO1>(device2_.Get(), pipelineStateDesc);
     }
     #endif
 
@@ -426,46 +400,46 @@ PipelineState* D3D11RenderSystem::CreatePipelineState(const GraphicsPipelineDesc
     if (device1_)
     {
         /* Create graphics pipeline for Direct3D 11.1 */
-        return TakeOwnership(pipelineStates_, MakeUnique<D3D11GraphicsPSO1>(device1_.Get(), desc));
+        return pipelineStates_.emplace<D3D11GraphicsPSO1>(device1_.Get(), pipelineStateDesc);
     }
     #endif
 
     /* Create graphics pipeline for Direct3D 11.0 */
-    return TakeOwnership(pipelineStates_, MakeUnique<D3D11GraphicsPSO>(device_.Get(), desc));
+    return pipelineStates_.emplace<D3D11GraphicsPSO>(device_.Get(), pipelineStateDesc);
 }
 
-PipelineState* D3D11RenderSystem::CreatePipelineState(const ComputePipelineDescriptor& desc, std::unique_ptr<Blob>* /*serializedCache*/)
+PipelineState* D3D11RenderSystem::CreatePipelineState(const ComputePipelineDescriptor& pipelineStateDesc, std::unique_ptr<Blob>* /*serializedCache*/)
 {
-    return TakeOwnership(pipelineStates_, MakeUnique<D3D11ComputePSO>(desc));
+    return pipelineStates_.emplace<D3D11ComputePSO>(pipelineStateDesc);
 }
 
 void D3D11RenderSystem::Release(PipelineState& pipelineState)
 {
-    RemoveFromUniqueSet(pipelineStates_, &pipelineState);
+    pipelineStates_.erase(&pipelineState);
 }
 
 /* ----- Queries ----- */
 
-QueryHeap* D3D11RenderSystem::CreateQueryHeap(const QueryHeapDescriptor& desc)
+QueryHeap* D3D11RenderSystem::CreateQueryHeap(const QueryHeapDescriptor& queryHeapDesc)
 {
-    return TakeOwnership(queryHeaps_, MakeUnique<D3D11QueryHeap>(device_.Get(), desc));
+    return queryHeaps_.emplace<D3D11QueryHeap>(device_.Get(), queryHeapDesc);
 }
 
 void D3D11RenderSystem::Release(QueryHeap& queryHeap)
 {
-    RemoveFromUniqueSet(queryHeaps_, &queryHeap);
+    queryHeaps_.erase(&queryHeap);
 }
 
 /* ----- Fences ----- */
 
 Fence* D3D11RenderSystem::CreateFence()
 {
-    return TakeOwnership(fences_, MakeUnique<D3D11Fence>(device_.Get()));
+    return fences_.emplace<D3D11Fence>(device_.Get());
 }
 
 void D3D11RenderSystem::Release(Fence& fence)
 {
-    RemoveFromUniqueSet(fences_, &fence);
+    fences_.erase(&fence);
 }
 
 /* ----- Internal functions ----- */
@@ -488,7 +462,7 @@ DXGI_SAMPLE_DESC D3D11RenderSystem::FindSuitableSampleDesc(ID3D11Device* device,
 {
     DXGI_SAMPLE_DESC sampleDesc = { maxSampleCount, 0 };
 
-    for (std::size_t i = 0; i < numFormats; ++i)
+    for_range(i, numFormats)
     {
         if (formats[i] != DXGI_FORMAT_UNKNOWN)
             sampleDesc = D3D11RenderSystem::FindSuitableSampleDesc(device, formats[i], sampleDesc.Count);
@@ -644,7 +618,6 @@ void D3D11RenderSystem::QueryRenderingCaps()
         /* Set extended attributes */
         const auto minorVersion = GetMinorVersion();
 
-        caps.features.hasDirectResourceBinding      = true;
         caps.features.hasConservativeRasterization  = (minorVersion >= 3);
 
         caps.limits.maxViewports                    = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
@@ -670,50 +643,90 @@ int D3D11RenderSystem::GetMinorVersion() const
     return 0;
 }
 
-void D3D11RenderSystem::CreateAndInitializeGpuTexture1D(D3D11Texture& textureD3D, const TextureDescriptor& desc, const SrcImageDescriptor* imageDesc)
+static void InitializeD3DDepthStencilTextureWithDSV(
+    ID3D11Device*           device,
+    ID3D11DeviceContext*    context,
+    D3D11Texture&           textureD3D,
+    const ClearValue&       clearValue)
 {
-    /* Create native texture and initialize with image data */
-    textureD3D.CreateTexture1D(device_.Get(), desc);
-    InitializeGpuTexture(textureD3D, desc, imageDesc);
-}
-
-void D3D11RenderSystem::CreateAndInitializeGpuTexture2D(D3D11Texture& textureD3D, const TextureDescriptor& desc, const SrcImageDescriptor* imageDesc)
-{
-    /* Create native texture and initialize with image data */
-    textureD3D.CreateTexture2D(device_.Get(), desc);
-    InitializeGpuTexture(textureD3D, desc, imageDesc);
-}
-
-void D3D11RenderSystem::CreateAndInitializeGpuTexture3D(D3D11Texture& textureD3D, const TextureDescriptor& desc, const SrcImageDescriptor* imageDesc)
-{
-    /* Create native texture and initialize with image data */
-    textureD3D.CreateTexture3D(device_.Get(), desc);
-    InitializeGpuTexture(textureD3D, desc, imageDesc);
-}
-
-void D3D11RenderSystem::CreateAndInitializeGpuTexture2DMS(D3D11Texture& textureD3D, const TextureDescriptor& desc)
-{
-    /* Create native texture */
-    textureD3D.CreateTexture2D(device_.Get(), desc);
-}
-
-void D3D11RenderSystem::UpdateGenericTexture(
-    Texture&                    texture,
-    std::uint32_t               mipLevel,
-    std::uint32_t               arrayLayer,
-    const D3D11_BOX&            region,
-    const SrcImageDescriptor&   imageDesc)
-{
-    /* Get D3D texture and update subresource */
-    auto& textureD3D = LLGL_CAST(D3D11Texture&, texture);
-    textureD3D.UpdateSubresource(
-        context_.Get(),
-        mipLevel,
-        arrayLayer,
-        region,
-        imageDesc,
-        GetConfiguration().threadCount
+    /* Create intermediate depth-stencil view for texture */
+    ComPtr<ID3D11DepthStencilView> dsv;
+    textureD3D.CreateSubresourceDSV(
+        device,
+        dsv.ReleaseAndGetAddressOf(),
+        textureD3D.GetType(),
+        textureD3D.GetDXFormat(),
+        0,
+        0,
+        textureD3D.GetNumArrayLayers()
     );
+
+    /* Clear view with depth-stencil values */
+    context->ClearDepthStencilView(
+        dsv.Get(),
+        D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL,
+        clearValue.depth,
+        static_cast<UINT8>(clearValue.stencil)
+    );
+}
+
+static void InitializeD3DColorTextureWithRTV(
+    ID3D11Device*           device,
+    ID3D11DeviceContext*    context,
+    D3D11Texture&           textureD3D,
+    const ClearValue&       clearValue)
+{
+    /* Create intermediate depth-stencil view for texture */
+    ComPtr<ID3D11RenderTargetView> rtv;
+    textureD3D.CreateSubresourceRTV(
+        device,
+        rtv.ReleaseAndGetAddressOf(),
+        textureD3D.GetType(),
+        textureD3D.GetBaseDXFormat(),
+        0,
+        0,
+        textureD3D.GetNumArrayLayers()
+    );
+
+    /* Clear view with depth-stencil values */
+    context->ClearRenderTargetView(rtv.Get(), clearValue.color);
+}
+
+static void InitializeD3DColorTextureWithUploadBuffer(
+    ID3D11DeviceContext*    context,
+    D3D11Texture&           textureD3D,
+    const Extent3D&         extent,
+    const ClearValue&       clearValue)
+{
+    /* Find suitable image format for texture hardware format */
+    SrcImageDescriptor imageDescDefault;
+
+    const auto& formatDesc = GetFormatAttribs(textureD3D.GetBaseFormat());
+    if (formatDesc.bitSize > 0)
+    {
+        /* Copy image format and data type from descriptor */
+        imageDescDefault.format     = formatDesc.format;
+        imageDescDefault.dataType   = formatDesc.dataType;
+
+        /* Generate default image buffer */
+        const auto imageSize = extent.width * extent.height * extent.depth;
+        auto imageBuffer = GenerateImageBuffer(imageDescDefault.format, imageDescDefault.dataType, imageSize, clearValue.color);
+
+        /* Update only the first MIP-map level for each array slice */
+        imageDescDefault.data       = imageBuffer.get();
+        imageDescDefault.dataSize   = GetMemoryFootprint(imageDescDefault.format, imageDescDefault.dataType, imageSize);
+
+        for_range(layer, textureD3D.GetNumArrayLayers())
+        {
+            textureD3D.UpdateSubresource(
+                context,
+                0,
+                layer,
+                CD3D11_BOX(0, 0, 0, extent.width, extent.height, extent.depth),
+                imageDescDefault
+            );
+        }
+    }
 }
 
 void D3D11RenderSystem::InitializeGpuTexture(
@@ -734,14 +747,46 @@ void D3D11RenderSystem::InitializeGpuTexture(
     }
     else if ((textureDesc.miscFlags & MiscFlags::NoInitialData) == 0)
     {
-        /* Initialize texture with default image data */
-        InitializeGpuTextureWithClearValue(
-            textureD3D,
-            textureDesc.format,
-            textureDesc.extent,
-            textureDesc.arrayLayers,
-            textureDesc.clearValue
-        );
+        /* Initialize texture with clear value using hardware accelerated clear function or CPU upload buffer */
+        if (IsDepthOrStencilFormat(textureDesc.format))
+        {
+            const bool hasDSVBinding = ((textureDesc.bindFlags & BindFlags::DepthStencilAttachment) != 0);
+            if (hasDSVBinding)
+            {
+                InitializeD3DDepthStencilTextureWithDSV(
+                    device_.Get(),
+                    context_.Get(),
+                    textureD3D,
+                    textureDesc.clearValue
+                );
+            }
+            else
+            {
+                //LLGL_TRAP_NOT_IMPLEMENTED("initialize depth-stencil texture without DepthStencilAttachment binding"); //TODO
+            }
+        }
+        else
+        {
+            const bool hasRTVBinding = ((textureDesc.bindFlags & BindFlags::ColorAttachment) != 0);
+            if (hasRTVBinding)
+            {
+                InitializeD3DColorTextureWithRTV(
+                    device_.Get(),
+                    context_.Get(),
+                    textureD3D,
+                    textureDesc.clearValue
+                );
+            }
+            else
+            {
+                InitializeD3DColorTextureWithUploadBuffer(
+                    context_.Get(),
+                    textureD3D,
+                    textureDesc.extent,
+                    textureDesc.clearValue
+                );
+            }
+        }
     }
 }
 
@@ -768,7 +813,7 @@ void D3D11RenderSystem::InitializeGpuTextureWithImage(
 
     imageDesc.dataSize /= arrayLayers;
 
-    for (std::uint32_t layer = 0; layer < arrayLayers; ++layer)
+    for_range(layer, arrayLayers)
     {
         /* Update subresource of current array layer */
         textureD3D.UpdateSubresource(
@@ -776,60 +821,11 @@ void D3D11RenderSystem::InitializeGpuTextureWithImage(
             0, // mipLevel
             layer,
             CD3D11_BOX(0, 0, 0, extent.width, extent.height, extent.depth),
-            imageDesc,
-            GetConfiguration().threadCount
+            imageDesc
         );
 
         /* Move to next region of initial data */
         imageDesc.data = (reinterpret_cast<const std::int8_t*>(imageDesc.data) + bytesPerLayer);
-    }
-}
-
-void D3D11RenderSystem::InitializeGpuTextureWithClearValue(
-    D3D11Texture&       textureD3D,
-    const Format        format,
-    const Extent3D&     extent,
-    std::uint32_t       arrayLayers,
-    const ClearValue&   clearValue)
-{
-    if (IsDepthStencilFormat(format))
-    {
-        //TODO
-    }
-    else
-    {
-        /* Find suitable image format for texture hardware format */
-        SrcImageDescriptor imageDescDefault;
-
-        const auto& formatDesc = GetFormatAttribs(format);
-        if (formatDesc.bitSize > 0)
-        {
-            /* Copy image format and data type from descriptor */
-            imageDescDefault.format     = formatDesc.format;
-            imageDescDefault.dataType   = formatDesc.dataType;
-
-            /* Generate default image buffer */
-            const auto fillColor = clearValue.color.Cast<double>();
-            const auto imageSize = extent.width * extent.height * extent.depth;
-
-            auto imageBuffer = GenerateImageBuffer(imageDescDefault.format, imageDescDefault.dataType, imageSize, fillColor);
-
-            /* Update only the first MIP-map level for each array slice */
-            imageDescDefault.data       = imageBuffer.get();
-            imageDescDefault.dataSize   = GetMemoryFootprint(imageDescDefault.format, imageDescDefault.dataType, imageSize);
-
-            for (std::uint32_t layer = 0; layer < arrayLayers; ++layer)
-            {
-                textureD3D.UpdateSubresource(
-                    context_.Get(),
-                    0,
-                    layer,
-                    CD3D11_BOX(0, 0, 0, extent.width, extent.height, extent.depth),
-                    imageDescDefault,
-                    GetConfiguration().threadCount
-                );
-            }
-        }
     }
 }
 

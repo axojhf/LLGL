@@ -1,12 +1,11 @@
 /*
  * D3D12Types.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D12Types.h"
-#include "../DXCommon/DXTypes.h"
 #include <stdexcept>
 #include <string>
 
@@ -17,21 +16,6 @@ namespace LLGL
 namespace D3D12Types
 {
 
-
-DXGI_FORMAT Map(const DataType dataType)
-{
-    return DXTypes::Map(dataType);
-}
-
-DXGI_FORMAT Map(const Format format)
-{
-    return DXTypes::Map(format);
-}
-
-D3D_PRIMITIVE_TOPOLOGY Map(const PrimitiveTopology topology)
-{
-    return DXTypes::Map(topology);
-}
 
 D3D12_FILL_MODE Map(const PolygonMode polygonMode)
 {
@@ -339,26 +323,6 @@ D3D12_QUERY_HEAP_TYPE MapQueryHeapType(const QueryType queryType)
 Format Unmap(const DXGI_FORMAT format)
 {
     return DXTypes::Unmap(format);
-}
-
-DXGI_FORMAT ToDXGIFormatDSV(const DXGI_FORMAT format)
-{
-    return DXTypes::ToDXGIFormatDSV(format);
-}
-
-DXGI_FORMAT ToDXGIFormatSRV(const DXGI_FORMAT format)
-{
-    return DXTypes::ToDXGIFormatSRV(format);
-}
-
-DXGI_FORMAT ToDXGIFormatUAV(const DXGI_FORMAT format)
-{
-    return DXTypes::ToDXGIFormatUAV(format);
-}
-
-DXGI_FORMAT ToDXGIFormatUInt(const DXGI_FORMAT format)
-{
-    return DXTypes::ToDXGIFormatUInt(format);
 }
 
 

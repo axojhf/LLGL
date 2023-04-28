@@ -1,15 +1,16 @@
 /*
  * D3D12Shader.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D12Shader.h"
 #include "../D3D12Types.h"
 #include "../../DXCommon/DXCore.h"
 #include "../../DXCommon/DXTypes.h"
-#include "../../../Core/Helper.h"
+#include "../../../Core/CoreUtils.h"
+#include <LLGL/Utils/ForRange.h>
 #include <algorithm>
 #include <stdexcept>
 #include <d3dcompiler.h>
@@ -22,29 +23,30 @@ namespace LLGL
 D3D12Shader::D3D12Shader(const ShaderDescriptor& desc) :
     Shader { desc.type }
 {
-    if (!BuildShader(desc))
+    if (BuildShader(desc))
     {
-        /* Mark this shader compilation as failed */
-        hasErrors_ = true;
-    }
-    else if (GetType() == ShaderType::Vertex || GetType() == ShaderType::Geometry)
-    {
-        /* Build input layout and stream-output descriptors for vertex/geometry shaders */
-        ReserveVertexAttribs(desc);
-        if (GetType() == ShaderType::Vertex)
-            BuildInputLayout(static_cast<UINT>(desc.vertex.inputAttribs.size()), desc.vertex.inputAttribs.data());
-        BuildStreamOutput(static_cast<UINT>(desc.vertex.outputAttribs.size()), desc.vertex.outputAttribs.data());
+        if (GetType() == ShaderType::Vertex || GetType() == ShaderType::Geometry)
+        {
+            /* Build input layout and stream-output descriptors for vertex/geometry shaders */
+            ReserveVertexAttribs(desc);
+            if (GetType() == ShaderType::Vertex)
+                BuildInputLayout(static_cast<UINT>(desc.vertex.inputAttribs.size()), desc.vertex.inputAttribs.data());
+            BuildStreamOutput(static_cast<UINT>(desc.vertex.outputAttribs.size()), desc.vertex.outputAttribs.data());
+        }
     }
 }
 
-bool D3D12Shader::HasErrors() const
+const Report* D3D12Shader::GetReport() const
 {
-    return hasErrors_;
+    return (report_ ? &report_ : nullptr);
 }
 
-std::string D3D12Shader::GetReport() const
+bool D3D12Shader::Reflect(ShaderReflection& reflection) const
 {
-    return (errors_.Get() != nullptr ? DXGetBlobString(errors_.Get()) : "");
+    if (byteCode_)
+        return SUCCEEDED(ReflectShaderByteCode(reflection));
+    else
+        return false;
 }
 
 D3D12_SHADER_BYTECODE D3D12Shader::GetByteCode() const
@@ -58,14 +60,6 @@ D3D12_SHADER_BYTECODE D3D12Shader::GetByteCode() const
     }
 
     return byteCode;
-}
-
-bool D3D12Shader::Reflect(ShaderReflection& reflection) const
-{
-    if (byteCode_)
-        return SUCCEEDED(ReflectShaderByteCode(reflection));
-    else
-        return false;
 }
 
 bool D3D12Shader::GetInputLayoutDesc(D3D12_INPUT_LAYOUT_DESC& layoutDesc) const
@@ -91,6 +85,24 @@ bool D3D12Shader::GetStreamOutputDesc(D3D12_STREAM_OUTPUT_DESC& layoutDesc) cons
         return true;
     }
     return false;
+}
+
+HRESULT D3D12Shader::ReflectAndCacheConstantBuffers(const std::vector<D3D12ConstantBufferReflection>** outConstantBuffers)
+{
+    if (cbufferReflectionResult_ == S_FALSE)
+    {
+        /* Reflect and cache constant buffer reflections */
+        cbufferReflections_.clear();
+        cbufferReflectionResult_ = ReflectConstantBuffers(cbufferReflections_);
+    }
+    if (cbufferReflectionResult_ == S_OK)
+    {
+        /* Return cached constnat buffer reflections */
+        if (outConstantBuffers != nullptr)
+            *outConstantBuffers = &cbufferReflections_;
+        return S_OK;
+    }
+    return cbufferReflectionResult_;
 }
 
 
@@ -120,11 +132,11 @@ static DXGI_FORMAT GetInputElementFormat(const VertexAttribute& attrib)
 {
     try
     {
-        return D3D12Types::Map(attrib.format);
+        return DXTypes::ToDXGIFormat(attrib.format);
     }
     catch (const std::exception& e)
     {
-        throw std::invalid_argument(std::string(e.what()) + " for vertex attribute: " + attrib.name);
+        throw std::invalid_argument(std::string(e.what()) + " for vertex attribute: " + std::string(attrib.name.c_str()));
     }
 }
 
@@ -150,7 +162,7 @@ void D3D12Shader::BuildInputLayout(UINT numVertexAttribs, const VertexAttribute*
 
     /* Build input element descriptors */
     inputElements_.resize(numVertexAttribs);
-    for (UINT i = 0; i < numVertexAttribs; ++i)
+    for_range(i, numVertexAttribs)
         Convert(inputElements_[i], vertexAttribs[i], vertexAttribNames_);
 }
 
@@ -175,7 +187,7 @@ void D3D12Shader::BuildStreamOutput(UINT numVertexAttribs, const VertexAttribute
 
     /* Reserve memory for the buffer strides */
     UINT maxSlot = 0;
-    for (UINT i = 0; i < numVertexAttribs; ++i)
+    for_range(i, numVertexAttribs)
         maxSlot = std::max(maxSlot, vertexAttribs[i].slot);
 
     soBufferStrides_.clear();
@@ -183,7 +195,7 @@ void D3D12Shader::BuildStreamOutput(UINT numVertexAttribs, const VertexAttribute
 
     /* Build stream-output entries and buffer strides */
     soDeclEntries_.resize(numVertexAttribs);
-    for (UINT i = 0; i < numVertexAttribs; ++i)
+    for_range(i, numVertexAttribs)
     {
         const auto& attr = vertexAttribs[i];
 
@@ -195,7 +207,7 @@ void D3D12Shader::BuildStreamOutput(UINT numVertexAttribs, const VertexAttribute
         if (attr.stride == 0)
         {
             /* Error: vertex attribute must not have stride of zero */
-            throw std::runtime_error("buffer stride in stream-output attribute must not be zero: " + attr.name);
+            throw std::runtime_error("buffer stride in stream-output attribute must not be zero: " + std::string(attr.name.c_str()));
         }
         else if (bufferStride == 0)
         {
@@ -206,13 +218,13 @@ void D3D12Shader::BuildStreamOutput(UINT numVertexAttribs, const VertexAttribute
         {
             throw std::runtime_error(
                 "mismatch between buffer stride (" + std::to_string(bufferStride) +
-                ") and stream-output attribute (" + std::to_string(attr.stride) + "): " + attr.name
+                ") and stream-output attribute (" + std::to_string(attr.stride) + "): " + std::string(attr.name.c_str())
             );
         }
     }
 
     /* Build buffer stride */
-    for (std::size_t i = 0; i < soBufferStrides_.size(); ++i)
+    for_range(i, soBufferStrides_.size())
     {
         if (soBufferStrides_[i] == 0)
             throw std::runtime_error("stream-output slot " + std::to_string(i) + " is not specified in vertex attributes");
@@ -246,6 +258,7 @@ bool D3D12Shader::CompileSource(const ShaderDescriptor& shaderDesc)
     auto        flags   = shaderDesc.flags;
 
     /* Compile shader code */
+    ComPtr<ID3DBlob> errors;
     auto hr = D3DCompile(
         sourceCode,
         sourceLength,
@@ -257,11 +270,13 @@ bool D3D12Shader::CompileSource(const ShaderDescriptor& shaderDesc)
         DXGetCompilerFlags(flags),          // UINT                 Flags1
         0,                                  // UINT                 Flags2 (recommended to always be 0)
         byteCode_.ReleaseAndGetAddressOf(), // ID3DBlob**           ppCode
-        errors_.ReleaseAndGetAddressOf()    // ID3DBlob**           ppErrorMsgs
+        errors.ReleaseAndGetAddressOf()     // ID3DBlob**           ppErrorMsgs
     );
 
     /* Return true if compilation was successful */
-    return SUCCEEDED(hr);
+    const bool hasErrors = FAILED(hr);
+    report_.Reset(errors.Get(), hasErrors);
+    return !hasErrors;
 }
 
 bool D3D12Shader::LoadBinary(const ShaderDescriptor& shaderDesc)
@@ -285,7 +300,7 @@ Most of this code for shader reflection is 1:1 copied from the D3D11 renderer.
 However, all descriptors have the "D3D12" prefix, so a generalization (without macros) is tricky.
 */
 
-static ShaderResource* FetchOrInsertResource(
+static ShaderResourceReflection* FetchOrInsertResource(
     ShaderReflection&   reflection,
     const char*         name,
     const ResourceType  type,
@@ -327,7 +342,7 @@ static HRESULT ReflectShaderVertexAttributes(
     const D3D12_SHADER_DESC&    shaderDesc,
     ShaderReflection&           reflection)
 {
-    for (UINT i = 0; i < shaderDesc.InputParameters; ++i)
+    for_range(i, shaderDesc.InputParameters)
     {
         /* Get signature parameter descriptor */
         D3D12_SIGNATURE_PARAMETER_DESC paramDesc;
@@ -341,7 +356,7 @@ static HRESULT ReflectShaderVertexAttributes(
         reflection.vertex.inputAttribs.push_back(vertexAttrib);
     }
 
-    for (UINT i = 0; i < shaderDesc.OutputParameters; ++i)
+    for_range(i, shaderDesc.OutputParameters)
     {
         /* Get signature parameter descriptor */
         D3D12_SIGNATURE_PARAMETER_DESC paramDesc;
@@ -372,7 +387,7 @@ static HRESULT ReflectShaderFragmentAttributes(
     const D3D12_SHADER_DESC&    shaderDesc,
     ShaderReflection&           reflection)
 {
-    for (UINT i = 0; i < shaderDesc.OutputParameters; ++i)
+    for_range(i, shaderDesc.OutputParameters)
     {
         /* Get signature parameter descriptor */
         D3D12_SIGNATURE_PARAMETER_DESC paramDesc;
@@ -442,6 +457,20 @@ static HRESULT ReflectShaderConstantBuffer(
         {
             /* Store constant buffer size in output descriptor */
             resource->constantBufferSize = shaderBufferDesc.Size;
+
+            #if 0//UNUSED
+            for_range(varIdx, shaderBufferDesc.Variables)
+            {
+                auto varReflection = cbufferReflection->GetVariableByIndex(varIdx);
+
+                D3D12_SHADER_VARIABLE_DESC shaderVarDesc;
+                hr = varReflection->GetDesc(&shaderVarDesc);
+                if (FAILED(hr))
+                    return hr;
+
+                //TODO
+            }
+            #endif
         }
         else
         {
@@ -467,7 +496,7 @@ static HRESULT ReflectShaderInputBindings(
     HRESULT hr = S_OK;
     UINT cbufferIdx = 0;
 
-    for (UINT i = 0; i < shaderDesc.BoundResources; ++i)
+    for_range(i, shaderDesc.BoundResources)
     {
         /* Get shader input resource descriptor */
         D3D12_SHADER_INPUT_BIND_DESC inputBindDesc;
@@ -550,7 +579,7 @@ HRESULT D3D12Shader::ReflectShaderByteCode(ShaderReflection& reflection) const
     }
 
     /* Get input bindings */
-    hr = ReflectShaderInputBindings(reflectionObject.Get(), shaderDesc, GetStageFlags(), reflection);
+    hr = ReflectShaderInputBindings(reflectionObject.Get(), shaderDesc, GetStageFlags(GetType()), reflection);
     if (FAILED(hr))
         return hr;
 
@@ -565,6 +594,74 @@ HRESULT D3D12Shader::ReflectShaderByteCode(ShaderReflection& reflection) const
     }
 
     return S_OK;
+}
+
+HRESULT D3D12Shader::ReflectConstantBuffers(std::vector<D3D12ConstantBufferReflection>& outConstantBuffers) const
+{
+    HRESULT hr = S_OK;
+
+    /* Get shader reflection */
+    ComPtr<ID3D12ShaderReflection> reflectionObject;
+    hr = D3DReflect(byteCode_->GetBufferPointer(), byteCode_->GetBufferSize(), IID_PPV_ARGS(reflectionObject.ReleaseAndGetAddressOf()));
+    if (FAILED(hr))
+        return hr;
+
+    D3D12_SHADER_DESC shaderDesc;
+    hr = reflectionObject->GetDesc(&shaderDesc);
+    if (FAILED(hr))
+        return hr;
+
+    for_range(i, shaderDesc.BoundResources)
+    {
+        /* Get shader input resource descriptor */
+        D3D12_SHADER_INPUT_BIND_DESC inputBindDesc;
+        auto hr = reflectionObject->GetResourceBindingDesc(i, &inputBindDesc);
+        if (FAILED(hr))
+            return hr;
+
+        /* Reflect shader resource view */
+        if (inputBindDesc.Type == D3D_SIT_CBUFFER)
+        {
+            /* Get constant buffer reflection */
+            auto* cbufferReflection = reflectionObject->GetConstantBufferByName(inputBindDesc.Name);
+            if (cbufferReflection == nullptr)
+                return E_POINTER;
+
+            D3D12_SHADER_BUFFER_DESC shaderBufferDesc;
+            hr = cbufferReflection->GetDesc(&shaderBufferDesc);
+            if (FAILED(hr))
+                return hr;
+
+            std::vector<D3D12ConstantReflection> fieldsInfo;
+
+            for_range(fieldIndex, shaderBufferDesc.Variables)
+            {
+                /* Get constant field reflection */
+                auto* fieldReflection = cbufferReflection->GetVariableByIndex(fieldIndex);
+                if (fieldReflection == nullptr)
+                    return E_POINTER;
+
+                D3D12_SHADER_VARIABLE_DESC fieldDesc;
+                hr = fieldReflection->GetDesc(&fieldDesc);
+                if (FAILED(hr))
+                    return hr;
+
+                fieldsInfo.push_back(D3D12ConstantReflection{ fieldDesc.Name, fieldDesc.StartOffset, fieldDesc.Size });
+            }
+
+            /* Write reflection output */
+            D3D12ConstantBufferReflection cbufferInfo;
+            {
+                cbufferInfo.rootConstants.ShaderRegister    = inputBindDesc.BindPoint;
+                cbufferInfo.rootConstants.RegisterSpace     = inputBindDesc.Space;
+                cbufferInfo.rootConstants.Num32BitValues    = shaderBufferDesc.Size / 4;
+                cbufferInfo.fields                          = fieldsInfo;
+            }
+            outConstantBuffers.push_back(std::move(cbufferInfo));
+        }
+    }
+
+    return hr;
 }
 
 

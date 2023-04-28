@@ -1,8 +1,8 @@
 /*
  * VKCommandQueue.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_VK_COMMAND_QUEUE_H
@@ -32,7 +32,7 @@ class VKCommandQueue final : public CommandQueue
 
         /* ----- Common ----- */
 
-        VKCommandQueue(const VKPtr<VkDevice>& device, VkQueue queue);
+        VKCommandQueue(VkDevice device, VkQueue queue);
 
         /* ----- Command Buffers ----- */
 
@@ -79,7 +79,7 @@ class VKCommandQueue final : public CommandQueue
 
     private:
 
-        VkDevice    device_;
+        VkDevice    device_ = VK_NULL_HANDLE;
         VkQueue     native_ = VK_NULL_HANDLE;
 
 };

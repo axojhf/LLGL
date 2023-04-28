@@ -1,8 +1,8 @@
 /*
  * MTTypes.mm
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "MTTypes.h"
@@ -170,6 +170,8 @@ MTLPixelFormat ToMTLPixelFormat(const Format format)
         case Format::BC5UNorm:          return MTLPixelFormatBC5_RGUnorm;
         case Format::BC5SNorm:          return MTLPixelFormatBC5_RGSnorm;
         #endif
+
+        default:                        break;
     }
     MapFailed("Format", "MTLPixelFormat");
 }
@@ -472,6 +474,16 @@ MTLBlendFactor ToMTLBlendFactor(const BlendOp blendOp)
         case BlendOp::InvSrc1Alpha:     return MTLBlendFactorOneMinusSource1Alpha;
     }
     MapFailed("BlendOp", "MTLBlendFactor");
+}
+
+MTLClearColor ToMTLClearColor(const float color[4])
+{
+    return MTLClearColorMake(
+        static_cast<double>(color[0]),
+        static_cast<double>(color[1]),
+        static_cast<double>(color[2]),
+        static_cast<double>(color[3])
+    );
 }
 
 API_AVAILABLE(macos(10.15), ios(13.0))

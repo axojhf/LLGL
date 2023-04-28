@@ -1,17 +1,14 @@
 /*
  * Win32WindowClass.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "Win32WindowClass.h"
 #include "Win32WindowCallback.h"
-#include "../../Core/Helper.h"
+#include "../../Core/Exception.h"
 #include <LLGL/Platform/Platform.h>
-
-#include <string>
-#include <exception>
 
 
 namespace LLGL
@@ -21,8 +18,7 @@ namespace LLGL
 Win32WindowClass::Win32WindowClass()
 {
     /* Setup window class information */
-    WNDCLASSW wc;
-    InitMemory(wc);
+    WNDCLASS wc = {};
 
     wc.style            = (CS_HREDRAW | CS_VREDRAW | CS_OWNDC | CS_DBLCLKS);
     wc.hInstance        = GetModuleHandle(nullptr);
@@ -40,13 +36,13 @@ Win32WindowClass::Win32WindowClass()
     wc.lpszClassName    = GetName();
 
     /* Register window class */
-    if (!RegisterClassW(&wc))
-        throw std::runtime_error("failed to register window class");
+    if (!RegisterClass(&wc))
+        LLGL_TRAP("failed to register window class");
 }
 
 Win32WindowClass::~Win32WindowClass()
 {
-    UnregisterClassW(GetName(), GetModuleHandle(nullptr));
+    UnregisterClass(GetName(), GetModuleHandle(nullptr));
 }
 
 Win32WindowClass* Win32WindowClass::Instance()
@@ -55,9 +51,9 @@ Win32WindowClass* Win32WindowClass::Instance()
     return &instance;
 }
 
-const wchar_t* Win32WindowClass::GetName() const
+const TCHAR* Win32WindowClass::GetName() const
 {
-    return L"__LLGL_Win32_WindowClass__";
+    return TEXT("__LLGL_Win32_WindowClass__");
 }
 
 

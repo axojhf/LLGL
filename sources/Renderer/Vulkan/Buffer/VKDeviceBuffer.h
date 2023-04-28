@@ -1,8 +1,8 @@
 /*
  * VKDeviceBuffer.h
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_VK_DEVICE_BUFFER_H
@@ -28,12 +28,12 @@ class VKDeviceBuffer
 
         /* ----- Common ----- */
 
-        VKDeviceBuffer(const VKPtr<VkDevice>& device);
+        VKDeviceBuffer(VkDevice device);
 
-        VKDeviceBuffer(const VKPtr<VkDevice>& device, const VkBufferCreateInfo& createInfo);
+        VKDeviceBuffer(VkDevice device, const VkBufferCreateInfo& createInfo);
 
         VKDeviceBuffer(
-            const VKPtr<VkDevice>&      device,
+            VkDevice                    device,
             const VkBufferCreateInfo&   createInfo,
             VKDeviceMemoryManager&      deviceMemoryMngr,
             VkMemoryPropertyFlags       memoryProperties
@@ -47,13 +47,10 @@ class VKDeviceBuffer
 
         /* ----- Native buffer ----- */
 
-        void CreateVkBuffer(
-            const VKPtr<VkDevice>&      device,
-            const VkBufferCreateInfo&   createInfo
-        );
+        void CreateVkBuffer(VkDevice device, const VkBufferCreateInfo& createInfo);
 
         void CreateVkBufferAndMemoryRegion(
-            const VKPtr<VkDevice>&      device,
+            VkDevice                    device,
             const VkBufferCreateInfo&   createInfo,
             VKDeviceMemoryManager&      deviceMemoryMngr,
             VkMemoryPropertyFlags       memoryProperties
@@ -66,7 +63,7 @@ class VKDeviceBuffer
 
         void ReleaseMemoryRegion(VKDeviceMemoryManager& deviceMemoryMngr);
 
-        void* Map(VkDevice device);
+        void* Map(VkDevice device, VkDeviceSize offset = 0, VkDeviceSize size = VK_WHOLE_SIZE);
         void Unmap(VkDevice device);
 
         /* ----- Getter ----- */

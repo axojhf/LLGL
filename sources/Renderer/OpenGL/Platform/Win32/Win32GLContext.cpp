@@ -1,8 +1,8 @@
 /*
  * Win32GLContext.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "Win32GLContext.h"
@@ -10,7 +10,7 @@
 #include "../../Ext/GLExtensionLoader.h"
 #include "../../../CheckedCast.h"
 #include "../../../TextureUtils.h"
-#include "../../../../Core/Helper.h"
+#include "../../../../Core/CoreUtils.h"
 #include <LLGL/Platform/NativeHandle.h>
 #include <LLGL/Log.h>
 #include <algorithm>
@@ -99,10 +99,11 @@ int Win32GLContext::GetSamples() const
 bool Win32GLContext::SetSwapInterval(int interval)
 {
     /* Load GL extension "wglSwapIntervalEXT" to set swap interval */
-    if (wglSwapIntervalEXT || LoadSwapIntervalProcs())
-        return (wglSwapIntervalEXT(interval) == TRUE);
-    else
+    if (wglSwapIntervalEXT == nullptr)
+        LoadSwapIntervalProcs();
+    if (wglSwapIntervalEXT == nullptr)
         return false;
+    return (wglSwapIntervalEXT(interval) == TRUE);
 }
 
 static void ErrMultisampledGLContextNotSupported()
@@ -413,7 +414,9 @@ bool Win32GLContext::SelectMultisampledPixelFormat(HDC hDC)
     Load GL extension "wglChoosePixelFormatARB" to choose anti-aliasing pixel formats
     A valid (standard) GL context must be created at this time, before an extension can be loaded!
     */
-    if (!wglChoosePixelFormatARB && !LoadPixelFormatProcs())
+    if (wglChoosePixelFormatARB == nullptr)
+        LoadPixelFormatProcs();
+    if (wglChoosePixelFormatARB == nullptr)
         return false;
 
     const float attribsFlt[] = { 0.0f, 0.0f };

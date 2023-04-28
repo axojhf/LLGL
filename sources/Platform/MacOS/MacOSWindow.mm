@@ -1,16 +1,17 @@
 /*
  * MacOSWindow.mm
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #import <Cocoa/Cocoa.h>
 #import <Carbon/Carbon.h>
 
+#include "MacOSCompatibility.h"
 #include "MacOSWindow.h"
 #include "MapKey.h"
-#include "../../Core/Helper.h"
+#include "../../Core/CoreUtils.h"
 #include <LLGL/Platform/NativeHandle.h>
 #include <cstdlib>
 
@@ -19,53 +20,27 @@
  * Internal constants
  */
 
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_12
-
 // NSWindow style masks with latest bitmasks
-static const auto g_WinStyleBorderless          = NSWindowStyleMaskBorderless;
-static const auto g_WinStyleResizable           = NSWindowStyleMaskResizable;
-static const auto g_WinStyleTitleBar            = (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable);
+static const auto g_WinStyleBorderless          = LLGL_MACOS_NSWINDOWSTYLEMASK_BORDERLESS;
+static const auto g_WinStyleResizable           = LLGL_MACOS_NSWINDOWSTYLEMASK_RESIZABLE;
+static const auto g_WinStyleTitleBar            = (LLGL_MACOS_NSWINDOWSTYLEMASK_TITLED | LLGL_MACOS_NSWINDOWSTYLEMASK_CLOSABLE | LLGL_MACOS_NSWINDOWSTYLEMASK_MINIATURIZABLE);
 
 // NSEvent masks with latest bitmasks
-static const auto g_EventMaskAny                = NSEventMaskAny;
-static const auto g_EventTypeKeyDown            = NSEventTypeKeyDown;
-static const auto g_EventTypeKeyUp              = NSEventTypeKeyUp;
-static const auto g_EventTypeMouseMoved         = NSEventTypeMouseMoved;
-static const auto g_EventTypeLMouseDragged      = NSEventTypeLeftMouseDragged;
-static const auto g_EventTypeLMouseDown         = NSEventTypeLeftMouseDown;
-static const auto g_EventTypeLMouseUp           = NSEventTypeLeftMouseUp;
-static const auto g_EventTypeRMouseDragged      = NSEventTypeRightMouseDragged;
-static const auto g_EventTypeRMouseDown         = NSEventTypeRightMouseDown;
-static const auto g_EventTypeRMouseUp           = NSEventTypeRightMouseUp;
-static const auto g_EventTypeExtMouseDragged    = NSEventTypeOtherMouseDragged;
-static const auto g_EventTypeExtMouseDown       = NSEventTypeOtherMouseDown;
-static const auto g_EventTypeExtMouseUp         = NSEventTypeOtherMouseUp;
-static const auto g_EventTypeScrollWheel        = NSEventTypeScrollWheel;
+static const auto g_EventMaskAny                = LLGL_MACOS_NSEVENTMASK_ANY;
+static const auto g_EventTypeKeyDown            = LLGL_MACOS_NSEVENTTYPE_KEYDOWN;
+static const auto g_EventTypeKeyUp              = LLGL_MACOS_NSEVENTTYPE_KEYUP;
+static const auto g_EventTypeMouseMoved         = LLGL_MACOS_NSEVENTTYPE_MOUSEMOVED;
+static const auto g_EventTypeLMouseDragged      = LLGL_MACOS_NSEVENTTYPE_LEFTMOUSEDRAGGED;
+static const auto g_EventTypeLMouseDown         = LLGL_MACOS_NSEVENTTYPE_LEFTMOUSEDOWN;
+static const auto g_EventTypeLMouseUp           = LLGL_MACOS_NSEVENTTYPE_LEFTMOUSEUP;
+static const auto g_EventTypeRMouseDragged      = LLGL_MACOS_NSEVENTTYPE_RIGHTMOUSEDRAGGED;
+static const auto g_EventTypeRMouseDown         = LLGL_MACOS_NSEVENTTYPE_RIGHTMOUSEDOWN;
+static const auto g_EventTypeRMouseUp           = LLGL_MACOS_NSEVENTTYPE_RIGHTMOUSEUP;
+static const auto g_EventTypeExtMouseDragged    = LLGL_MACOS_NSEVENTTYPE_OTHERMOUSEDRAGGED;
+static const auto g_EventTypeExtMouseDown       = LLGL_MACOS_NSEVENTTYPE_OTHERMOUSEDOWN;
+static const auto g_EventTypeExtMouseUp         = LLGL_MACOS_NSEVENTTYPE_OTHERMOUSEUP;
+static const auto g_EventTypeScrollWheel        = LLGL_MACOS_NSEVENTTYPE_SCROLLWHEEL;
 
-#else
-
-// NSWindow style masks with obsolete bitmasks
-static const auto g_WinStyleBorderless          = NSBorderlessWindowMask;
-static const auto g_WinStyleResizable           = NSResizableWindowMask;
-static const auto g_WinStyleTitleBar            = (NSTitledWindowMask | NSClosableWindowMask | NSMiniaturizableWindowMask);
-
-// NSEvent masks with obsolete bitmasks
-static const auto g_EventMaskAny                = NSAnyEventMask;
-static const auto g_EventTypeKeyDown            = NSKeyDown;
-static const auto g_EventTypeKeyUp              = NSKeyUp;
-static const auto g_EventTypeMouseMoved         = NSMouseMoved;
-static const auto g_EventTypeLMouseDragged      = NSLeftMouseDragged;
-static const auto g_EventTypeLMouseDown         = NSLeftMouseDown;
-static const auto g_EventTypeLMouseUp           = NSLeftMouseUp;
-static const auto g_EventTypeRMouseDragged      = NSRightMouseDragged;
-static const auto g_EventTypeRMouseDown         = NSRightMouseDown;
-static const auto g_EventTypeRMouseUp           = NSRightMouseUp;
-static const auto g_EventTypeExtMouseDragged    = NSOtherMouseDragged;
-static const auto g_EventTypeExtMouseDown       = NSOtherMouseDown;
-static const auto g_EventTypeExtMouseUp         = NSOtherMouseUp;
-static const auto g_EventTypeScrollWheel        = NSScrollWheel;
-
-#endif
 
 /*
  * Application delegate
@@ -83,6 +58,12 @@ static const auto g_EventTypeScrollWheel        = NSScrollWheel;
  */
 
 @interface MacOSWindowDelegate : NSObject
+{
+    LLGL::MacOSWindow*  window_;
+    BOOL                resizable_;
+    BOOL                resizeSignaled_;
+    BOOL                fullscreenMode_;
+}
 
 - (BOOL)popResizeSignal;
 - (BOOL)isFullscreenMode;
@@ -90,12 +71,6 @@ static const auto g_EventTypeScrollWheel        = NSScrollWheel;
 @end
 
 @implementation MacOSWindowDelegate
-{
-    LLGL::MacOSWindow*  window_;
-    BOOL                resizable_;
-    BOOL                resizeSignaled_;
-    BOOL                fullscreenMode_;
-}
 
 - (instancetype)initWithWindow:(LLGL::MacOSWindow*)window isResizable:(BOOL)resizable
 {
@@ -163,9 +138,11 @@ static const auto g_EventTypeScrollWheel        = NSScrollWheel;
 - (NSApplicationPresentationOptions)window:(NSWindow*)window willUseFullScreenPresentationOptions:(NSApplicationPresentationOptions)proposedOptions
 {
     return
+        #if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7
         NSApplicationPresentationFullScreen |
-        NSApplicationPresentationAutoHideMenuBar |
         NSApplicationPresentationAutoHideToolbar |
+        #endif
+        NSApplicationPresentationAutoHideMenuBar |
         NSApplicationPresentationAutoHideDock;
 }
 
@@ -173,10 +150,12 @@ static const auto g_EventTypeScrollWheel        = NSScrollWheel;
 {
     fullscreenMode_ = YES;
     [[NSApplication sharedApplication] setPresentationOptions:
-        ( NSApplicationPresentationFullScreen |
-          NSApplicationPresentationAutoHideMenuBar |
-          NSApplicationPresentationAutoHideToolbar |
-          NSApplicationPresentationAutoHideDock )
+        #if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7
+        NSApplicationPresentationFullScreen |
+        NSApplicationPresentationAutoHideToolbar |
+        #endif
+        NSApplicationPresentationAutoHideMenuBar |
+        NSApplicationPresentationAutoHideDock
     ];
 }
 
@@ -207,31 +186,24 @@ namespace LLGL
 {
 
 
-static NSString* ToNSString(const wchar_t* s)
+static NSString* ToNSString(const UTF8String& s)
 {
     return
     [
         [[NSString alloc]
-            initWithBytes: s
-            length: sizeof(*s)*wcslen(s)
-            encoding:NSUTF32LittleEndianStringEncoding
+            initWithBytes:  s.c_str()
+            length:         sizeof(char)*s.size()
+            encoding:       NSUTF8StringEncoding
         ] autorelease
     ];
 }
 
-static std::wstring ToStdWString(NSString* s)
+static UTF8String ToUTF8String(NSString* s)
 {
-    std::wstring out;
-
     if (s != nil)
-    {
-        const char* utf8Str = [s cStringUsingEncoding:NSUTF8StringEncoding];
-        auto utf8StrLen = ::strlen(utf8Str);
-        out.resize(utf8StrLen);
-        ::mbstowcs(&out[0], utf8Str, utf8StrLen);
-    }
-
-    return out;
+        return UTF8String{ [s cStringUsingEncoding:NSUTF8StringEncoding] };
+    else
+        return {};
 }
 
 // Returns the NSWindow style mask for the specified window descriptor
@@ -290,7 +262,7 @@ void MacOSWindow::SetPosition(const Offset2D& position)
     /* Get visible screen size (without dock and menu bar) */
     NSScreen* screen = [NSScreen mainScreen];
 
-    CGSize frameSize = [screen frame].size;
+    NSSize frameSize = [screen frame].size;
     NSRect visibleFrame = [screen visibleFrame];
 
     /* Calculate menu bar height */
@@ -308,14 +280,14 @@ Offset2D MacOSWindow::GetPosition() const
     /* Get visible screen size (without dock and menu bar) */
     NSScreen* screen = [NSScreen mainScreen];
 
-    CGSize frameSize = [screen frame].size;
+    NSSize frameSize = [screen frame].size;
     NSRect visibleFrame = [screen visibleFrame];
 
     /* Calculate menu bar height */
     CGFloat menuBarHeight = frameSize.height - visibleFrame.size.height - visibleFrame.origin.y;
 
     /* Set window position (inverse Y coordinate due to different coordinate space between Windows and MacOS) */
-    CGRect wndRect = [wnd_ frame];
+    NSRect wndRect = [wnd_ frame];
     wndRect.origin.y = frameSize.height - wndRect.size.height - menuBarHeight - wndRect.origin.y;
 
     return Offset2D
@@ -343,7 +315,7 @@ void MacOSWindow::SetSize(const Extent2D& size, bool useClientArea)
 
 Extent2D MacOSWindow::GetSize(bool useClientArea) const
 {
-    CGSize size { 0.0f, 0.0f };
+    NSSize size = NSMakeSize(0.0f, 0.0f);
 
     if (useClientArea)
         size = [[wnd_ contentView] frame].size;
@@ -357,14 +329,14 @@ Extent2D MacOSWindow::GetSize(bool useClientArea) const
     };
 }
 
-void MacOSWindow::SetTitle(const std::wstring& title)
+void MacOSWindow::SetTitle(const UTF8String& title)
 {
     [wnd_ setTitle:ToNSString(title.c_str())];
 }
 
-std::wstring MacOSWindow::GetTitle() const
+UTF8String MacOSWindow::GetTitle() const
 {
-    return ToStdWString([wnd_ title]);
+    return ToUTF8String([wnd_ title]);
 }
 
 void MacOSWindow::Show(bool show)
@@ -448,8 +420,8 @@ NSWindow* MacOSWindow::CreateNSWindow(const WindowDescriptor& desc)
     }
 
     /* Create NSWindow object */
-    auto w = (CGFloat)(desc.size.width);
-    auto h = (CGFloat)(desc.size.height);
+    auto w = static_cast<CGFloat>(desc.size.width);
+    auto h = static_cast<CGFloat>(desc.size.height);
 
     NSWindow* wnd = [[NSWindow alloc]
         initWithContentRect:    NSMakeRect(0, 0, w, h)
@@ -497,27 +469,28 @@ NSWindow* MacOSWindow::CreateNSWindow(const WindowDescriptor& desc)
 
 void MacOSWindow::OnProcessEvents()
 {
-    @autoreleasepool
+    LLGL_MACOS_AUTORELEASEPOOL_OPEN
+
+    NSEvent* event = nil;
+
+    /* Process NSWindow events with latest event types */
+    while ((event = [wnd_ nextEventMatchingMask:g_EventMaskAny untilDate:nil inMode:NSDefaultRunLoopMode dequeue:YES]) != nil)
+        ProcessEvent(event);
+
+    /* Check for window signals */
+    if ([(MacOSWindowDelegate*)[wnd_ delegate] popResizeSignal])
     {
-        NSEvent* event = nil;
+        /* Get size of the NSWindow's content view */
+        NSRect frame = [[wnd_ contentView] frame];
 
-        /* Process NSWindow events with latest event types */
-        while ((event = [wnd_ nextEventMatchingMask:g_EventMaskAny untilDate:nil inMode:NSDefaultRunLoopMode dequeue:YES]) != nil)
-            ProcessEvent(event);
+        auto w = static_cast<std::uint32_t>(frame.size.width);
+        auto h = static_cast<std::uint32_t>(frame.size.height);
 
-        /* Check for window signals */
-        if ([(MacOSWindowDelegate*)[wnd_ delegate] popResizeSignal])
-        {
-            /* Get size of the NSWindow's content view */
-            NSRect frame = [[wnd_ contentView] frame];
-
-            auto w = static_cast<std::uint32_t>(frame.size.width);
-            auto h = static_cast<std::uint32_t>(frame.size.height);
-
-            /* Notify event listeners about resize */
-            PostResize({ w, h });
-        }
+        /* Notify event listeners about resize */
+        PostResize({ w, h });
     }
+
+    LLGL_MACOS_AUTORELEASEPOOL_CLOSE
 }
 
 void MacOSWindow::ProcessEvent(NSEvent* event)

@@ -1,8 +1,8 @@
 /*
  * MTRenderPass.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_MT_RENDER_PASS_H
@@ -13,12 +13,15 @@
 
 #include <LLGL/RenderPass.h>
 #include <LLGL/ForwardDecls.h>
-#include <vector>
+#include <LLGL/StaticLimits.h>
+#include <LLGL/Container/SmallVector.h>
 
 
 namespace LLGL
 {
 
+
+struct ClearValue;
 
 struct MTAttachmentFormat
 {
@@ -26,6 +29,8 @@ struct MTAttachmentFormat
     MTLLoadAction   loadAction  = MTLLoadActionDontCare;
     MTLStoreAction  storeAction = MTLStoreActionDontCare;
 };
+
+using MTColorAttachmentFormatVector = SmallVector<MTAttachmentFormat, LLGL_MAX_NUM_COLOR_ATTACHMENTS>;
 
 // Stores the native attachment formats and load/store actions.
 class MTRenderPass final : public RenderPass
@@ -42,7 +47,18 @@ class MTRenderPass final : public RenderPass
         // Returns the combined depth-stencil format.
         MTLPixelFormat GetDepthStencilFormat() const;
 
-        inline const std::vector<MTAttachmentFormat>& GetColorAttachments() const
+        /*
+        Updates the native render pass descriptor with the specified clear values.
+        The input render pass descriptor must have the same number of attachments as this render pass.
+        Returns the number of read clear values.
+        */
+        std::uint32_t UpdateNativeRenderPass(
+            MTLRenderPassDescriptor*    nativeRenderPass,
+            std::uint32_t               numClearValues,
+            const ClearValue*           clearValues
+        ) const;
+
+        inline const MTColorAttachmentFormatVector& GetColorAttachments() const
         {
             return colorAttachments_;
         }
@@ -64,7 +80,7 @@ class MTRenderPass final : public RenderPass
 
     private:
 
-        std::vector<MTAttachmentFormat> colorAttachments_;
+        MTColorAttachmentFormatVector   colorAttachments_;
         MTAttachmentFormat              depthAttachment_;
         MTAttachmentFormat              stencilAttachment_;
         NSUInteger                      sampleCount_        = 1;

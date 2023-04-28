@@ -1,8 +1,8 @@
 /*
  * DbgRenderSystem.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_DBG_RENDER_SYSTEM_H
@@ -14,16 +14,16 @@
 #include "DbgCommandBuffer.h"
 #include "DbgCommandQueue.h"
 
-#include "DbgBuffer.h"
-#include "DbgBufferArray.h"
-#include "DbgPipelineLayout.h"
-#include "DbgPipelineState.h"
-#include "DbgTexture.h"
-#include "DbgRenderTarget.h"
-#include "DbgShader.h"
-#include "DbgShaderProgram.h"
-#include "DbgQueryHeap.h"
-#include "DbgResourceHeap.h"
+#include "Buffer/DbgBuffer.h"
+#include "Buffer/DbgBufferArray.h"
+#include "RenderState/DbgPipelineLayout.h"
+#include "RenderState/DbgPipelineState.h"
+#include "RenderState/DbgQueryHeap.h"
+#include "RenderState/DbgResourceHeap.h"
+#include "RenderState/DbgRenderPass.h"
+#include "Shader/DbgShader.h"
+#include "Texture/DbgTexture.h"
+#include "Texture/DbgRenderTarget.h"
 
 #include "../ContainerTypes.h"
 
@@ -40,13 +40,11 @@ class DbgRenderSystem final : public RenderSystem
 
         /* ----- Common ----- */
 
-        DbgRenderSystem(const std::shared_ptr<RenderSystem>& instance, RenderingProfiler* profiler, RenderingDebugger* debugger);
-
-        void SetConfiguration(const RenderSystemConfiguration& config) override;
+        DbgRenderSystem(RenderSystemPtr&& instance, RenderingProfiler* profiler, RenderingDebugger* debugger);
 
         /* ----- Swap-chain ------ */
 
-        SwapChain* CreateSwapChain(const SwapChainDescriptor& desc, const std::shared_ptr<Surface>& surface = nullptr) override;
+        SwapChain* CreateSwapChain(const SwapChainDescriptor& swapChainDesc, const std::shared_ptr<Surface>& surface = nullptr) override;
 
         void Release(SwapChain& swapChain) override;
 
@@ -56,21 +54,23 @@ class DbgRenderSystem final : public RenderSystem
 
         /* ----- Command buffers ----- */
 
-        CommandBuffer* CreateCommandBuffer(const CommandBufferDescriptor& desc = {}) override;
+        CommandBuffer* CreateCommandBuffer(const CommandBufferDescriptor& commandBufferDesc = {}) override;
 
         void Release(CommandBuffer& commandBuffer) override;
 
         /* ----- Buffers ------ */
 
-        Buffer* CreateBuffer(const BufferDescriptor& desc, const void* initialData = nullptr) override;
+        Buffer* CreateBuffer(const BufferDescriptor& bufferDesc, const void* initialData = nullptr) override;
         BufferArray* CreateBufferArray(std::uint32_t numBuffers, Buffer* const * bufferArray) override;
 
         void Release(Buffer& buffer) override;
         void Release(BufferArray& bufferArray) override;
 
-        void WriteBuffer(Buffer& dstBuffer, std::uint64_t dstOffset, const void* data, std::uint64_t dataSize) override;
+        void WriteBuffer(Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t dataSize) override;
+        void ReadBuffer(Buffer& buffer, std::uint64_t offset, void* data, std::uint64_t dataSize) override;
 
         void* MapBuffer(Buffer& buffer, const CPUAccess access) override;
+        void* MapBuffer(Buffer& buffer, const CPUAccess access, std::uint64_t offset, std::uint64_t length) override;
         void UnmapBuffer(Buffer& buffer) override;
 
         /* ----- Textures ----- */
@@ -84,54 +84,53 @@ class DbgRenderSystem final : public RenderSystem
 
         /* ----- Sampler States ---- */
 
-        Sampler* CreateSampler(const SamplerDescriptor& desc) override;
+        Sampler* CreateSampler(const SamplerDescriptor& samplerDesc) override;
 
         void Release(Sampler& sampler) override;
 
         /* ----- Resource Views ----- */
 
-        ResourceHeap* CreateResourceHeap(const ResourceHeapDescriptor& desc) override;
+        ResourceHeap* CreateResourceHeap(const ResourceHeapDescriptor& resourceHeapDesc, const ArrayView<ResourceViewDescriptor>& initialResourceViews = {}) override;
 
-        void Release(ResourceHeap& resourceViewHeap) override;
+        void Release(ResourceHeap& resourceHeap) override;
+
+        std::uint32_t WriteResourceHeap(ResourceHeap& resourceHeap, std::uint32_t firstDescriptor, const ArrayView<ResourceViewDescriptor>& resourceViews) override;
 
         /* ----- Render Passes ----- */
 
-        RenderPass* CreateRenderPass(const RenderPassDescriptor& desc) override;
+        RenderPass* CreateRenderPass(const RenderPassDescriptor& renderPassDesc) override;
 
         void Release(RenderPass& renderPass) override;
 
         /* ----- Render Targets ----- */
 
-        RenderTarget* CreateRenderTarget(const RenderTargetDescriptor& desc) override;
+        RenderTarget* CreateRenderTarget(const RenderTargetDescriptor& renderTargetDesc) override;
 
         void Release(RenderTarget& renderTarget) override;
 
         /* ----- Shader ----- */
 
-        Shader* CreateShader(const ShaderDescriptor& desc) override;
-
-        ShaderProgram* CreateShaderProgram(const ShaderProgramDescriptor& desc) override;
+        Shader* CreateShader(const ShaderDescriptor& shaderDesc) override;
 
         void Release(Shader& shader) override;
-        void Release(ShaderProgram& shaderProgram) override;
 
         /* ----- Pipeline Layouts ----- */
 
-        PipelineLayout* CreatePipelineLayout(const PipelineLayoutDescriptor& desc) override;
+        PipelineLayout* CreatePipelineLayout(const PipelineLayoutDescriptor& pipelineLayoutDesc) override;
 
         void Release(PipelineLayout& pipelineLayout) override;
 
         /* ----- Pipeline States ----- */
 
         PipelineState* CreatePipelineState(const Blob& serializedCache) override;
-        PipelineState* CreatePipelineState(const GraphicsPipelineDescriptor& desc, std::unique_ptr<Blob>* serializedCache = nullptr) override;
-        PipelineState* CreatePipelineState(const ComputePipelineDescriptor& desc, std::unique_ptr<Blob>* serializedCache = nullptr) override;
+        PipelineState* CreatePipelineState(const GraphicsPipelineDescriptor& pipelineStateDesc, std::unique_ptr<Blob>* serializedCache = nullptr) override;
+        PipelineState* CreatePipelineState(const ComputePipelineDescriptor& pipelineStateDesc, std::unique_ptr<Blob>* serializedCache = nullptr) override;
 
         void Release(PipelineState& pipelineState) override;
 
         /* ----- Queries ----- */
 
-        QueryHeap* CreateQueryHeap(const QueryHeapDescriptor& desc) override;
+        QueryHeap* CreateQueryHeap(const QueryHeapDescriptor& queryHeapDesc) override;
 
         void Release(QueryHeap& queryHeap) override;
 
@@ -148,18 +147,19 @@ class DbgRenderSystem final : public RenderSystem
         void ValidateMiscFlags(long flags, long validFlags, const char* contextDesc = nullptr);
         void ValidateResourceCPUAccess(long cpuAccessFlags, const CPUAccess access, const char* resourceTypeName);
 
-        void ValidateCommandBufferDesc(const CommandBufferDescriptor& desc);
+        void ValidateCommandBufferDesc(const CommandBufferDescriptor& commandBufferDesc);
 
-        void ValidateBufferDesc(const BufferDescriptor& desc, std::uint32_t* formatSizeOut = nullptr);
+        void ValidateBufferDesc(const BufferDescriptor& bufferDesc, std::uint32_t* formatSizeOut = nullptr);
         void ValidateVertexAttributesForBuffer(const VertexAttribute& lhs, const VertexAttribute& rhs);
         void ValidateBufferSize(std::uint64_t size);
         void ValidateConstantBufferSize(std::uint64_t size);
         void ValidateBufferBoundary(std::uint64_t bufferSize, std::uint64_t dstOffset, std::uint64_t dataSize);
         void ValidateBufferMapping(DbgBuffer& bufferDbg, bool mapMemory);
+        void ValidateBufferView(DbgBuffer& bufferDbg, const BufferViewDescriptor& viewDesc, const BindingDescriptor& bindingDesc);
 
-        void ValidateTextureDesc(const TextureDescriptor& desc, const SrcImageDescriptor* imageDesc = nullptr);
+        void ValidateTextureDesc(const TextureDescriptor& textureDesc, const SrcImageDescriptor* imageDesc = nullptr);
         void ValidateTextureFormatSupported(const Format format);
-        void ValidateTextureDescMipLevels(const TextureDescriptor& desc);
+        void ValidateTextureDescMipLevels(const TextureDescriptor& textureDesc);
         void ValidateTextureSize(std::uint32_t size, std::uint32_t limit, const char* textureTypeName);
         void ValidateTextureSizeDefault(std::uint32_t size);
         void Validate1DTextureSize(std::uint32_t size);
@@ -171,20 +171,25 @@ class DbgRenderSystem final : public RenderSystem
         void ValidateTextureArrayRange(const DbgTexture& textureDbg, std::uint32_t baseArrayLayer, std::uint32_t numArrayLayers);
         void ValidateTextureArrayRangeWithEnd(std::uint32_t baseArrayLayer, std::uint32_t numArrayLayers, std::uint32_t arrayLayerLimit);
         void ValidateTextureRegion(const DbgTexture& textureDbg, const TextureRegion& textureRegion);
-        void ValidateTextureView(const DbgTexture& sharedTextureDbg, const TextureViewDescriptor& desc);
+        void ValidateTextureView(const DbgTexture& sharedTextureDbg, const TextureViewDescriptor& textureViewDesc);
         void ValidateTextureViewType(const TextureType sharedTextureType, const TextureType textureViewType, const std::initializer_list<TextureType>& validTypes);
         void ValidateImageDataSize(const DbgTexture& textureDbg, const TextureRegion& textureRegion, ImageFormat imageFormat, DataType dataType, std::size_t dataSize);
 
-        void ValidateAttachmentDesc(const AttachmentDescriptor& desc);
+        void ValidateAttachmentDesc(const AttachmentDescriptor& attachmentDesc);
 
-        void ValidateResourceHeapDesc(const ResourceHeapDescriptor& desc);
+        void ValidateResourceHeapDesc(const ResourceHeapDescriptor& resourceHeapDesc, const ArrayView<ResourceViewDescriptor>& initialResourceViews);
+        void ValidateResourceHeapRange(const DbgResourceHeap& resourceHeapDbg, std::uint32_t firstDescriptor, const ArrayView<ResourceViewDescriptor>& resourceViews);
         void ValidateResourceViewForBinding(const ResourceViewDescriptor& rvDesc, const BindingDescriptor& bindingDesc);
         void ValidateBufferForBinding(const DbgBuffer& bufferDbg, const BindingDescriptor& bindingDesc);
         void ValidateTextureForBinding(const DbgTexture& textureDbg, const BindingDescriptor& bindingDesc);
 
-        void ValidateColorMaskIsDisabled(const BlendTargetDescriptor& desc, std::size_t idx);
-        void ValidateBlendDescriptor(const BlendDescriptor& desc, bool hasFragmentShader);
-        void ValidateGraphicsPipelineDesc(const GraphicsPipelineDescriptor& desc);
+        void ValidateColorMaskIsDisabled(const BlendTargetDescriptor& blendTargetDesc, std::size_t idx);
+        void ValidateBlendDescriptor(const BlendDescriptor& blendDesc, bool hasFragmentShader);
+        void ValidateGraphicsPipelineDesc(const GraphicsPipelineDescriptor& pipelineStateDesc);
+        void ValidateComputePipelineDesc(const ComputePipelineDescriptor& pipelineStateDesc);
+        void ValidateFragmentShaderOutput(DbgShader& fragmentShaderDbg, const RenderPass* renderPass);
+        void ValidateFragmentShaderOutputWithRenderPass(DbgShader& fragmentShaderDbg, const FragmentShaderAttributes& fragmentAttribs, const DbgRenderPass& renderPass);
+        void ValidateFragmentShaderOutputWithoutRenderPass(DbgShader& fragmentShaderDbg, const FragmentShaderAttributes& fragmentAttribs);
 
         void Assert3DTextures();
         void AssertCubeTextures();
@@ -193,13 +198,15 @@ class DbgRenderSystem final : public RenderSystem
         void AssertMultiSampleTextures();
 
         template <typename T, typename TBase>
-        void ReleaseDbg(std::set<std::unique_ptr<T>>& cont, TBase& entry);
+        void ReleaseDbg(HWObjectContainer<T>& cont, TBase& entry);
+
+        std::vector<ResourceViewDescriptor> GetResourceViewInstanceCopy(const ArrayView<ResourceViewDescriptor>& resourceViews);
 
     private:
 
         /* ----- Common objects ----- */
 
-        std::shared_ptr<RenderSystem>           instance_;
+        RenderSystemPtr                         instance_;
 
         RenderingProfiler*                      profiler_   = nullptr;
         RenderingDebugger*                      debugger_   = nullptr;
@@ -216,10 +223,9 @@ class DbgRenderSystem final : public RenderSystem
         HWObjectContainer<DbgBuffer>            buffers_;
         HWObjectContainer<DbgBufferArray>       bufferArrays_;
         HWObjectContainer<DbgTexture>           textures_;
-        //HWObjectContainer<DbgRenderPass>        renderPasses_;
+        HWObjectContainer<DbgRenderPass>        renderPasses_;
         HWObjectContainer<DbgRenderTarget>      renderTargets_;
         HWObjectContainer<DbgShader>            shaders_;
-        HWObjectContainer<DbgShaderProgram>     shaderPrograms_;
         HWObjectContainer<DbgPipelineLayout>    pipelineLayouts_;
         HWObjectContainer<DbgPipelineState>     pipelineStates_;
         HWObjectContainer<DbgResourceHeap>      resourceHeaps_;

@@ -11,6 +11,8 @@
 - [Storage buffer binding](#storage-buffer-binding)
 - [Event listener interface](#event-listener-interface)
 - [`ShaderUniform` interface](#shaderuniform-interface)
+- [`ShaderProgram` interface](#shaderprogram-interface)
+- [`ResourceHeap` interface](#resourceheap-interface)
 - [Shader reflection](#shader-reflection)
 - [Renderer configuration](#renderer-configuration)
 - [Default values](#default-values)
@@ -26,6 +28,8 @@
 - [Stream-output interface](#stream-output-interface)
 - [Pipeline state interface](#pipeline-state-interface)
 - [Clear attachments interface](#clear-attachments-interface)
+- [`Color` template](#color-template)
+- [Utility headers](#utility-headers)
 - [Removed features](#removed-features)
 
 
@@ -268,12 +272,12 @@ void OnQuit(Window& sender, bool& veto);
 
 ## `ShaderUniform` interface
 
-The `ShaderUniform` interface has been replaced by `SetUniform` and `SetUniforms` functions in the `CommandBuffer` interface.
+The `ShaderUniform` interface has been replaced by `SetUniforms` function in the `CommandBuffer` interface.
 Originally, the `ShaderUniform` interface was only intended to set binding points for the OpenGL backend when the GLSL version does not support [explicit binding points](https://www.khronos.org/opengl/wiki/Layout_Qualifier_(GLSL)#Binding_points).
 To avoid setting these binding points in each render pass over and over again, a `name` property has been added to the `BindingDescriptor` structure.
 This member is only required for OpenGL before version 4.2, or when the GLSL version does not support explicit binding points.
 The resource name in conjunction with the pipeline layout will tell the OpenGL backend how to initialize the respective uniforms.
-All other uniforms (matrices and other parameters for instance) must be set with the new `SetUniform`/`SetUniforms` functions each time a graphics pipeline is bound.
+All other uniforms (matrices and other parameters for instance) must be set with the new `SetUniforms` functions each time a PSO is bound.
 Also the syntax of the utility function `PipelineLayoutDesc` has been extended to support this optional property.
 
 Before:
@@ -301,27 +305,107 @@ After:
 ```cpp
 // Inteface:
 std::string BindingDescriptor::name;
-void CommandBuffer::SetUniform(UniformLocation location,
-                               const void*     data,
-                               std::uint32_t   dataSize);
-void CommandBuffer::SetUniforms(UniformLocation location,
-                                std::uint32_t   count,
-                                const void*     data,
-                                std::uint32_t   dataSize);
+void CommandBuffer::SetUniforms(std::uint32_t first,
+                                const void*   data,
+                                std::uint16_t dataSize);
 
 // Usage:
-LLGL::PipelineLayoutDescriptor myLayoutDesc = LLGL::PipelineLayoutDesc(
-    "cbuffer(mySceneParams@1):frag,"
-    "texture(myColorMap@2):frag,"
-);
+LLGL::PipelineLayoutDescriptor myLayoutDesc;
+myLayoutDesc.bindings = {
+    LLGL::BindingDescriptor{ "mySceneParams", LLGL::ResourceType::Buffer,  LLGL::BindFlags::ConstantBuffer, LLGL::StageFlags::VertexStage,   1 },
+    LLGL::BindingDescriptor{ "myColorMap",    LLGL::ResourceType::Texture, LLGL::BindFlags::Sampled,        LLGL::StageFlags::FragmentStage, 2 },
+};
+myLayoutDesc.uniforms = {
+    LLGL::UniformDescriptor{ "myProjection", LLGL::UniformType::Float4x4 } // First uniform with index 0
+};
 LLGL::PipelineLayout* myLayout = myRenderer->CreatePipelineLayout(myLayoutDesc);
-LLGL::UniformLocation myProjectionUniform = myShaderProgram->FindUniformLocation("myProjection");
 
 /* ... */
 
 myCmdBuffer->SetPipelineState(*myGfxPipeline);
 float myProjectionMatrix[16] = /* ... */;
-myCmdBuffer->SetUniform(myProjectionUniform, &myProjectionMatrix[0], sizeof(myProjectionMatrix));
+myCmdBuffer->SetUniforms(/*first:*/ 0, &myProjectionMatrix[0], sizeof(myProjectionMatrix));
+```
+
+
+## `ShaderProgram` interface
+
+The `ShaderProgram` interface has been removed. The graphics and compute PSOs are now created with individual shaders and reflection is performed on those invidual shaders, too.
+
+Before:
+```cpp
+// Usage:
+LLGL::ShaderProgramDescriptor myShaderProgramDesc;
+myShaderProgramDesc.vertexShader = myVertexShader;
+myShaderProgramDesc.fragmentShader = myFragmentShader;
+LLGL::ShaderProgram* myShaderProgram = myRenderer->CreateShaderProgram(myShaderProgramDesc);
+if (myShaderProgram->HasErrors())
+    std::cerr << myShaderProgram->GetReport() << std::endl;
+
+LLGL::GraphicsPipelineDescriptor myPSODesc;
+myPSODesc.pipelineLayout = myPipelineLayout;
+myPSODesc.renderPass = mySwapChain->GetRenderPass();
+myPSODesc.shaderProgram = myShaderProgram;
+LLGL::GraphicsPipelineState* myGraphicsPSO = myRenderer->CreateGraphicsPipeline(myPSODesc);
+```
+
+After:
+```cpp
+// Usage:
+LLGL::GraphicsPipelineDescriptor myPSODesc;
+myPSODesc.pipelineLayout = myPipelineLayout;
+myPSODesc.renderPass = mySwapChain->GetRenderPass();
+myPSODesc.vertexShader = myVertexShader;
+myPSODesc.fragmentShader = myFragmentShader;
+LLGL::PipelineState* myGraphicsPSO = myRenderer->CreatePipelineState(myPSODesc);
+if (const LLGL::Report* myReport = myGraphicsPSO->GetReport())
+{
+    if (myReport->HasErrors())
+        std::cerr << myReport->GetText() << std::endl;
+}
+```
+
+
+## `ResourceHeap` interface
+
+The `ResourceHeap` interface can now be rewritten after it has been created.
+The resource heap can either be initialized with resource view descriptors or be kept empty and written later.
+`LLGL::ResourceHeapDescriptor` can also be default initialized with just the pipeline layout whereas the number of resources have to be determined by the initial resource view array.
+Moreover, whether or not the resource heap requires any resource barriers before it can be bound must be explicitly specified, but LLGL keeps track of what resource must be synchronized.
+This can be specified with a single `BarrierFlags::Storage` flag to enable pipeline barriers for that resource heap.
+
+Before:
+```cpp
+// Interface:
+LLGL::PipelineLayout*                       LLGL::ResourceHeapDescriptor::pipelineLayout;
+std::vector<LLGL::ResourceViewDescriptor>   LLGL::ResourceHeapDescriptor::resourceViews;
+
+// Usage:
+LLGL::ResourceHeapDescriptor myResHeapDesc;
+{
+    myResHeapDesc.pipelineLayout = myPSOLayout;
+    myResHeapDesc.resourceViews  = { myConstantBuffer };
+}
+LLGL::ResourceHeap* myResHeap = myRenderer->CreateResourceHeap(myResHeapDesc);
+```
+
+After:
+```cpp
+// Interface:
+LLGL::PipelineLayout*   LLGL::ResourceHeapDescriptor::pipelineLayout;
+std::uint32_t           LLGL::ResourceHeapDescriptor::numResourceViews;
+long                    LLGL::ResourceHeapDescriptor::barrierFlags;
+
+// Usage:
+LLGL::ResourceHeapDescriptor myResHeapDesc;
+{
+    myResHeapDesc.pipelineLayout    = myPSOLayout;
+    myResHeapDesc.numResourceViews  = 1;
+}
+LLGL::ResourceHeap* myResHeap = myRenderer->CreateResourceHeap(myResHeapDesc);
+myRenderer->WriteResourceHeap(*myResHeap, 0, { myConstantBuffer });
+
+LLGL::ResourceHeap* myResHeapAlternative = myRenderer->CreateResourceHeap(myPSOLayout, { myConstantBuffer });
 ```
 
 
@@ -366,11 +450,11 @@ LLGL::BindingDescriptor LLGL::ShaderResource::binding;
 std::uint32_t           LLGL::ShaderResource::constantBufferSize;
 LLGL::StorageBufferType LLGL::ShaderResource::storageBufferType;
 
-bool ShaderProgram::Reflect(LLGL::ShaderReflection& reflection) const;
+bool Shader::Reflect(LLGL::ShaderReflection& reflection) const;
 
 // Usage:
 LLGL::ShaderReflection reflection;
-if (myShaderProgram->Reflect(reflection)) {
+if (myShader->Reflect(reflection)) {
     /* Evaluate ... */
 } else {
     /* Error ... */
@@ -453,6 +537,8 @@ RenderContext::QueryDepthStencilFormat --> SwapChain::GetDepthStencilFormat
 Resource::QueryResourceType            --> Resource::GetResourceType
 ShaderProgram::QueryInfoLog            --> ShaderProgram::GetReport
 ShaderProgram::QueryUniformLocation    --> ShaderProgram::FindUniformLocation
+ShaderResource                         --> ShaderResourceReflection
+ShaderUniform                          --> ShaderUniformReflection
 TextureBufferSize                      --> GetMemoryFootprint
 Texture::QueryDesc                     --> Texture::GetDesc
 Texture::QueryMipExtent                --> Texture::GetMipExtent
@@ -859,7 +945,7 @@ myCmdBuffer->SetPipelineState(*myGfxPipeline);
 
 ## Clear attachments interface
 
-The command buffer does not longer carry any state, i.e. `SetClearColor`, `SetClearDepth`, and `SetClearStencil` have been removed
+The command buffer does no longer carry any state, i.e. `SetClearColor`, `SetClearDepth`, and `SetClearStencil` have been removed
 and replaced by a new parameter to specify the clear value at the `Clear` function. Otherwise, the `ClearAttachments` function can be used.
 
 Before:
@@ -884,6 +970,44 @@ void Clear(long flags, const ClearValue& clearValue = {});
 // Usage:
 myCmdBuffer->Clear(LLGL::ClearFlags::Color, { backgroundColor });
 ```
+
+## `Color` template
+
+The `Color` template class has been changed to a utility class. It is no longer used in any mandatory interface. It is only used for `Image`, which itself is a utility class.
+For all interfaces using colors the `Color` template has been replaced by `const float[4]` array.
+
+Before:
+```cpp
+// Interface:
+LLGL::ColorRGBAf LLGL::SamplerDescriptor::borderColor   = { 0, 0, 0, 0 };
+LLGL::ColorRGBAf LLGL::ClearValue::color                = { 0, 0, 0, 0 };
+LLGL::ColorRGBAf LLGL::BlendDescriptor::blendFactor     = { 0, 0, 0, 0 };
+LLGL::ColorRGBAb LLGL::BlendTargetDescriptor::colorMask = { true, true, true, true };
+
+void LLGL::CommandBuffer::SetBlendFactor(const LLGL::ColorRGBAf& color);
+```
+
+After:
+```cpp
+// Interface:
+float           LLGL::SamplerDescriptor::borderColor[4] = { 0, 0, 0, 0 };
+float           LLGL::ClearValue::color[4]              = { 0, 0, 0, 0 };
+float           LLGL::BlendDescriptor::blendFactor[4]   = { 0, 0, 0, 0 };
+std::uint32_t   LLGL::BlendTargetDescriptor::colorMask  = LLGL::ColorMaskFlags::All;
+
+void LLGL::CommandBuffer::SetBlendFactor(const float color[4]);
+```
+
+
+## Utility headers
+
+All utility header files have been moved into `include/LLGL/Utils/` folder:
+- Input.h
+- Image.h
+- ColorRGB.h
+- ColorRGBA.h
+- VertexFormat.h
+- Utility.h
 
 
 ## Removed features

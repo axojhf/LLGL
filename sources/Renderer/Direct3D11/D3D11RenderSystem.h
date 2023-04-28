@@ -1,8 +1,8 @@
 /*
  * D3D11RenderSystem.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D11_RENDER_SYSTEM_H
@@ -28,7 +28,6 @@
 #include "RenderState/D3D11PipelineLayout.h"
 
 #include "Shader/D3D11Shader.h"
-#include "Shader/D3D11ShaderProgram.h"
 
 #include "Texture/D3D11Texture.h"
 #include "Texture/D3D11Sampler.h"
@@ -57,7 +56,7 @@ class D3D11RenderSystem final : public RenderSystem
 
         /* ----- Swap-chain ------ */
 
-        SwapChain* CreateSwapChain(const SwapChainDescriptor& desc, const std::shared_ptr<Surface>& surface = nullptr) override;
+        SwapChain* CreateSwapChain(const SwapChainDescriptor& swapChainDesc, const std::shared_ptr<Surface>& surface = nullptr) override;
 
         void Release(SwapChain& swapChain) override;
 
@@ -67,21 +66,23 @@ class D3D11RenderSystem final : public RenderSystem
 
         /* ----- Command buffers ----- */
 
-        CommandBuffer* CreateCommandBuffer(const CommandBufferDescriptor& desc = {}) override;
+        CommandBuffer* CreateCommandBuffer(const CommandBufferDescriptor& commandBufferDesc = {}) override;
 
         void Release(CommandBuffer& commandBuffer) override;
 
         /* ----- Buffers ------ */
 
-        Buffer* CreateBuffer(const BufferDescriptor& desc, const void* initialData = nullptr) override;
+        Buffer* CreateBuffer(const BufferDescriptor& bufferDesc, const void* initialData = nullptr) override;
         BufferArray* CreateBufferArray(std::uint32_t numBuffers, Buffer* const * bufferArray) override;
 
         void Release(Buffer& buffer) override;
         void Release(BufferArray& bufferArray) override;
 
-        void WriteBuffer(Buffer& dstBuffer, std::uint64_t dstOffset, const void* data, std::uint64_t dataSize) override;
+        void WriteBuffer(Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t dataSize) override;
+        void ReadBuffer(Buffer& buffer, std::uint64_t offset, void* data, std::uint64_t dataSize) override;
 
         void* MapBuffer(Buffer& buffer, const CPUAccess access) override;
+        void* MapBuffer(Buffer& buffer, const CPUAccess access, std::uint64_t offset, std::uint64_t length) override;
         void UnmapBuffer(Buffer& buffer) override;
 
         /* ----- Textures ----- */
@@ -95,53 +96,53 @@ class D3D11RenderSystem final : public RenderSystem
 
         /* ----- Sampler States ---- */
 
-        Sampler* CreateSampler(const SamplerDescriptor& desc) override;
+        Sampler* CreateSampler(const SamplerDescriptor& samplerDesc) override;
 
         void Release(Sampler& sampler) override;
 
         /* ----- Resource Heaps ----- */
 
-        ResourceHeap* CreateResourceHeap(const ResourceHeapDescriptor& desc) override;
+        ResourceHeap* CreateResourceHeap(const ResourceHeapDescriptor& resourceHeapDesc, const ArrayView<ResourceViewDescriptor>& initialResourceViews = {}) override;
 
         void Release(ResourceHeap& resourceHeap) override;
 
+        std::uint32_t WriteResourceHeap(ResourceHeap& resourceHeap, std::uint32_t firstDescriptor, const ArrayView<ResourceViewDescriptor>& resourceViews) override;
+
         /* ----- Render Passes ----- */
 
-        RenderPass* CreateRenderPass(const RenderPassDescriptor& desc) override;
+        RenderPass* CreateRenderPass(const RenderPassDescriptor& renderPassDesc) override;
 
         void Release(RenderPass& renderPass) override;
 
         /* ----- Render Targets ----- */
 
-        RenderTarget* CreateRenderTarget(const RenderTargetDescriptor& desc) override;
+        RenderTarget* CreateRenderTarget(const RenderTargetDescriptor& renderTargetDesc) override;
 
         void Release(RenderTarget& renderTarget) override;
 
         /* ----- Shader ----- */
 
-        Shader* CreateShader(const ShaderDescriptor& desc) override;
-        ShaderProgram* CreateShaderProgram(const ShaderProgramDescriptor& desc) override;
+        Shader* CreateShader(const ShaderDescriptor& shaderDesc) override;
 
         void Release(Shader& shader) override;
-        void Release(ShaderProgram& shaderProgram) override;
 
         /* ----- Pipeline Layouts ----- */
 
-        PipelineLayout* CreatePipelineLayout(const PipelineLayoutDescriptor& desc) override;
+        PipelineLayout* CreatePipelineLayout(const PipelineLayoutDescriptor& pipelineLayoutDesc) override;
 
         void Release(PipelineLayout& pipelineLayout) override;
 
         /* ----- Pipeline States ----- */
 
         PipelineState* CreatePipelineState(const Blob& serializedCache) override;
-        PipelineState* CreatePipelineState(const GraphicsPipelineDescriptor& desc, std::unique_ptr<Blob>* serializedCache = nullptr) override;
-        PipelineState* CreatePipelineState(const ComputePipelineDescriptor& desc, std::unique_ptr<Blob>* serializedCache = nullptr) override;
+        PipelineState* CreatePipelineState(const GraphicsPipelineDescriptor& pipelineStateDesc, std::unique_ptr<Blob>* serializedCache = nullptr) override;
+        PipelineState* CreatePipelineState(const ComputePipelineDescriptor& pipelineStateDesc, std::unique_ptr<Blob>* serializedCache = nullptr) override;
 
         void Release(PipelineState& pipelineState) override;
 
         /* ----- Queries ----- */
 
-        QueryHeap* CreateQueryHeap(const QueryHeapDescriptor& desc) override;
+        QueryHeap* CreateQueryHeap(const QueryHeapDescriptor& queryHeapDesc) override;
 
         void Release(QueryHeap& queryHeap) override;
 
@@ -187,19 +188,6 @@ class D3D11RenderSystem final : public RenderSystem
         // Returns the minor version of Direct3D 11.X.
         int GetMinorVersion() const;
 
-        void CreateAndInitializeGpuTexture1D(D3D11Texture& textureD3D, const TextureDescriptor& desc, const SrcImageDescriptor* imageDesc);
-        void CreateAndInitializeGpuTexture2D(D3D11Texture& textureD3D, const TextureDescriptor& desc, const SrcImageDescriptor* imageDesc);
-        void CreateAndInitializeGpuTexture3D(D3D11Texture& textureD3D, const TextureDescriptor& desc, const SrcImageDescriptor* imageDesc);
-        void CreateAndInitializeGpuTexture2DMS(D3D11Texture& textureD3D, const TextureDescriptor& desc);
-
-        void UpdateGenericTexture(
-            Texture&                    texture,
-            std::uint32_t               mipLevel,
-            std::uint32_t               arrayLayer,
-            const D3D11_BOX&            region,
-            const SrcImageDescriptor&   imageDesc
-        );
-
         void InitializeGpuTexture(
             D3D11Texture&               textureD3D,
             const TextureDescriptor&    textureDesc,
@@ -212,14 +200,6 @@ class D3D11RenderSystem final : public RenderSystem
             const Extent3D&     extent,
             std::uint32_t       arrayLayers,
             SrcImageDescriptor  imageDesc
-        );
-
-        void InitializeGpuTextureWithClearValue(
-            D3D11Texture&       textureD3D,
-            const Format        format,
-            const Extent3D&     extent,
-            std::uint32_t       arrayLayers,
-            const ClearValue&   clearValue
         );
 
     private:
@@ -260,7 +240,6 @@ class D3D11RenderSystem final : public RenderSystem
         HWObjectContainer<D3D11RenderPass>      renderPasses_;
         HWObjectContainer<D3D11RenderTarget>    renderTargets_;
         HWObjectContainer<D3D11Shader>          shaders_;
-        HWObjectContainer<D3D11ShaderProgram>   shaderPrograms_;
         HWObjectContainer<D3D11PipelineLayout>  pipelineLayouts_;
         HWObjectContainer<D3D11PipelineState>   pipelineStates_;
         HWObjectContainer<D3D11ResourceHeap>    resourceHeaps_;

@@ -1,8 +1,8 @@
 /*
  * GLStateManager.h
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_GL_STATE_MANAGER_H
@@ -34,7 +34,11 @@ class GLDepthStencilState;
 class GLRasterizerState;
 class GLBlendState;
 class GLRenderPass;
+class GLProgramPipeline;
+class GLShaderProgram;
+#ifdef LLGL_GL_ENABLE_OPENGL2X
 class GL2XSampler;
+#endif
 
 // OpenGL state machine manager that keeps track of certain GL states.
 class GLStateManager
@@ -154,7 +158,7 @@ class GLStateManager
 
         void BindBlendState(GLBlendState* blendState);
 
-        void SetBlendColor(const GLfloat* color);
+        void SetBlendColor(const GLfloat color[4]);
         void SetLogicOp(GLenum opcode);
 
         /* ----- Buffer ----- */
@@ -241,15 +245,29 @@ class GLStateManager
 
         void NotifySamplerRelease(GLuint sampler);
 
+        #ifdef LLGL_GL_ENABLE_OPENGL2X
         void BindGL2XSampler(GLuint layer, const GL2XSampler& sampler);
+        void BindCombinedGL2XSampler(GLuint layer, const GL2XSampler& sampler, GLTexture& texture);
+        #endif
 
-        /* ----- Shader Program ----- */
+        /* ----- Shader program ----- */
 
         void BindShaderProgram(GLuint program);
 
-        void NotifyShaderProgramRelease(GLuint program);
+        void PushBoundShaderProgram();
+        void PopBoundShaderProgram();
+
+        void NotifyShaderProgramRelease(GLShaderProgram* shaderProgram);
 
         GLuint GetBoundShaderProgram() const;
+
+        /* ----- Program pipeline ----- */
+
+        void BindProgramPipeline(GLuint pipeline);
+
+        void NotifyProgramPipelineRelease(GLProgramPipeline* programPipeline);
+
+        GLuint GetBoundProgramPipeline() const;
 
         /* ----- Render pass ----- */
 
@@ -323,8 +341,7 @@ class GLStateManager
             const std::uint8_t*             colorBuffers,
             std::uint32_t                   numClearValues,
             const ClearValue*               clearValues,
-            std::uint32_t&                  idx,
-            const GLClearValue&             defaultClearValue,
+            const ClearValue&               defaultClearValue,
             GLIntermediateBufferWriteMasks& intermediateMasks
         );
 
@@ -358,6 +375,11 @@ class GLStateManager
         struct RenderbufferStackEntry
         {
             GLuint renderbuffer;
+        };
+
+        struct ShaderProgramStackEntry
+        {
+            GLuint program;
         };
 
     private:
@@ -399,7 +421,8 @@ class GLStateManager
         std::stack<BufferStackEntry>        bufferStack_;
         std::stack<TextureStackEntry>       textureState_;
         std::stack<FramebufferStackEntry>   framebufferStack_;
-        std::stack<RenderbufferStackEntry>  renderbufferState_;
+        std::stack<RenderbufferStackEntry>  renderbufferStack_;
+        std::stack<ShaderProgramStackEntry> shaderProgramStack_;
 
 };
 

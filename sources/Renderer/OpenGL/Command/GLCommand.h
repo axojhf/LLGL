@@ -1,8 +1,8 @@
 /*
  * GLCommand.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_GL_COMMAND_H
@@ -11,6 +11,7 @@
 
 #include <LLGL/CommandBufferFlags.h>
 #include <LLGL/TextureFlags.h>
+#include <LLGL/PipelineLayoutFlags.h>
 #include <LLGL/Types.h>
 #include "../RenderState/GLState.h"
 #include "../GLProfile.h"
@@ -31,8 +32,10 @@ class GLSwapChain;
 class GLRenderTarget;
 class GLRenderPass;
 class GLDeferredCommandBuffer;
+#ifdef LLGL_GL_ENABLE_OPENGL2X
 class GL2XVertexArray;
 class GL2XSampler;
+#endif
 
 
 struct GLCmdBufferSubData
@@ -172,10 +175,12 @@ struct GLCmdBindVertexArray
     GLuint vao;
 };
 
+#ifdef LLGL_GL_ENABLE_OPENGL2X
 struct GLCmdBindGL2XVertexArray
 {
     const GL2XVertexArray* vertexArrayGL2X;
 };
+#endif
 
 struct GLCmdBindElementArrayBufferToVAO
 {
@@ -215,7 +220,7 @@ struct GLCmdBeginTransformFeedbackNV
 struct GLCmdBindResourceHeap
 {
     GLResourceHeap* resourceHeap;
-    std::uint32_t   firstSet;
+    std::uint32_t   descriptorSet;
 };
 
 struct GLCmdBindRenderTarget
@@ -242,6 +247,7 @@ struct GLCmdSetStencilRef
 struct GLCmdSetUniforms
 {
     GLuint      program;
+    UniformType type;
     GLint       location;
     GLsizei     count;
     GLsizeiptr  size;
@@ -408,11 +414,13 @@ struct GLCmdBindSampler
     GLuint sampler;
 };
 
+#ifdef LLGL_GL_ENABLE_OPENGL2X
 struct GLCmdBindGL2XSampler
 {
     GLuint              layer;
     const GL2XSampler*  samplerGL2X;
 };
+#endif
 
 struct GLCmdUnbindResources
 {

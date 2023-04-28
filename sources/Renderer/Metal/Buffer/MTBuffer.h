@@ -1,8 +1,8 @@
 /*
  * MTBuffer.h
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_MT_BUFFER_H
@@ -31,9 +31,11 @@ class MTBuffer final : public Buffer
         MTBuffer(id<MTLDevice> device, const BufferDescriptor& desc, const void* initialData);
         ~MTBuffer();
 
-        void Write(NSUInteger dstOffset, const void* data, NSUInteger dataSize);
+        void Write(NSUInteger offset, const void* data, NSUInteger dataSize);
+        void Read(NSUInteger offset, void* data, NSUInteger dataSize);
 
         void* Map(CPUAccess access);
+        void* Map(CPUAccess access, NSUInteger offset, NSUInteger length);
         void Unmap();
 
         // Returns the native MTLBuffer object.
@@ -55,7 +57,7 @@ class MTBuffer final : public Buffer
         #ifndef LLGL_OS_IOS
         bool            isManaged_          = false;
         #endif
-        bool            mappedWriteAccess_  = false;
+        NSRange         mappedWriteRange_   = { 0, 0 };
 
 };
 

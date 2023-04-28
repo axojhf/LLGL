@@ -1,8 +1,8 @@
 /*
  * D3D11GraphicsPSOBase.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D11_GRAPHICS_PSO_BASE_H
@@ -77,7 +77,7 @@ class D3D11GraphicsPSOBase : public D3D11PipelineState
 
     private:
 
-        void StoreShaderObjects(const D3D11ShaderProgram& shaderProgramD3D);
+        void GetD3DNativeShaders(const GraphicsPipelineDescriptor& desc);
 
         void BuildStaticStateBuffer(const GraphicsPipelineDescriptor& desc);
         void BuildStaticViewports(std::size_t numViewports, const Viewport* viewports, ByteBufferIterator& byteBufferIter);

@@ -1,8 +1,8 @@
 /*
  * D3D11Shader.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D11Shader.h"
@@ -10,11 +10,13 @@
 #include "../D3D11ObjectUtils.h"
 #include "../../DXCommon/DXCore.h"
 #include "../../DXCommon/DXTypes.h"
-#include "../../../Core/Helper.h"
+#include "../../../Core/CoreUtils.h"
+#include "../../../Core/StringUtils.h"
+#include <LLGL/Utils/TypeNames.h>
+#include <LLGL/Utils/ForRange.h>
 #include <algorithm>
 #include <stdexcept>
 #include <d3dcompiler.h>
-#include <fstream>
 
 
 namespace LLGL
@@ -24,15 +26,13 @@ namespace LLGL
 D3D11Shader::D3D11Shader(ID3D11Device* device, const ShaderDescriptor& desc) :
     Shader { desc.type }
 {
-    if (!BuildShader(device, desc))
+    if (BuildShader(device, desc))
     {
-        /* Mark this shader compilation as failed */
-        hasErrors_ = true;
-    }
-    else if (GetType() == ShaderType::Vertex)
-    {
-        /* Build input layout object for vertex shaders */
-        BuildInputLayout(device, static_cast<UINT>(desc.vertex.inputAttribs.size()), desc.vertex.inputAttribs.data());
+        if (GetType() == ShaderType::Vertex)
+        {
+            /* Build input layout object for vertex shaders */
+            BuildInputLayout(device, static_cast<UINT>(desc.vertex.inputAttribs.size()), desc.vertex.inputAttribs.data());
+        }
     }
 }
 
@@ -42,14 +42,9 @@ void D3D11Shader::SetName(const char* name)
     D3D11SetObjectName(static_cast<ID3D11DeviceChild*>(native_.vs.Get()), name);
 }
 
-bool D3D11Shader::HasErrors() const
+const Report* D3D11Shader::GetReport() const
 {
-    return hasErrors_;
-}
-
-std::string D3D11Shader::GetReport() const
-{
-    return (errors_.Get() != nullptr ? DXGetBlobString(errors_.Get()) : "");
+    return (report_ ? &report_ : nullptr);
 }
 
 bool D3D11Shader::Reflect(ShaderReflection& reflection) const
@@ -58,6 +53,24 @@ bool D3D11Shader::Reflect(ShaderReflection& reflection) const
         return SUCCEEDED(ReflectShaderByteCode(reflection));
     else
         return false;
+}
+
+HRESULT D3D11Shader::ReflectAndCacheConstantBuffers(const std::vector<D3D11ConstantBufferReflection>** outConstantBuffers)
+{
+    if (cbufferReflectionResult_ == S_FALSE)
+    {
+        /* Reflect and cache constant buffer reflections */
+        cbufferReflections_.clear();
+        cbufferReflectionResult_ = ReflectConstantBuffers(cbufferReflections_);
+    }
+    if (cbufferReflectionResult_ == S_OK)
+    {
+        /* Return cached constnat buffer reflections */
+        if (outConstantBuffers != nullptr)
+            *outConstantBuffers = &cbufferReflections_;
+        return S_OK;
+    }
+    return cbufferReflectionResult_;
 }
 
 
@@ -77,11 +90,11 @@ static DXGI_FORMAT GetInputElementFormat(const VertexAttribute& attrib)
 {
     try
     {
-        return D3D11Types::Map(attrib.format);
+        return DXTypes::ToDXGIFormat(attrib.format);
     }
     catch (const std::exception& e)
     {
-        throw std::invalid_argument(std::string(e.what()) + " for vertex attribute: " + attrib.name);
+        throw std::invalid_argument(std::string(e.what()) + " for vertex attribute: " + std::string(attrib.name.c_str()));
     }
 }
 
@@ -162,6 +175,7 @@ bool D3D11Shader::CompileSource(ID3D11Device* device, const ShaderDescriptor& sh
     auto        flags   = shaderDesc.flags;
 
     /* Compile shader code */
+    ComPtr<ID3DBlob> errors;
     auto hr = D3DCompile(
         sourceCode,
         sourceLength,
@@ -173,7 +187,7 @@ bool D3D11Shader::CompileSource(ID3D11Device* device, const ShaderDescriptor& sh
         DXGetCompilerFlags(flags),          // UINT                 Flags1
         0,                                  // UINT                 Flags2 (recommended to always be 0)
         byteCode_.ReleaseAndGetAddressOf(), // ID3DBlob**           ppCode
-        errors_.ReleaseAndGetAddressOf()    // ID3DBlob**           ppErrorMsgs
+        errors.ReleaseAndGetAddressOf()     // ID3DBlob**           ppErrorMsgs
     );
 
     /* Get byte code from blob */
@@ -181,7 +195,9 @@ bool D3D11Shader::CompileSource(ID3D11Device* device, const ShaderDescriptor& sh
         CreateNativeShader(device, shaderDesc.vertex.outputAttribs.size(), shaderDesc.vertex.outputAttribs.data());
 
     /* Store if compilation was successful */
-    return !FAILED(hr);
+    const bool hasErrors = FAILED(hr);
+    report_.Reset(errors.Get(), hasErrors);
+    return !hasErrors;
 }
 
 bool D3D11Shader::LoadBinary(ID3D11Device* device, const ShaderDescriptor& shaderDesc)
@@ -204,6 +220,7 @@ bool D3D11Shader::LoadBinary(ID3D11Device* device, const ShaderDescriptor& shade
         return true;
     }
 
+    report_.Reset(ToString(shaderDesc.type) + std::string(" shader error:") + "missing DXBC bytecode", true);
     return false;
 }
 
@@ -299,25 +316,17 @@ void D3D11Shader::CreateNativeShader(
     const VertexAttribute*  streamOutputAttribs,
     ID3D11ClassLinkage*     classLinkage)
 {
-    try
-    {
-        native_ = D3D11Shader::CreateNativeShaderFromBlob(
-            device,
-            GetType(),
-            byteCode_.Get(),
-            numStreamOutputAttribs,
-            streamOutputAttribs,
-            classLinkage
-        );
-    }
-    catch (const std::exception&)
-    {
-        hasErrors_ = true;
-        throw;
-    }
+    native_ = D3D11Shader::CreateNativeShaderFromBlob(
+        device,
+        GetType(),
+        byteCode_.Get(),
+        numStreamOutputAttribs,
+        streamOutputAttribs,
+        classLinkage
+    );
 }
 
-static ShaderResource* FetchOrInsertResource(
+static ShaderResourceReflection* FetchOrInsertResource(
     ShaderReflection&   reflection,
     const char*         name,
     const ResourceType  type,
@@ -583,7 +592,7 @@ HRESULT D3D11Shader::ReflectShaderByteCode(ShaderReflection& reflection) const
     }
 
     /* Get input bindings */
-    hr = ReflectShaderInputBindings(reflectionObject.Get(), shaderDesc, GetStageFlags(), reflection);
+    hr = ReflectShaderInputBindings(reflectionObject.Get(), shaderDesc, GetStageFlags(GetType()), reflection);
     if (FAILED(hr))
         return hr;
 
@@ -598,6 +607,73 @@ HRESULT D3D11Shader::ReflectShaderByteCode(ShaderReflection& reflection) const
     }
 
     return S_OK;
+}
+
+HRESULT D3D11Shader::ReflectConstantBuffers(std::vector<D3D11ConstantBufferReflection>& outConstantBuffers) const
+{
+    HRESULT hr = S_OK;
+
+    /* Get shader reflection */
+    ComPtr<ID3D11ShaderReflection> reflectionObject;
+    hr = D3DReflect(byteCode_->GetBufferPointer(), byteCode_->GetBufferSize(), IID_PPV_ARGS(reflectionObject.ReleaseAndGetAddressOf()));
+    if (FAILED(hr))
+        return hr;
+
+    D3D11_SHADER_DESC shaderDesc;
+    hr = reflectionObject->GetDesc(&shaderDesc);
+    if (FAILED(hr))
+        return hr;
+
+    for_range(i, shaderDesc.BoundResources)
+    {
+        /* Get shader input resource descriptor */
+        D3D11_SHADER_INPUT_BIND_DESC inputBindDesc;
+        auto hr = reflectionObject->GetResourceBindingDesc(i, &inputBindDesc);
+        if (FAILED(hr))
+            return hr;
+
+        /* Reflect shader resource view */
+        if (inputBindDesc.Type == D3D_SIT_CBUFFER)
+        {
+            /* Get constant buffer reflection */
+            auto* cbufferReflection = reflectionObject->GetConstantBufferByName(inputBindDesc.Name);
+            if (cbufferReflection == nullptr)
+                return E_POINTER;
+
+            D3D11_SHADER_BUFFER_DESC shaderBufferDesc;
+            hr = cbufferReflection->GetDesc(&shaderBufferDesc);
+            if (FAILED(hr))
+                return hr;
+
+            std::vector<D3D11ConstantReflection> fieldsInfo;
+
+            for_range(fieldIndex, shaderBufferDesc.Variables)
+            {
+                /* Get constant field reflection */
+                auto* fieldReflection = cbufferReflection->GetVariableByIndex(fieldIndex);
+                if (fieldReflection == nullptr)
+                    return E_POINTER;
+
+                D3D11_SHADER_VARIABLE_DESC fieldDesc;
+                hr = fieldReflection->GetDesc(&fieldDesc);
+                if (FAILED(hr))
+                    return hr;
+
+                fieldsInfo.push_back(D3D11ConstantReflection{ fieldDesc.Name, fieldDesc.StartOffset, fieldDesc.Size });
+            }
+
+            /* Write reflection output */
+            D3D11ConstantBufferReflection cbufferInfo;
+            {
+                cbufferInfo.slot    = inputBindDesc.BindPoint;
+                cbufferInfo.size    = shaderBufferDesc.Size;
+                cbufferInfo.fields  = fieldsInfo;
+            }
+            outConstantBuffers.push_back(std::move(cbufferInfo));
+        }
+    }
+
+    return hr;
 }
 
 

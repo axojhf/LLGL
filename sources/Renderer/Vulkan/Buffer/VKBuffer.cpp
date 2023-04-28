@@ -1,15 +1,17 @@
 /*
  * VKBuffer.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "VKBuffer.h"
 #include "../VKCore.h"
 #include "../VKTypes.h"
+#include "../VKDevice.h"
 #include "../Ext/VKExtensions.h"
 #include "../Ext/VKExtensionRegistry.h"
+#include "../../ResourceUtils.h"
 
 
 namespace LLGL
@@ -51,7 +53,7 @@ static VkBufferUsageFlags GetVkBufferUsageFlags(const BufferDescriptor& desc)
     return flags;
 }
 
-VKBuffer::VKBuffer(const VKPtr<VkDevice>& device, const BufferDescriptor& desc) :
+VKBuffer::VKBuffer(VkDevice device, const BufferDescriptor& desc) :
     Buffer            { desc.bindFlags },
     bufferObj_        { device         },
     bufferObjStaging_ { device         },
@@ -98,15 +100,43 @@ void VKBuffer::TakeStagingBuffer(VKDeviceBuffer&& deviceBuffer)
     bufferObjStaging_ = std::move(deviceBuffer);
 }
 
-void* VKBuffer::Map(VkDevice device, const CPUAccess access)
+void* VKBuffer::Map(VKDevice& device, const CPUAccess access, VkDeviceSize offset, VkDeviceSize length)
 {
-    mappedCPUAccess_ = access;
-    return bufferObjStaging_.Map(device);
+    if (auto stagingBuffer = GetStagingVkBuffer())
+    {
+        /* Copy GPU local buffer into staging buffer for read accces */
+        if (HasReadAccess(access))
+            device.CopyBuffer(GetVkBuffer(), stagingBuffer, GetSize());
+
+        if (HasWriteAccess(access))
+        {
+            mappedWriteRange_[0] = offset;
+            mappedWriteRange_[1] = offset + length;
+        }
+
+        /* Map staging buffer */
+        return bufferObjStaging_.Map(device);
+    }
+    return nullptr;
 }
 
-void VKBuffer::Unmap(VkDevice device)
+void VKBuffer::Unmap(VKDevice& device)
 {
-    bufferObjStaging_.Unmap(device);
+    if (auto stagingBuffer = GetStagingVkBuffer())
+    {
+        /* Unmap staging buffer */
+        bufferObjStaging_.Unmap(device);
+
+        /* Copy staging buffer into GPU local buffer for write access */
+        if (mappedWriteRange_[0] < mappedWriteRange_[1])
+        {
+            const VkDeviceSize offset = mappedWriteRange_[0];
+            const VkDeviceSize length = (mappedWriteRange_[1] - mappedWriteRange_[0]);
+            device.CopyBuffer(stagingBuffer, GetVkBuffer(), length, offset, offset);
+            mappedWriteRange_[0] = 0;
+            mappedWriteRange_[1] = 0;
+        }
+    }
 }
 
 

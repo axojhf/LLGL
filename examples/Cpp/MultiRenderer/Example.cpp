@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_MultiRenderer)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifdef _WIN32
@@ -12,6 +12,12 @@
 #include <LLGL/Platform/NativeHandle.h>
 
 
+struct Matrices
+{
+    Gs::Matrix4f wvpMatrix;
+    Gs::Matrix4f wMatrix;
+};
+
 /*
  * MyRenderer class
  */
@@ -19,7 +25,7 @@
 class MyRenderer
 {
 
-    std::unique_ptr<LLGL::RenderSystem> renderer;
+    LLGL::RenderSystemPtr               renderer;
     std::shared_ptr<LLGL::Window>       subWindow;
 
     LLGL::SwapChain*                    swapChain       = nullptr;
@@ -31,7 +37,8 @@ class MyRenderer
     LLGL::Sampler*                      sampler         = nullptr;
     LLGL::Texture*                      texture         = nullptr;
     LLGL::ResourceHeap*                 resourceHeap    = nullptr;
-    LLGL::ShaderProgram*                shaderProgram   = nullptr;
+    LLGL::Shader*                       vertShader      = nullptr;
+    LLGL::Shader*                       fragShader      = nullptr;
     LLGL::PipelineLayout*               layout          = nullptr;
     LLGL::PipelineState*                pipeline        = nullptr;
 
@@ -49,12 +56,12 @@ public:
     );
 
     void CreateResources(
-        const std::vector<VertexPos3Tex2>&  vertices,
-        const std::vector<std::uint32_t>&   indices
+        const LLGL::ArrayView<TexturedVertex>&  vertices,
+        const LLGL::ArrayView<std::uint32_t>&   indices
     );
 
     // Renders the scene from the specified view.
-    void Render(const Gs::Matrix4f& wvpMatrix);
+    void Render(const Gs::Matrix4f& vpMatrix, const Gs::Matrix4f& wMatrix);
 
     // Builds a perspective projection matrix for this renderer.
     Gs::Matrix4f BuildPerspectiveProjection(float aspectRatio, float nearPlane, float farPlane, float fieldOfView) const;
@@ -108,16 +115,17 @@ MyRenderer::MyRenderer(
     swapChain->SetVsyncInterval(1);
 }
 
-void MyRenderer::CreateResources(const std::vector<VertexPos3Tex2>& vertices, const std::vector<std::uint32_t>& indices)
+void MyRenderer::CreateResources(const LLGL::ArrayView<TexturedVertex>& vertices, const LLGL::ArrayView<std::uint32_t>& indices)
 {
     // Vertex format
     LLGL::VertexFormat vertexFormat;
     vertexFormat.AppendAttribute({ "position", LLGL::Format::RGB32Float });
+    vertexFormat.AppendAttribute({ "normal",   LLGL::Format::RGB32Float });
     vertexFormat.AppendAttribute({ "texCoord", LLGL::Format::RG32Float  });
 
     // Create vertex buffer
     vertexBuffer = renderer->CreateBuffer(
-        LLGL::VertexBufferDesc(sizeof(VertexPos3Tex2) * vertices.size(), vertexFormat),
+        LLGL::VertexBufferDesc(sizeof(TexturedVertex) * vertices.size(), vertexFormat),
         vertices.data()
     );
 
@@ -128,7 +136,7 @@ void MyRenderer::CreateResources(const std::vector<VertexPos3Tex2>& vertices, co
     );
 
     // Create constant buffer
-    constantBuffer = renderer->CreateBuffer(LLGL::ConstantBufferDesc(sizeof(Gs::Matrix4f)));
+    constantBuffer = renderer->CreateBuffer(LLGL::ConstantBufferDesc(sizeof(Matrices)));
 
     // Create textures
     const std::string texturePath = "../../Media/Textures/";
@@ -145,9 +153,6 @@ void MyRenderer::CreateResources(const std::vector<VertexPos3Tex2>& vertices, co
     sampler = renderer->CreateSampler(samplerDesc);
 
     // Create shaders
-    LLGL::Shader* vertShader = nullptr;
-    LLGL::Shader* fragShader = nullptr;
-
     const auto& languages = renderer->GetRenderingCaps().shadingLanguages;
 
     LLGL::ShaderDescriptor vertShaderDesc, fragShaderDesc;
@@ -178,47 +183,41 @@ void MyRenderer::CreateResources(const std::vector<VertexPos3Tex2>& vertices, co
     // Print info log (warnings and errors)
     for (auto shader : { vertShader, fragShader })
     {
-        std::string log = shader->GetReport();
-        if (!log.empty())
-            std::cerr << log << std::endl;
+        if (auto report = shader->GetReport())
+        {
+            if (*report->GetText() != '\0')
+                std::cerr << report->GetText() << std::endl;
+        }
     }
-
-    // Create shader program which is used as composite
-    LLGL::ShaderProgramDescriptor shaderProgramDesc;
-    {
-        shaderProgramDesc.vertexShader      = vertShader;
-        shaderProgramDesc.fragmentShader    = fragShader;
-    }
-    shaderProgram = renderer->CreateShaderProgram(shaderProgramDesc);
-    if (shaderProgram->HasErrors())
-        throw std::runtime_error(shaderProgram->GetReport());
 
     // Create pipeline layout
     bool compiledSampler = (renderer->GetRendererID() == LLGL::RendererID::OpenGL);
 
     if (compiledSampler)
-        layout = renderer->CreatePipelineLayout(LLGL::PipelineLayoutDesc("cbuffer(0):vert, texture(0):frag, sampler(0):frag"));
+        layout = renderer->CreatePipelineLayout(LLGL::PipelineLayoutDesc("heap{cbuffer(0):vert, texture(0):frag, sampler(0):frag}"));
     else
-        layout = renderer->CreatePipelineLayout(LLGL::PipelineLayoutDesc("cbuffer(0):vert, texture(1):frag, sampler(2):frag"));
+        layout = renderer->CreatePipelineLayout(LLGL::PipelineLayoutDesc("heap{cbuffer(0):vert, texture(1):frag, sampler(2):frag}"));
 
     // Create resource heap
-    LLGL::ResourceHeapDescriptor resHeapDesc;
-    {
-        resHeapDesc.pipelineLayout  = layout;
-        resHeapDesc.resourceViews   = { constantBuffer, texture, sampler };
-    }
-    resourceHeap = renderer->CreateResourceHeap(resHeapDesc);
+    resourceHeap = renderer->CreateResourceHeap(layout, { constantBuffer, texture, sampler });
 
     // Create graphics pipelines
     LLGL::GraphicsPipelineDescriptor pipelineDesc;
     {
-        pipelineDesc.shaderProgram                  = shaderProgram;
+        pipelineDesc.vertexShader                   = vertShader;
+        pipelineDesc.fragmentShader                 = fragShader;
         pipelineDesc.pipelineLayout                 = layout;
         pipelineDesc.depth.testEnabled              = true;
         pipelineDesc.depth.writeEnabled             = true;
         pipelineDesc.rasterizer.multiSampleEnabled  = (samples > 1);
     }
     pipeline = renderer->CreatePipelineState(pipelineDesc);
+
+    if (auto report = pipeline->GetReport())
+    {
+        if (*report->GetText() != '\0')
+            std::cerr << report->GetText() << std::endl;
+    }
 
     // Get command queue
     cmdQueue = renderer->GetCommandQueue();
@@ -227,12 +226,17 @@ void MyRenderer::CreateResources(const std::vector<VertexPos3Tex2>& vertices, co
     cmdBuffer = renderer->CreateCommandBuffer();
 }
 
-void MyRenderer::Render(const Gs::Matrix4f& wvpMatrix)
+void MyRenderer::Render(const Gs::Matrix4f& vpMatrix, const Gs::Matrix4f& wMatrix)
 {
     // Update constant buffer
     cmdBuffer->Begin();
     {
-        cmdBuffer->UpdateBuffer(*constantBuffer, 0, &wvpMatrix, sizeof(wvpMatrix));
+        Matrices matrices;
+        {
+            matrices.wvpMatrix  = vpMatrix * wMatrix;
+            matrices.wMatrix    = wMatrix;
+        }
+        cmdBuffer->UpdateBuffer(*constantBuffer, 0, &matrices, sizeof(matrices));
 
         cmdBuffer->SetVertexBuffer(*vertexBuffer);
         cmdBuffer->SetIndexBuffer(*indexBuffer);
@@ -240,7 +244,7 @@ void MyRenderer::Render(const Gs::Matrix4f& wvpMatrix)
         cmdBuffer->BeginRenderPass(*swapChain);
         {
             // Clear color buffer
-            cmdBuffer->Clear(LLGL::ClearFlags::ColorDepth, { LLGL::ColorRGBAf{ 0.1f, 0.1f, 0.4f } });
+            cmdBuffer->Clear(LLGL::ClearFlags::ColorDepth, { 0.1f, 0.1f, 0.4f, 1.0f});
 
             // Set viewport
             cmdBuffer->SetViewport(viewport);
@@ -290,7 +294,7 @@ int main(int argc, char* argv[])
 
         LLGL::WindowDescriptor mainWindowDesc;
         {
-            mainWindowDesc.title    = L"LLGL Example: Multi Renderer ( OpenGL, Vulkan, Direct3D 11, Direct3D 12 )";
+            mainWindowDesc.title    = "LLGL Example: Multi Renderer ( OpenGL, Vulkan, Direct3D 11, Direct3D 12 )";
             mainWindowDesc.size     = resolution;
             mainWindowDesc.centered = true;
         }
@@ -356,7 +360,7 @@ int main(int argc, char* argv[])
 
             // Draw scene for all renderers
             for (int i = 0; i < 4; ++i)
-                myRenderers[i].Render(projMatrices[i] * viewMatrix * worldMatrix);
+                myRenderers[i].Render(projMatrices[i] * viewMatrix, worldMatrix);
         }
     }
     catch (const std::exception& e)

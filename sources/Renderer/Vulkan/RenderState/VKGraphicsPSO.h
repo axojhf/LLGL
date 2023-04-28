@@ -1,8 +1,8 @@
 /*
  * VKGraphicsPSO.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_VK_GRAPHICS_PSO_H
@@ -10,6 +10,7 @@
 
 
 #include "VKPipelineState.h"
+#include <LLGL/StaticLimits.h>
 
 
 namespace LLGL
@@ -33,8 +34,7 @@ class VKGraphicsPSO final : public VKPipelineState
     public:
 
         VKGraphicsPSO(
-            const VKPtr<VkDevice>&              device,
-            VkPipelineLayout                    defaultPipelineLayout,
+            VkDevice                            device,
             const RenderPass*                   defaultRenderPass,
             const GraphicsPipelineDescriptor&   desc,
             const VKGraphicsPipelineLimits&     limits
@@ -56,7 +56,6 @@ class VKGraphicsPSO final : public VKPipelineState
 
         void CreateVkPipeline(
             VkDevice                            device,
-            VkPipelineLayout                    pipelineLayout,
             const VKRenderPass&                 renderPass,
             const VKGraphicsPipelineLimits&     limits,
             const GraphicsPipelineDescriptor&   desc

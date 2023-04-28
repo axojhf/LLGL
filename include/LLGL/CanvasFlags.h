@@ -1,15 +1,15 @@
 /*
  * CanvasFlags.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_CANVAS_FLAGS_H
 #define LLGL_CANVAS_FLAGS_H
 
 
-#include <string>
+#include <LLGL/Container/Strings.h>
 
 
 namespace LLGL
@@ -20,10 +20,10 @@ namespace LLGL
 struct CanvasDescriptor
 {
     //! Canvas title as UTF16 string.
-    std::wstring    title;
+    UTF8String  title;
 
     //! Specifies whether the canvas is borderless. This is required for a fullscreen swap-chain.
-    bool            borderless = false;
+    bool        borderless = false;
 };
 
 

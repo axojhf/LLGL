@@ -1,8 +1,8 @@
 /*
  * GLCommandAssembler.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifdef LLGL_ENABLE_JIT_COMPILER
@@ -17,7 +17,7 @@
 #include "../GLTypes.h"
 #include "../GLCore.h"
 #include "../Ext/GLExtensions.h"
-#include "../Ext/GLExtensionLoader.h"
+#include "../Ext/GLExtensionRegistry.h"
 #include "../../CheckedCast.h"
 #include "../../../Core/Assertion.h"
 
@@ -26,7 +26,9 @@
 
 #include "../Texture/GLTexture.h"
 #include "../Texture/GLMipGenerator.h"
-#include "../Texture/GL2XSampler.h"
+#ifdef LLGL_GL_ENABLE_OPENGL2X
+#   include "../Texture/GL2XSampler.h"
+#endif
 
 #include "../Buffer/GLBufferWithVAO.h"
 #include "../Buffer/GLBufferArrayWithVAO.h"
@@ -191,12 +193,14 @@ static std::size_t AssembleGLCommand(const GLOpcode opcode, const void* pc, JITC
             compiler.CallMember(&GLStateManager::BindVertexArray, g_stateMngrArg, cmd->vao);
             return sizeof(*cmd);
         }
+        #ifdef LLGL_GL_ENABLE_OPENGL2X
         case GLOpcodeBindGL2XVertexArray:
         {
             auto cmd = reinterpret_cast<const GLCmdBindGL2XVertexArray*>(pc);
             compiler.CallMember(&GL2XVertexArray::Bind, cmd->vertexArrayGL2X, g_stateMngrArg);
             return sizeof(*cmd);
         }
+        #endif
         case GLOpcodeBindElementArrayBufferToVAO:
         {
             auto cmd = reinterpret_cast<const GLCmdBindElementArrayBufferToVAO*>(pc);
@@ -244,7 +248,7 @@ static std::size_t AssembleGLCommand(const GLOpcode opcode, const void* pc, JITC
         case GLOpcodeBindResourceHeap:
         {
             auto cmd = reinterpret_cast<const GLCmdBindResourceHeap*>(pc);
-            compiler.CallMember(&GLResourceHeap::Bind, cmd->resourceHeap, g_stateMngrArg, cmd->firstSet);
+            compiler.CallMember(&GLResourceHeap::Bind, cmd->resourceHeap, g_stateMngrArg, cmd->descriptorSet);
             return sizeof(*cmd);
         }
         case GLOpcodeBindRenderTarget:
@@ -278,7 +282,7 @@ static std::size_t AssembleGLCommand(const GLOpcode opcode, const void* pc, JITC
         case GLOpcodeSetUniforms:
         {
             auto cmd = reinterpret_cast<const GLCmdSetUniforms*>(pc);
-            compiler.Call(GLSetUniformsByLocation, cmd->program, cmd->location, cmd->count, (cmd + 1));
+            compiler.Call(GLSetUniformsByType, cmd->type, cmd->location, cmd->count, (cmd + 1));
             return (sizeof(*cmd) + cmd->size);
         }
         case GLOpcodeBeginQuery:
@@ -434,12 +438,14 @@ static std::size_t AssembleGLCommand(const GLOpcode opcode, const void* pc, JITC
             compiler.CallMember(&GLStateManager::BindSampler, g_stateMngrArg, cmd->layer, cmd->sampler);
             return sizeof(*cmd);
         }
+        #ifdef LLGL_GL_ENABLE_OPENGL2X
         case GLOpcodeBindGL2XSampler:
         {
             auto cmd = reinterpret_cast<const GLCmdBindGL2XSampler*>(pc);
             compiler.CallMember(&GLStateManager::BindGL2XSampler, g_stateMngrArg, cmd->layer, cmd->samplerGL2X);
             return sizeof(*cmd);
         }
+        #endif
         case GLOpcodeUnbindResources:
         {
             auto cmd = reinterpret_cast<const GLCmdUnbindResources*>(pc);

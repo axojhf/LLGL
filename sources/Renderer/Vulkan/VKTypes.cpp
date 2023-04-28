@@ -1,8 +1,8 @@
 /*
  * VKTypes.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "VKTypes.h"
@@ -371,17 +371,6 @@ VkStencilFaceFlags Map(const StencilFace stencilFace)
     MapFailed("StencilFace", "VkStencilFaceFlags");
 }
 
-VkPipelineBindPoint Map(const PipelineBindPoint pipelineBindPoint)
-{
-    switch (pipelineBindPoint)
-    {
-        case PipelineBindPoint::Undefined:  return VK_PIPELINE_BIND_POINT_MAX_ENUM;
-        case PipelineBindPoint::Graphics:   return VK_PIPELINE_BIND_POINT_GRAPHICS;
-        case PipelineBindPoint::Compute:    return VK_PIPELINE_BIND_POINT_COMPUTE;
-    }
-    VKTypes::MapFailed("PipelineBindPoint", "VkPipelineBindPoint");
-}
-
 VkIndexType ToVkIndexType(const Format format)
 {
     switch (format)
@@ -421,6 +410,30 @@ VkOffset3D ToVkOffset(const Offset3D& offset)
 VkExtent3D ToVkExtent(const Extent3D& extent)
 {
     return VkExtent3D{ extent.width, extent.height, extent.depth };
+}
+
+VkComponentSwizzle ToVkComponentSwizzle(const TextureSwizzle swizzle)
+{
+    switch (swizzle)
+    {
+        case TextureSwizzle::Zero:  return VK_COMPONENT_SWIZZLE_ZERO;
+        case TextureSwizzle::One:   return VK_COMPONENT_SWIZZLE_ONE;
+        case TextureSwizzle::Red:   return VK_COMPONENT_SWIZZLE_R;
+        case TextureSwizzle::Green: return VK_COMPONENT_SWIZZLE_G;
+        case TextureSwizzle::Blue:  return VK_COMPONENT_SWIZZLE_B;
+        case TextureSwizzle::Alpha: return VK_COMPONENT_SWIZZLE_A;
+    }
+    VKTypes::MapFailed("TextureSwizzle", "VkComponentSwizzle");
+}
+
+VkColorComponentFlags ToVkColorComponentFlags(std::uint8_t colorMask)
+{
+    VkColorComponentFlags bitmask = 0;
+    if ((colorMask & ColorMaskFlags::R) != 0) { bitmask |= VK_COLOR_COMPONENT_R_BIT; }
+    if ((colorMask & ColorMaskFlags::G) != 0) { bitmask |= VK_COLOR_COMPONENT_G_BIT; }
+    if ((colorMask & ColorMaskFlags::B) != 0) { bitmask |= VK_COLOR_COMPONENT_B_BIT; }
+    if ((colorMask & ColorMaskFlags::A) != 0) { bitmask |= VK_COLOR_COMPONENT_A_BIT; }
+    return bitmask;
 }
 
 Format Unmap(const VkFormat format)
@@ -534,6 +547,42 @@ Format Unmap(const VkFormat format)
 
         default:                                    return Format::Undefined;
     }
+}
+
+bool IsVkFormatDepthStencil(const VkFormat format)
+{
+    switch (format)
+    {
+        case VK_FORMAT_D16_UNORM:
+        case VK_FORMAT_X8_D24_UNORM_PACK32:
+        case VK_FORMAT_D32_SFLOAT:
+        case VK_FORMAT_S8_UINT:
+        case VK_FORMAT_D16_UNORM_S8_UINT:
+        case VK_FORMAT_D24_UNORM_S8_UINT:
+        case VK_FORMAT_D32_SFLOAT_S8_UINT:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool IsVkFormatStencil(const VkFormat format)
+{
+    switch (format)
+    {
+        case VK_FORMAT_S8_UINT:
+        case VK_FORMAT_D16_UNORM_S8_UINT:
+        case VK_FORMAT_D24_UNORM_S8_UINT:
+        case VK_FORMAT_D32_SFLOAT_S8_UINT:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool IsVkFormatColor(const VkFormat format)
+{
+    return (format != VK_FORMAT_UNDEFINED && !IsVkFormatDepthStencil(format));
 }
 
 

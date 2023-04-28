@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_PrimitiveRestart)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
@@ -12,7 +12,7 @@
 class Example_PrimitiveRestart : public ExampleBase
 {
 
-    LLGL::ShaderProgram*    shaderProgram   = nullptr;
+    ShaderPipeline          shaderPipeline;
     LLGL::PipelineState*    pipeline        = nullptr;
     LLGL::Buffer*           vertexBuffer    = nullptr;
     LLGL::Buffer*           indexBuffer     = nullptr;
@@ -29,7 +29,7 @@ public:
         ExampleBase { L"LLGL Example: PrimitiveRestart" }
     {
         auto vertexFormats = CreateBuffers();
-        shaderProgram = LoadStandardShaderProgram(vertexFormats);
+        shaderPipeline = LoadStandardShaderPipeline(vertexFormats);
         CreatePipeline();
     }
 
@@ -132,7 +132,8 @@ private:
     {
         LLGL::GraphicsPipelineDescriptor pipelineDesc;
         {
-            pipelineDesc.shaderProgram                  = shaderProgram;
+            pipelineDesc.vertexShader                   = shaderPipeline.vs;
+            pipelineDesc.fragmentShader                 = shaderPipeline.ps;
             pipelineDesc.primitiveTopology              = LLGL::PrimitiveTopology::TriangleStrip;
             pipelineDesc.renderPass                     = swapChain->GetRenderPass();
             pipelineDesc.rasterizer.multiSampleEnabled  = (GetSampleCount() > 1);

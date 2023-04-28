@@ -1,14 +1,14 @@
 /*
  * D3D12StagingBufferPool.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D12StagingBufferPool.h"
 #include "../Command/D3D12CommandContext.h"
 #include "../D3D12Resource.h"
-#include "../../../Core/Helper.h"
+#include "../../../Core/CoreUtils.h"
 #include <algorithm>
 
 
@@ -35,7 +35,7 @@ void D3D12StagingBufferPool::Reset()
     chunkIdx_ = 0;
 }
 
-void D3D12StagingBufferPool::WriteStaged(
+HRESULT D3D12StagingBufferPool::WriteStaged(
     D3D12CommandContext&    commandContext,
     D3D12Resource&          dstBuffer,
     UINT64                  dstOffset,
@@ -50,15 +50,17 @@ void D3D12StagingBufferPool::WriteStaged(
         AllocChunk(dataSize);
 
     /* Write data to current chunk */
+    HRESULT hr;
     commandContext.TransitionResource(dstBuffer, D3D12_RESOURCE_STATE_COPY_DEST, true);
     {
         auto& chunk = chunks_[chunkIdx_];
-        chunk.WriteAndIncrementOffset(commandContext.GetCommandList(), dstBuffer.Get(), dstOffset, data, dataSize);
+        hr = chunk.WriteAndIncrementOffset(commandContext.GetCommandList(), dstBuffer.Get(), dstOffset, data, dataSize);
     }
     commandContext.TransitionResource(dstBuffer, dstBuffer.usageState, true);
+    return hr;
 }
 
-void D3D12StagingBufferPool::WriteImmediate(
+HRESULT D3D12StagingBufferPool::WriteImmediate(
     D3D12CommandContext&    commandContext,
     D3D12Resource&          dstBuffer,
     UINT64                  dstOffset,
@@ -67,11 +69,49 @@ void D3D12StagingBufferPool::WriteImmediate(
     UINT64                  alignment)
 {
     /* Write data to global upload buffer and copy region to destination buffer */
+    HRESULT hr;
     commandContext.TransitionResource(dstBuffer, D3D12_RESOURCE_STATE_COPY_DEST, true);
     {
-        GetUploadBufferAndGrow(dataSize, alignment).Write(commandContext.GetCommandList(), dstBuffer.Get(), dstOffset, data, dataSize);
+        hr = GetUploadBufferAndGrow(dataSize, alignment).Write(commandContext.GetCommandList(), dstBuffer.Get(), dstOffset, data, dataSize);
     }
     commandContext.TransitionResource(dstBuffer, dstBuffer.usageState, true);
+    return hr;
+}
+
+HRESULT D3D12StagingBufferPool::ReadSubresourceRegion(
+    D3D12CommandContext&    commandContext,
+    D3D12Resource&          srcBuffer,
+    UINT64                  srcOffset,
+    void*                   data,
+    UINT64                  dataSize,
+    UINT64                  alignment)
+{
+    auto& readbackBuffer = GetReadbackBufferAndGrow(dataSize, alignment);
+
+    /* Copy source buffer region to readback buffer and flush command list */
+    commandContext.TransitionResource(srcBuffer, D3D12_RESOURCE_STATE_COPY_SOURCE, true);
+    {
+        commandContext.GetCommandList()->CopyBufferRegion(readbackBuffer.GetNative(), 0, srcBuffer.Get(), srcOffset, dataSize);
+    }
+    commandContext.TransitionResource(srcBuffer, srcBuffer.usageState, true);
+    commandContext.Finish(true);
+
+    /* Map readback buffer to CPU memory space */
+    char* mappedData = nullptr;
+    const D3D12_RANGE readRange{ 0, static_cast<SIZE_T>(dataSize) };
+
+    HRESULT hr = readbackBuffer.GetNative()->Map(0, &readRange, reinterpret_cast<void**>(&mappedData));
+    if (FAILED(hr))
+        return hr;
+
+    /* Copy readback buffer into output data */
+    ::memcpy(data, mappedData, static_cast<std::size_t>(dataSize));
+
+    /* Unmap buffer with range of written data */
+    const D3D12_RANGE writtenRange{ 0, 0 };
+    readbackBuffer.GetNative()->Unmap(0, &writtenRange);
+
+    return S_OK;
 }
 
 
@@ -96,8 +136,8 @@ void D3D12StagingBufferPool::ResizeBuffer(
     if (!stagingBuffer.Capacity(alignedSize))
     {
         /* Use at least a bigger alignment for allocating the global buffers to reduce number of reallocations */
-        static const UINT64 g_minAlignment = 4096ull;
-        stagingBuffer.Create(device_, alignedSize, g_minAlignment, heapType);
+        constexpr UINT64 minAlignment = 4096ull;
+        stagingBuffer.Create(device_, alignedSize, minAlignment, heapType);
     }
 }
 
@@ -107,11 +147,11 @@ D3D12StagingBuffer& D3D12StagingBufferPool::GetUploadBufferAndGrow(UINT64 size, 
     return globalUploadBuffer_;
 }
 
-/*D3D12StagingBuffer& D3D12StagingBufferPool::GetReadbackBufferAndGrow(UINT64 size, UINT64 alignment)
+D3D12StagingBuffer& D3D12StagingBufferPool::GetReadbackBufferAndGrow(UINT64 size, UINT64 alignment)
 {
     ResizeBuffer(globalReadbackBuffer_, D3D12_HEAP_TYPE_READBACK, size, alignment);
     return globalReadbackBuffer_;
-}*/
+}
 
 
 } // /namespace LLGL

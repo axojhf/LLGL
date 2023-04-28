@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_ClothPhysics)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
@@ -75,10 +75,10 @@ class Example_ClothPhysics : public ExampleBase
     LLGL::PipelineLayout*   computeLayout                       = nullptr;
     LLGL::ResourceHeap*     computeResourceHeap                 = nullptr; // Contains two descriptor sets for a swap-buffer fashion
 
-    LLGL::ShaderProgram*    computeShaders[NumComputeShaders]   = {};
+    LLGL::Shader*           computeShaders[NumComputeShaders]   = {};
     LLGL::PipelineState*    computePipelines[NumComputeShaders] = {};
 
-    LLGL::ShaderProgram*    graphicsShader                      = nullptr;
+    ShaderPipeline          graphicsShaderPipeline;
     LLGL::PipelineLayout*   graphicsLayout                      = nullptr;
     LLGL::PipelineState*    graphicsPipeline                    = nullptr;
     LLGL::ResourceHeap*     graphicsResourceHeap                = nullptr;
@@ -275,9 +275,9 @@ public:
         // Initialize vertex format for rendering (not all vertex attributes are required for rendering)
         vertexFormat.attributes =
         {
-            LLGL::VertexAttribute{ "pos",      LLGL::Format::RGBA32Float, 0, 0, sizeof(Gs::Vector4f), 0 },
-            LLGL::VertexAttribute{ "normal",   LLGL::Format::RGBA32Float, 1, 0, sizeof(Gs::Vector4f), 1 },
-            LLGL::VertexAttribute{ "texCoord", LLGL::Format::RG32Float,   2, 0, sizeof(Gs::Vector4f), 2 },
+            LLGL::VertexAttribute{ "pos",      LLGL::Format::RGBA32Float, /*location:*/ 0, /*offset:*/ 0, /*stride:*/ sizeof(Gs::Vector4f), /*slot:*/ 0 },
+            LLGL::VertexAttribute{ "normal",   LLGL::Format::RGBA32Float, /*location:*/ 1, /*offset:*/ 0, /*stride:*/ sizeof(Gs::Vector4f), /*slot:*/ 1 },
+            LLGL::VertexAttribute{ "texCoord", LLGL::Format::RG32Float,   /*location:*/ 2, /*offset:*/ 0, /*stride:*/ sizeof(ParticleBase), /*slot:*/ 2 },
         };
 
         // Generate vertex and index data and store number of vertices and indices for draw commands
@@ -359,54 +359,27 @@ public:
         // Create compute shader
         if (Supported(LLGL::ShadingLanguage::HLSL))
         {
-            computeShaders[0] = LoadShaderProgram(
-                { { LLGL::ShaderType::Compute, "Example.hlsl", "CSForces", "cs_5_0" } },
-                {}, {}, {}, g_shaderMacros
-            );
-            computeShaders[1] = LoadShaderProgram(
-                { { LLGL::ShaderType::Compute, "Example.hlsl", "CSStretchConstraints", "cs_5_0" } },
-                {}, {}, {}, g_shaderMacros
-            );
-            computeShaders[2] = LoadShaderProgram(
-                { { LLGL::ShaderType::Compute, "Example.hlsl", "CSRelaxation", "cs_5_0" } },
-                {}, {}, {}, g_shaderMacros
-            );
+            computeShaders[0] = LoadShader({ LLGL::ShaderType::Compute, "Example.hlsl", "CSForces",             "cs_5_0" }, {}, {}, g_shaderMacros);
+            computeShaders[1] = LoadShader({ LLGL::ShaderType::Compute, "Example.hlsl", "CSStretchConstraints", "cs_5_0" }, {}, {}, g_shaderMacros);
+            computeShaders[2] = LoadShader({ LLGL::ShaderType::Compute, "Example.hlsl", "CSRelaxation",         "cs_5_0" }, {}, {}, g_shaderMacros);
         }
         else if (Supported(LLGL::ShadingLanguage::GLSL))
         {
-            computeShaders[0] = LoadShaderProgram(
-                { { LLGL::ShaderType::Compute, "Example.CSForces.comp" } }
-            );
-            computeShaders[1] = LoadShaderProgram(
-                { { LLGL::ShaderType::Compute, "Example.CSStretchConstraints.comp" } }
-            );
-            computeShaders[2] = LoadShaderProgram(
-                { { LLGL::ShaderType::Compute, "Example.CSRelaxation.comp" } }
-            );
+            computeShaders[0] = LoadShader({ LLGL::ShaderType::Compute, "Example.CSForces.comp"             });
+            computeShaders[1] = LoadShader({ LLGL::ShaderType::Compute, "Example.CSStretchConstraints.comp" });
+            computeShaders[2] = LoadShader({ LLGL::ShaderType::Compute, "Example.CSRelaxation.comp"         });
         }
         else if (Supported(LLGL::ShadingLanguage::SPIRV))
         {
-            computeShaders[0] = LoadShaderProgram(
-                { { LLGL::ShaderType::Compute, "Example.CSForces.450core.comp.spv" } }
-            );
-            computeShaders[1] = LoadShaderProgram(
-                { { LLGL::ShaderType::Compute, "Example.CSStretchConstraints.450core.comp.spv" } }
-            );
-            computeShaders[2] = LoadShaderProgram(
-                { { LLGL::ShaderType::Compute, "Example.CSRelaxation.450core.comp.spv" } }
-            );
+            computeShaders[0] = LoadShader({ LLGL::ShaderType::Compute, "Example.CSForces.450core.comp.spv"             });
+            computeShaders[1] = LoadShader({ LLGL::ShaderType::Compute, "Example.CSStretchConstraints.450core.comp.spv" });
+            computeShaders[2] = LoadShader({ LLGL::ShaderType::Compute, "Example.CSRelaxation.450core.comp.spv"         });
         }
         else if (Supported(LLGL::ShadingLanguage::Metal))
         {
-            computeShaders[0] = LoadShaderProgram(
-                { { LLGL::ShaderType::Compute, "Example.metal", "CSForces", "2.0" } }
-            );
-            computeShaders[1] = LoadShaderProgram(
-                { { LLGL::ShaderType::Compute, "Example.metal", "CSStretchConstraints", "2.0" } }
-            );
-            computeShaders[2] = LoadShaderProgram(
-                { { LLGL::ShaderType::Compute, "Example.metal", "CSRelaxation", "2.0" } }
-            );
+            computeShaders[0] = LoadShader({ LLGL::ShaderType::Compute, "Example.metal", "CSForces",             "2.0" });
+            computeShaders[1] = LoadShader({ LLGL::ShaderType::Compute, "Example.metal", "CSStretchConstraints", "2.0" });
+            computeShaders[2] = LoadShader({ LLGL::ShaderType::Compute, "Example.metal", "CSRelaxation",         "2.0" });
         }
         else
             throw std::runtime_error("shaders not available for selected renderer in this example");
@@ -414,6 +387,7 @@ public:
         // Create compute pipeline layout
         computeLayout = renderer->CreatePipelineLayout(
             LLGL::PipelineLayoutDesc(
+                "heap{"
                 "cbuffer(SceneState@0):comp,"
                 #ifdef ENABLE_STORAGE_TEXTURES
                 "texture(parBase@1):comp,"
@@ -421,34 +395,37 @@ public:
                 #else
                 "buffer(parBase@1):comp,"
                 "rwbuffer(parCurrPos@2, parNextPos@3, parPrevPos@4, parVelocity@5, parNormal@6):comp"
+                "}"
                 #endif // /ENABLE_STORAGE_TEXTURES
             )
         );
 
         // Create resource heaps for compute pipeline
+        const LLGL::ResourceViewDescriptor resourceViewsCompute[] =
+        {
+            constantBuffer,
+            particleBuffers[AttribBase],
+            particleBuffers[AttribCurrPos],
+            particleBuffers[AttribNextPos],
+            particleBuffers[AttribPrevPos],
+            particleBuffers[AttribVelocity],
+            particleBuffers[AttribNormal],
+
+            constantBuffer,
+            particleBuffers[AttribBase],
+            particleBuffers[AttribNextPos], // Swap pos with next-pos
+            particleBuffers[AttribCurrPos], // Swap next-pos with pos
+            particleBuffers[AttribPrevPos],
+            particleBuffers[AttribVelocity],
+            particleBuffers[AttribNormal],
+        };
         LLGL::ResourceHeapDescriptor resourceHeapDesc;
         {
-            resourceHeapDesc.pipelineLayout = computeLayout;
-            resourceHeapDesc.resourceViews  =
-            {
-                constantBuffer,
-                particleBuffers[AttribBase],
-                particleBuffers[AttribCurrPos],
-                particleBuffers[AttribNextPos],
-                particleBuffers[AttribPrevPos],
-                particleBuffers[AttribVelocity],
-                particleBuffers[AttribNormal],
-
-                constantBuffer,
-                particleBuffers[AttribBase],
-                particleBuffers[AttribNextPos], // Swap pos with next-pos
-                particleBuffers[AttribCurrPos], // Swap next-pos with pos
-                particleBuffers[AttribPrevPos],
-                particleBuffers[AttribVelocity],
-                particleBuffers[AttribNormal],
-            };
+            resourceHeapDesc.pipelineLayout     = computeLayout;
+            resourceHeapDesc.numResourceViews   = sizeof(resourceViewsCompute) / sizeof(resourceViewsCompute[0]);
+            resourceHeapDesc.barrierFlags       = LLGL::BarrierFlags::StorageBuffer;
         }
-        computeResourceHeap = renderer->CreateResourceHeap(resourceHeapDesc);
+        computeResourceHeap = renderer->CreateResourceHeap(resourceHeapDesc, resourceViewsCompute);
 
         // Create compute pipeline
         for (int i = 0; i < 3; ++i)
@@ -456,70 +433,39 @@ public:
             LLGL::ComputePipelineDescriptor pipelineDesc;
             {
                 pipelineDesc.pipelineLayout = computeLayout;
-                pipelineDesc.shaderProgram  = computeShaders[i];
+                pipelineDesc.computeShader  = computeShaders[i];
             }
             computePipelines[i] = renderer->CreatePipelineState(pipelineDesc);
+            ThrowIfFailed(computePipelines[i]);
         }
     }
 
     void CreateGraphicsPipeline()
     {
         // Create graphics shader
+        std::vector<LLGL::VertexFormat> usedVertexFormats;
+        #ifndef ENABLE_STORAGE_TEXTURES
+        usedVertexFormats = { vertexFormat };
+        #endif
         if (Supported(LLGL::ShadingLanguage::HLSL))
         {
-            graphicsShader = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.hlsl", "VS", "vs_5_0" },
-                    { LLGL::ShaderType::Fragment, "Example.hlsl", "PS", "ps_5_0" }
-                },
-                #ifdef ENABLE_STORAGE_TEXTURES
-                {}, {}, {}, g_shaderMacros
-                #else
-                { vertexFormat }
-                #endif
-            );
+            graphicsShaderPipeline.vs = LoadShader({ LLGL::ShaderType::Vertex,   "Example.hlsl", "VS", "vs_5_0" }, usedVertexFormats, {}, g_shaderMacros);
+            graphicsShaderPipeline.ps = LoadShader({ LLGL::ShaderType::Fragment, "Example.hlsl", "PS", "ps_5_0" }, {}, g_shaderMacros);
         }
         else if (Supported(LLGL::ShadingLanguage::GLSL))
         {
-            graphicsShader = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.VS.vert" },
-                    { LLGL::ShaderType::Fragment, "Example.PS.frag" }
-                },
-                #ifdef ENABLE_STORAGE_TEXTURES
-                {}, {}, {}, g_shaderMacros
-                #else
-                { vertexFormat }
-                #endif
-            );
+            graphicsShaderPipeline.vs = LoadShader({ LLGL::ShaderType::Vertex,   "Example.VS.vert" }, usedVertexFormats, {}, g_shaderMacros);
+            graphicsShaderPipeline.ps = LoadShader({ LLGL::ShaderType::Fragment, "Example.PS.frag" }, {}, g_shaderMacros);
         }
         else if (Supported(LLGL::ShadingLanguage::SPIRV))
         {
-            graphicsShader = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.VS.450core.vert.spv" },
-                    { LLGL::ShaderType::Fragment, "Example.PS.450core.frag.spv" }
-                },
-                #ifdef ENABLE_STORAGE_TEXTURES
-                {}, {}, {}, g_shaderMacros
-                #else
-                { vertexFormat }
-                #endif
-            );
+            graphicsShaderPipeline.vs = LoadShader({ LLGL::ShaderType::Vertex,   "Example.VS.450core.vert.spv" }, usedVertexFormats, {}, g_shaderMacros);
+            graphicsShaderPipeline.ps = LoadShader({ LLGL::ShaderType::Fragment, "Example.PS.450core.frag.spv" }, {}, g_shaderMacros);
         }
         else if (Supported(LLGL::ShadingLanguage::Metal))
         {
-            graphicsShader = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.metal", "VS", "2.0" },
-                    { LLGL::ShaderType::Fragment, "Example.metal", "PS", "2.0" }
-                },
-                #ifdef ENABLE_STORAGE_TEXTURES
-                {}, {}, {}, g_shaderMacros
-                #else
-                { vertexFormat }
-                #endif
-            );
+            graphicsShaderPipeline.vs = LoadShader({ LLGL::ShaderType::Vertex,   "Example.metal", "VS", "2.0" }, usedVertexFormats, {}, g_shaderMacros);
+            graphicsShaderPipeline.ps = LoadShader({ LLGL::ShaderType::Fragment, "Example.metal", "PS", "2.0" }, {}, g_shaderMacros);
         }
         else
             throw std::runtime_error("shaders not available for selected renderer in this example");
@@ -529,16 +475,16 @@ public:
 
         graphicsLayout = renderer->CreatePipelineLayout(
             IsMetal() || IsVulkan()
-                ? LLGL::PipelineLayoutDesc("cbuffer(SceneState@3):vert:frag, texture(colorMap@4):frag, sampler(linearSampler@5):frag, texture(1,2,6):vert")
-                : LLGL::PipelineLayoutDesc("cbuffer(SceneState@0):vert:frag, texture(colorMap@0):frag, sampler(linearSampler@0):frag, texture(1,2,3):vert")
+                ? LLGL::PipelineLayoutDesc("heap{cbuffer(SceneState@3):vert:frag, texture(colorMap@4):frag, sampler(linearSampler@5):frag, texture(1,2,6):vert}")
+                : LLGL::PipelineLayoutDesc("heap{cbuffer(SceneState@0):vert:frag, texture(colorMap@0):frag, sampler(linearSampler@0):frag, texture(1,2,3):vert}")
         );
 
         #else
 
         graphicsLayout = renderer->CreatePipelineLayout(
             IsMetal() || IsVulkan()
-                ? LLGL::PipelineLayoutDesc("cbuffer(SceneState@3):vert:frag, texture(colorMap@4):frag, sampler(linearSampler@5):frag")
-                : LLGL::PipelineLayoutDesc("cbuffer(SceneState@0):vert:frag, texture(colorMap@0):frag, sampler(linearSampler@0):frag")
+                ? LLGL::PipelineLayoutDesc("heap{cbuffer(SceneState@3):vert:frag, texture(colorMap@4):frag, sampler(linearSampler@5):frag}")
+                : LLGL::PipelineLayoutDesc("heap{cbuffer(SceneState@0):vert:frag, texture(colorMap@0):frag, sampler(linearSampler@0):frag}")
         );
 
         #endif // /ENABLE_STORAGE_TEXTURES
@@ -547,7 +493,8 @@ public:
         LLGL::GraphicsPipelineDescriptor pipelineDesc;
         {
             pipelineDesc.pipelineLayout                 = graphicsLayout;
-            pipelineDesc.shaderProgram                  = graphicsShader;
+            pipelineDesc.vertexShader                   = graphicsShaderPipeline.vs;
+            pipelineDesc.fragmentShader                 = graphicsShaderPipeline.ps;
             pipelineDesc.primitiveTopology              = LLGL::PrimitiveTopology::TriangleStrip;
             pipelineDesc.depth.testEnabled              = true;
             pipelineDesc.depth.writeEnabled             = true;
@@ -557,24 +504,29 @@ public:
             #endif
         }
         graphicsPipeline = renderer->CreatePipelineState(pipelineDesc);
+        ThrowIfFailed(graphicsPipeline);
 
         // Create resource heaps for graphics pipeline
+        const LLGL::ResourceViewDescriptor resourceViewsGraphics[] =
+        {
+            constantBuffer,
+            colorMap,
+            linearSampler,
+            #ifdef ENABLE_STORAGE_TEXTURES
+            particleBuffers[AttribBase],
+            particleBuffers[AttribCurrPos],
+            particleBuffers[AttribNormal],
+            #endif
+        };
         LLGL::ResourceHeapDescriptor resourceHeapDesc;
         {
-            resourceHeapDesc.pipelineLayout = graphicsLayout;
-            resourceHeapDesc.resourceViews  =
-            {
-                constantBuffer,
-                colorMap,
-                linearSampler,
-                #ifdef ENABLE_STORAGE_TEXTURES
-                particleBuffers[AttribBase],
-                particleBuffers[AttribCurrPos],
-                particleBuffers[AttribNormal],
-                #endif
-            };
+            resourceHeapDesc.pipelineLayout     = graphicsLayout;
+            resourceHeapDesc.numResourceViews   = sizeof(resourceViewsGraphics) / sizeof(resourceViewsGraphics[0]);
+            #ifdef ENABLE_STORAGE_TEXTURES
+            resourceHeapDesc.barrierFlags       = LLGL::BarrierFlags::StorageTexture;
+            #endif
         }
-        graphicsResourceHeap = renderer->CreateResourceHeap(resourceHeapDesc);
+        graphicsResourceHeap = renderer->CreateResourceHeap(resourceHeapDesc, resourceViewsGraphics);
     }
 
 private:
@@ -600,9 +552,9 @@ private:
         }
 
         // Update timer
-        timer->MeasureTime();
+        timer.MeasureTime();
         sceneState.damping      = (1.0f - std::pow(10.0f, -dampingFactor));
-        sceneState.dTime        = std::max(0.0001f, static_cast<float>(timer->GetDeltaTime()));
+        sceneState.dTime        = std::max(0.0001f, std::min(static_cast<float>(timer.GetDeltaTime()), 1.0f));
         sceneState.dStiffness   = 1.0f - std::pow(1.0f - stiffnessFactor, 1.0f / static_cast<float>(numSolverIterations));
         sceneState.gravity      = Gs::Vector4f{ gravityVector, 0.0f };
 
@@ -679,7 +631,7 @@ private:
             commands->BeginRenderPass(*swapChain);
             {
                 // Clear color buffer and set viewport
-                commands->Clear(LLGL::ClearFlags::ColorDepth);
+                commands->Clear(LLGL::ClearFlags::ColorDepth, backgroundColor);
                 commands->SetViewport(swapChain->GetResolution());
 
                 // Set vertex and index buffers

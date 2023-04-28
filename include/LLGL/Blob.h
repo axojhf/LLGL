@@ -1,16 +1,16 @@
 /*
  * Blob.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_BLOB_H
 #define LLGL_BLOB_H
 
 
-#include "NonCopyable.h"
-#include "ImageFlags.h"
+#include <LLGL/NonCopyable.h>
+#include <LLGL/ImageFlags.h>
 #include <memory>
 #include <vector>
 #include <string>

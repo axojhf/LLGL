@@ -1,8 +1,8 @@
 /*
  * Test_Window.cpp
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <LLGL/LLGL.h>
@@ -44,7 +44,7 @@ int main()
         // Create window
         LLGL::WindowDescriptor windowDesc;
 
-        windowDesc.title        = L"LLGL Test 1";
+        windowDesc.title        = "LLGL Test 1";
         windowDesc.visible      = true;
         windowDesc.centered     = true;
         windowDesc.resizable    = true;
@@ -56,8 +56,6 @@ int main()
 
         window->AddEventListener(std::make_shared<WindowEventHandler>());
 
-        auto timer = LLGL::Timer::Create();
-
         auto pos = window->GetPosition();
 
         printWindowSize(*window);
@@ -67,7 +65,7 @@ int main()
             auto renderer = LLGL::RenderSystem::Load("OpenGL");
 
             window->SetTitle(
-                windowDesc.title + L" ( " + std::wstring(renderer->GetName().begin(), renderer->GetName().end()) + L" )"
+                std::string(windowDesc.title.c_str()) + " ( " + std::string(renderer->GetName()) + " )"
             );
         }
         catch (const std::exception& e)
@@ -83,10 +81,6 @@ int main()
 
         while (window->ProcessEvents() && !input.KeyPressed(LLGL::Key::Escape))
         {
-            timer->MeasureTime();
-
-            //std::cout << 1.0 / timer->GetDeltaTime() << std::endl;
-
             #ifdef __APPLE__
             if (input.KeyDown(LLGL::Key::D1))
                 window->Show(false);
@@ -94,18 +88,18 @@ int main()
                 window->Show(true);
             #endif
             if (input.KeyDown(LLGL::Key::D3))
-                window->SetTitle(L"FOO BAR");
+                window->SetTitle("FOO BAR");
             if (input.KeyDown(LLGL::Key::D4))
-                window->SetTitle(L"LLGL Test 1");
+                window->SetTitle("LLGL Test 1");
             if (input.KeyDown(LLGL::Key::D5))
                 window->SetSize({ 300, 300 });
 
             if (input.KeyDown(LLGL::Key::LButton))
-                window->SetTitle(L"LButton Down");
+                window->SetTitle("LButton Down");
             if (input.KeyDown(LLGL::Key::RButton))
-                window->SetTitle(L"RButton Down");
+                window->SetTitle("RButton Down");
             if (input.KeyDown(LLGL::Key::MButton))
-                window->SetTitle(L"MButton Down");
+                window->SetTitle("MButton Down");
 
             #ifdef __APPLE__
 

@@ -1,8 +1,8 @@
 /*
  * GLProfile.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_GL_PROFILE_H
@@ -59,6 +59,9 @@ void GetBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, void* dat
 
 // Wrapper for glMapBuffer; uses glMapBufferRange for GLES.
 void* MapBuffer(GLenum target, GLenum access);
+
+// Wrapper for glMapBufferRange; uses glMapBuffer for GL.
+void* MapBufferRange(GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access);
 
 // Wrapper for glDrawBuffer; uses glDrawBuffers for GLES.
 void DrawBuffer(GLenum buf);

@@ -1,11 +1,13 @@
 /*
  * D3D12RootParameter.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D12RootParameter.h"
+#include <LLGL/ShaderFlags.h>
+#include <LLGL/PipelineLayoutFlags.h>
 
 
 namespace LLGL
@@ -17,6 +19,13 @@ D3D12RootParameter::D3D12RootParameter(D3D12_ROOT_PARAMETER* managedRootParam) :
 {
 }
 
+void D3D12RootParameter::InitAsConstants(const D3D12_ROOT_CONSTANTS& rootConstants, D3D12_SHADER_VISIBILITY visibility)
+{
+    managedRootParam_->ParameterType    = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    managedRootParam_->Constants        = rootConstants;
+    managedRootParam_->ShaderVisibility = visibility;
+}
+
 void D3D12RootParameter::InitAsConstants(UINT shaderRegister, UINT num32BitValues, D3D12_SHADER_VISIBILITY visibility)
 {
     managedRootParam_->ParameterType                = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -26,27 +35,32 @@ void D3D12RootParameter::InitAsConstants(UINT shaderRegister, UINT num32BitValue
     managedRootParam_->ShaderVisibility             = visibility;
 }
 
-void D3D12RootParameter::InitAsDescriptor(D3D12_ROOT_PARAMETER_TYPE paramType, UINT shaderRegister, D3D12_SHADER_VISIBILITY visibility)
+void D3D12RootParameter::InitAsDescriptor(D3D12_ROOT_PARAMETER_TYPE paramType, UINT shaderRegister, UINT registerSpace, D3D12_SHADER_VISIBILITY visibility)
 {
     managedRootParam_->ParameterType                = paramType;
     managedRootParam_->Descriptor.ShaderRegister    = shaderRegister;
-    managedRootParam_->Descriptor.RegisterSpace     = 0;
+    managedRootParam_->Descriptor.RegisterSpace     = registerSpace;
     managedRootParam_->ShaderVisibility             = visibility;
 }
 
-void D3D12RootParameter::InitAsDescriptorCBV(UINT shaderRegister, D3D12_SHADER_VISIBILITY visibility)
+void D3D12RootParameter::InitAsDescriptor(D3D12_ROOT_PARAMETER_TYPE paramType, const BindingSlot& slot, D3D12_SHADER_VISIBILITY visibility)
 {
-    InitAsDescriptor(D3D12_ROOT_PARAMETER_TYPE_CBV, shaderRegister, visibility);
+    InitAsDescriptor(paramType, slot.index, slot.set, visibility);
 }
 
-void D3D12RootParameter::InitAsDescriptorSRV(UINT shaderRegister, D3D12_SHADER_VISIBILITY visibility)
+void D3D12RootParameter::InitAsDescriptorCBV(const BindingSlot& slot, D3D12_SHADER_VISIBILITY visibility)
 {
-    InitAsDescriptor(D3D12_ROOT_PARAMETER_TYPE_SRV, shaderRegister, visibility);
+    InitAsDescriptor(D3D12_ROOT_PARAMETER_TYPE_CBV, slot, visibility);
 }
 
-void D3D12RootParameter::InitAsDescriptorUAV(UINT shaderRegister, D3D12_SHADER_VISIBILITY visibility)
+void D3D12RootParameter::InitAsDescriptorSRV(const BindingSlot& slot, D3D12_SHADER_VISIBILITY visibility)
 {
-    InitAsDescriptor(D3D12_ROOT_PARAMETER_TYPE_UAV, shaderRegister, visibility);
+    InitAsDescriptor(D3D12_ROOT_PARAMETER_TYPE_SRV, slot, visibility);
+}
+
+void D3D12RootParameter::InitAsDescriptorUAV(const BindingSlot& slot, D3D12_SHADER_VISIBILITY visibility)
+{
+    InitAsDescriptor(D3D12_ROOT_PARAMETER_TYPE_UAV, slot, visibility);
 }
 
 void D3D12RootParameter::InitAsDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE rangeType, UINT shaderRegister, UINT numDescriptors, D3D12_SHADER_VISIBILITY visibility)
@@ -78,7 +92,12 @@ void D3D12RootParameter::AppendDescriptorTableRange(D3D12_DESCRIPTOR_RANGE_TYPE 
     descRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
     /* Increment descriptor range count */
-    ++managedRootParam_->DescriptorTable.NumDescriptorRanges;
+    managedRootParam_->DescriptorTable.NumDescriptorRanges++;
+}
+
+void D3D12RootParameter::AppendDescriptorTableRange(D3D12_DESCRIPTOR_RANGE_TYPE rangeType, const BindingSlot& slot, UINT numDescriptors)
+{
+    AppendDescriptorTableRange(rangeType, slot.index, numDescriptors, slot.set);
 }
 
 void D3D12RootParameter::Clear()
@@ -100,12 +119,38 @@ static bool AreRangeTypesCompatible(D3D12_DESCRIPTOR_RANGE_TYPE lhs, D3D12_DESCR
     );
 }
 
-bool D3D12RootParameter::IsCompatible(D3D12_DESCRIPTOR_RANGE_TYPE rangeType) const
+bool D3D12RootParameter::IsCompatible(D3D12_ROOT_PARAMETER_TYPE rootParamType, D3D12_DESCRIPTOR_RANGE_TYPE rangeType) const
 {
+    if (managedRootParam_ == nullptr || managedRootParam_->ParameterType != rootParamType)
+        return false;
     if (descRanges_.empty())
         return true;
-    else
-        return AreRangeTypesCompatible(descRanges_.back().RangeType, rangeType);
+    return AreRangeTypesCompatible(descRanges_.back().RangeType, rangeType);
+}
+
+bool D3D12RootParameter::IsCompatible(const D3D12_ROOT_CONSTANTS& rootConstants) const
+{
+    return
+    (
+        managedRootParam_                           != nullptr                                      &&
+        managedRootParam_->ParameterType            == D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS    &&
+        managedRootParam_->Constants.ShaderRegister == rootConstants.ShaderRegister                 &&
+        managedRootParam_->Constants.RegisterSpace  == rootConstants.RegisterSpace
+    );
+}
+
+D3D12_SHADER_VISIBILITY D3D12RootParameter::FindSuitableVisibility(long stageFlags)
+{
+    /* Return shader visibility limited to only one stage if the input flags only contains that stage */
+    switch (stageFlags)
+    {
+        case StageFlags::VertexStage:           return D3D12_SHADER_VISIBILITY_VERTEX;
+        case StageFlags::TessControlStage:      return D3D12_SHADER_VISIBILITY_HULL;
+        case StageFlags::TessEvaluationStage:   return D3D12_SHADER_VISIBILITY_DOMAIN;
+        case StageFlags::GeometryStage:         return D3D12_SHADER_VISIBILITY_GEOMETRY;
+        case StageFlags::FragmentStage:         return D3D12_SHADER_VISIBILITY_PIXEL;
+        default:                                return D3D12_SHADER_VISIBILITY_ALL; // Visibility to all stages by default
+    }
 }
 
 

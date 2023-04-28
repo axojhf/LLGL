@@ -1,8 +1,8 @@
 /*
  * MTSampler.h
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_MT_SAMPLER_H
@@ -31,6 +31,14 @@ class MTSampler final : public Sampler
         {
             return native_;
         }
+
+    public:
+
+        // Converts the specified sampler descriptor to a native Metal descriptor.
+        static void ConvertDesc(MTLSamplerDescriptor* dst, const SamplerDescriptor& src);
+
+        // Creates a native Metal sampler state from the specified descriptor.
+        static id<MTLSamplerState> CreateNative(id<MTLDevice> device, const SamplerDescriptor& desc);
 
     private:
 

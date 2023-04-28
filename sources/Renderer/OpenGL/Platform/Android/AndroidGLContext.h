@@ -1,8 +1,8 @@
 /*
  * AndroidGLContext.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_ANDROID_GL_CONTEXT_H
@@ -41,6 +41,18 @@ class AndroidGLContext : public GLContext
         inline ::EGLDisplay GetEGLDisplay() const
         {
             return display_;
+        }
+
+        // Returns the native EGL context.
+        inline ::EGLContext GetEGLContext() const
+        {
+            return context_;
+        }
+
+        // Returns the native EGL configuration.
+        inline ::EGLConfig GetEGLConfig() const
+        {
+            return config_;
         }
 
     private:

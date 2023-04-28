@@ -1,13 +1,14 @@
 /*
  * Win32Window.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "Win32Window.h"
 #include "Win32WindowClass.h"
-#include "../../Core/Helper.h"
+#include "../../Core/CoreUtils.h"
+#include "../../Core/Assertion.h"
 #include <LLGL/Platform/NativeHandle.h>
 #include <LLGL/Platform/Platform.h>
 
@@ -126,8 +127,7 @@ Win32Window::Win32Window(const WindowDescriptor& desc) :
 
 Win32Window::~Win32Window()
 {
-    if (wnd_)
-        DestroyWindow(wnd_);
+    DestroyWindow(wnd_);
 }
 
 bool Win32Window::GetNativeHandle(void* nativeHandle, std::size_t nativeHandleSize) const
@@ -215,16 +215,27 @@ Extent2D Win32Window::GetSize(bool useClientArea) const
     }
 }
 
-void Win32Window::SetTitle(const std::wstring& title)
+void Win32Window::SetTitle(const UTF8String& title)
 {
-    SetWindowTextW(wnd_, title.c_str());
+    #ifdef UNICODE
+    auto titleUTF16 = title.to_utf16();
+    SetWindowText(wnd_, titleUTF16.data());
+    #else
+    SetWindowText(wnd_, title.c_str());
+    #endif
 }
 
-std::wstring Win32Window::GetTitle() const
+UTF8String Win32Window::GetTitle() const
 {
-    wchar_t title[MAX_PATH];
-    GetWindowTextW(wnd_, title, MAX_PATH);
-    return std::wstring(title);
+    /* Retrieve window title and return as immutable string */
+    int len = GetWindowTextLength(wnd_);
+    if (len > 0)
+    {
+        auto title = MakeUniqueArray<TCHAR>(len + 1);
+        GetWindowText(wnd_, &title[0], len + 1);
+        return UTF8String{ title.get() };
+    }
+    return {};
 }
 
 void Win32Window::Show(bool show)
@@ -365,10 +376,16 @@ HWND Win32Window::CreateWindowHandle(const WindowDescriptor& desc)
         }
     }
 
+    #ifdef UNICODE
+    auto title = desc.title.to_utf16();
+    #else
+    const auto& title = desc.title;
+    #endif
+
     /* Create frame window object */
-    HWND wnd = CreateWindowW(
+    HWND wnd = CreateWindow(
         windowClass->GetName(),
-        desc.title.c_str(),
+        title.data(),
         appearance.style,
         appearance.position.x,
         appearance.position.y,
@@ -380,8 +397,7 @@ HWND Win32Window::CreateWindowHandle(const WindowDescriptor& desc)
         nullptr
     );
 
-    if (!wnd)
-        throw std::runtime_error("failed to create window");
+    LLGL_ASSERT(wnd != nullptr, "failed to create Win32 window");
 
     #ifndef LLGL_ARCH_ARM
     /* Set additional flags */

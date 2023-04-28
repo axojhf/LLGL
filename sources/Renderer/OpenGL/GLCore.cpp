@@ -1,14 +1,14 @@
 /*
  * GLCore.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GLCore.h"
-#include "../../Core/Helper.h"
-#include "../../Core/HelperMacros.h"
-#include <sstream>
+#include "../../Core/StringUtils.h"
+#include "../../Core/MacroUtils.h"
+#include <stdexcept>
 
 
 namespace LLGL
@@ -62,10 +62,7 @@ void GLThrowIfFailed(const GLenum status, const GLenum statusRequired, const cha
         if (auto err = GLErrorToStr(status))
             s += err;
         else
-        {
-            s += "0x";
-            s += ToHex(status);
-        }
+            s += IntToHex(status);
 
         s += ")";
 

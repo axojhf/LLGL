@@ -1,8 +1,8 @@
 /*
  * VKRenderBuffer.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "VKRenderBuffer.h"
@@ -13,7 +13,7 @@ namespace LLGL
 {
 
 
-VKRenderBuffer::VKRenderBuffer(const VKPtr<VkDevice>& device) :
+VKRenderBuffer::VKRenderBuffer(VkDevice device) :
     VKDeviceImage { device                     },
     imageView_    { device, vkDestroyImageView }
 {
@@ -47,9 +47,9 @@ void VKRenderBuffer::Create(
         VK_IMAGE_TYPE_2D,
         format,
         VkExtent3D{ extent.width, extent.height, 1 },
-        1,                                              // MIP levels
-        1,                                              // array layers
-        0,                                              // create flags
+        1, // MIP levels
+        1, // array layers
+        0, // create flags
         samplesCountBits,
         usageFlags
     );
@@ -58,15 +58,15 @@ void VKRenderBuffer::Create(
     AllocateMemoryRegion(deviceMemoryMngr);
 
     /* Create depth-stencil image view */
-    CreateVkImageView(
-        deviceMemoryMngr.GetVkDevice(),
-        VK_IMAGE_VIEW_TYPE_2D,
-        format,
-        aspectFlags,
-        0, 1,                                           // MIP levels
-        0, 1,                                           // array layers
-        imageView_.ReleaseAndGetAddressOf()
-    );
+    VkImageSubresourceRange subresourceRange;
+    {
+        subresourceRange.aspectMask     = aspectFlags;
+        subresourceRange.baseMipLevel   = 0;
+        subresourceRange.levelCount     = 1;
+        subresourceRange.baseArrayLayer = 0;
+        subresourceRange.layerCount     = 1;
+    }
+    CreateVkImageView(deviceMemoryMngr.GetVkDevice(), VK_IMAGE_VIEW_TYPE_2D, format, subresourceRange, imageView_);
 
     /* Store parameters */
     format_ = format;

@@ -1,8 +1,8 @@
 /*
  * MTFeatureSet.mm
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "MTFeatureSet.h"
@@ -64,6 +64,15 @@ static std::vector<Format> GetDefaultSupportedMTTextureFormats()
     };
 }
 
+static NSUInteger GetMaxMTBufferSize(id<MTLDevice> device)
+{
+    constexpr NSUInteger minBufferSize256MB = 268435456;
+    if (@available(iOS 12.0, macOS 10.14, *))
+        return [device maxBufferLength];
+    else
+        return minBufferSize256MB;
+}
+
 // see https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
 void LoadFeatureSetCaps(id<MTLDevice> device, MTLFeatureSet fset, RenderingCapabilities& caps)
 {
@@ -92,7 +101,6 @@ void LoadFeatureSetCaps(id<MTLDevice> device, MTLFeatureSet fset, RenderingCapab
     /* Specify features */
     auto& features = caps.features;
 
-    features.hasDirectResourceBinding       = false;//true; //TODO: not supported yet
     features.hasRenderTargets               = true;
     features.has3DTextures                  = true;
     features.hasCubeTextures                = true;
@@ -121,7 +129,7 @@ void LoadFeatureSetCaps(id<MTLDevice> device, MTLFeatureSet fset, RenderingCapab
     /* Specify limits */
     auto& limits = caps.limits;
 
-    limits.maxBufferSize                    = [device maxBufferLength];
+    limits.maxBufferSize                    = GetMaxMTBufferSize(device);
     limits.maxConstantBufferSize            = 65536u;
     limits.max1DTextureSize                 = 16384u;
     limits.max2DTextureSize                 = 16384u;

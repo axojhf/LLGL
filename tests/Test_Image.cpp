@@ -1,11 +1,11 @@
 /*
  * Test_Image.cpp
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
-#include <LLGL/Image.h>
+#include <LLGL/Utils/Image.h>
 #include <iostream>
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -87,9 +87,9 @@ void Test_Resize()
 
     #if 1
     img1.Resize(
-        LLGL::Extent3D { 512, 512, 1 },
-        LLGL::ColorRGBAd { 0.0, 1.0, 0.0 },
-        LLGL::Offset3D { (512 - static_cast<int>(extent.width))/2, (512 - static_cast<int>(extent.height)) / 2, 0 }
+        LLGL::Extent3D{ 512, 512, 1 },
+        LLGL::ColorRGBAf{ 0.0f, 1.0f, 0.0f },
+        LLGL::Offset3D{ (512 - static_cast<int>(extent.width))/2, (512 - static_cast<int>(extent.height)) / 2, 0 }
     );
     #else
     img1.Resize(
@@ -101,9 +101,9 @@ void Test_Resize()
     SaveImagePNG(img1, "Output/img1-resize-larger.png");
 
     img1.Resize(
-        LLGL::Extent3D { 128, 128, 1 },
-        LLGL::ColorRGBAd { 0.0, 1.0, 0.0 },
-        LLGL::Offset3D { (128 - static_cast<int>(extent.width)) / 2, (128 - static_cast<int>(extent.height)) / 2, 0u }
+        LLGL::Extent3D{ 128, 128, 1 },
+        LLGL::ColorRGBAf{ 0.0f, 1.0f, 0.0f },
+        LLGL::Offset3D{ (128 - static_cast<int>(extent.width)) / 2, (128 - static_cast<int>(extent.height)) / 2, 0u }
     );
     SaveImagePNG(img1, "Output/img1-resize-smaller.png");
 }

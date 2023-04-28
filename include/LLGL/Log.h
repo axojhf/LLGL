@@ -1,18 +1,18 @@
 /*
  * Log.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_LOG_H
 #define LLGL_LOG_H
 
 
-#include "Export.h"
+#include <LLGL/Export.h>
+#include <LLGL/Container/StringView.h>
 #include <functional>
-#include <string>
-#include <iostream>
+#include <ostream>
 
 
 namespace LLGL
@@ -67,7 +67,7 @@ enum class ReportType
 \see ReportType
 \see SetReportCallback
 */
-using ReportCallback = std::function<void(ReportType type, const std::string& message, const std::string& contextInfo, void* userData)>;
+using ReportCallback = std::function<void(ReportType type, const StringView& message, const StringView& contextInfo, void* userData)>;
 
 
 /* ----- Functions ----- */
@@ -76,7 +76,7 @@ using ReportCallback = std::function<void(ReportType type, const std::string& me
 \brief Posts a report to the currently set report callback.
 \see ReportCallback
 */
-LLGL_EXPORT void PostReport(ReportType type, const std::string& message, const std::string& contextInfo = "");
+LLGL_EXPORT void PostReport(ReportType type, const StringView& message, const StringView& contextInfo = {});
 
 /**
 \brief Sets the new report callback. No report callback is specified by default, in which case the reports are ignored.
@@ -92,10 +92,10 @@ LLGL_EXPORT void SetReportCallback(const ReportCallback& callback, void* userDat
 
 /**
 \brief Sets the new report callback to the standard output streams.
-\param[in] stream Specifies the output stream. By default <code>std::cerr</code>.
+\param[in] stream Specifies a pointer to the output stream. If this is null, the standard output stream is effectively disabled.
 \see SetReportCallback
 */
-LLGL_EXPORT void SetReportCallbackStd(std::ostream& stream = std::cerr);
+LLGL_EXPORT void SetReportCallbackStd(std::ostream* stream);
 
 /**
 \brief Sets the maximum number of reports that will be triggered. All remaining reports will be ignored.

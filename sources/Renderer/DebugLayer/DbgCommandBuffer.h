@@ -1,8 +1,8 @@
 /*
  * DbgCommandBuffer.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_DBG_COMMAND_BUFFER_H
@@ -12,7 +12,8 @@
 #include <LLGL/CommandBuffer.h>
 #include <LLGL/RenderingProfiler.h>
 #include <LLGL/StaticLimits.h>
-#include "DbgQueryHeap.h"
+#include <LLGL/Container/ArrayView.h>
+#include "RenderState/DbgQueryHeap.h"
 #include "DbgQueryTimerManager.h"
 #include <cstdint>
 #include <string>
@@ -28,7 +29,8 @@ class DbgTexture;
 class DbgSwapChain;
 class DbgRenderTarget;
 class DbgPipelineState;
-class DbgShaderProgram;
+class DbgPipelineLayout;
+class DbgShader;
 class RenderingDebugger;
 class RenderingProfiler;
 
@@ -127,18 +129,8 @@ class DbgCommandBuffer final : public CommandBuffer
 
         /* ----- Resources ----- */
 
-        void SetResourceHeap(
-            ResourceHeap&           resourceHeap,
-            std::uint32_t           firstSet        = 0,
-            const PipelineBindPoint bindPoint       = PipelineBindPoint::Undefined
-        ) override;
-
-        void SetResource(
-            Resource&       resource,
-            std::uint32_t   slot,
-            long            bindFlags,
-            long            stageFlags = StageFlags::AllStages
-        ) override;
+        void SetResourceHeap(ResourceHeap& resourceHeap, std::uint32_t descriptorSet = 0) override;
+        void SetResource(std::uint32_t descriptor, Resource& resource) override;
 
         void ResetResourceSlots(
             const ResourceType  resourceType,
@@ -165,21 +157,9 @@ class DbgCommandBuffer final : public CommandBuffer
         /* ----- Pipeline States ----- */
 
         void SetPipelineState(PipelineState& pipelineState) override;
-        void SetBlendFactor(const ColorRGBAf& color) override;
+        void SetBlendFactor(const float color[4]) override;
         void SetStencilReference(std::uint32_t reference, const StencilFace stencilFace = StencilFace::FrontAndBack) override;
-
-        void SetUniform(
-            UniformLocation location,
-            const void*     data,
-            std::uint32_t   dataSize
-        ) override;
-
-        void SetUniforms(
-            UniformLocation location,
-            std::uint32_t   count,
-            const void*     data,
-            std::uint32_t   dataSize
-        ) override;
+        void SetUniforms(std::uint32_t first, const void* data, std::uint16_t dataSize) override;
 
         /* ----- Queries ----- */
 
@@ -250,7 +230,7 @@ class DbgCommandBuffer final : public CommandBuffer
         void ValidateAttachmentClear(const AttachmentClear& attachment);
 
         void ValidateVertexLayout();
-        void ValidateVertexLayoutAttributes(const std::vector<VertexAttribute>& shaderVertexAttribs, DbgBuffer* const * vertexBuffers, std::uint32_t numVertexBuffers);
+        void ValidateVertexLayoutAttributes(const ArrayView<VertexAttribute>& shaderVertexAttribs, DbgBuffer* const * vertexBuffers, std::uint32_t numVertexBuffers);
 
         void ValidateNumVertices(std::uint32_t numVertices);
         void ValidateNumInstances(std::uint32_t numInstances);
@@ -281,6 +261,13 @@ class DbgCommandBuffer final : public CommandBuffer
 
         void ValidateStreamOutputs(std::uint32_t numBuffers);
 
+        const BindingDescriptor* GetAndValidateResourceDescFromPipeline(const DbgPipelineLayout& pipelineLayoutDbg, std::uint32_t descriptor, Resource& resource);
+
+        void ValidateUniforms(const DbgPipelineLayout& pipelineLayoutDbg, std::uint32_t first, std::uint16_t dataSize);
+
+        void ValidateDynamicStates();
+        void ValidateBindingTable();
+
         DbgPipelineState* AssertAndGetGraphicsPSO();
         DbgPipelineState* AssertAndGetComputePSO();
 
@@ -290,6 +277,7 @@ class DbgCommandBuffer final : public CommandBuffer
         void AssertComputePipelineBound();
         void AssertVertexBufferBound();
         void AssertIndexBufferBound();
+        void AssertViewportBound();
 
         void AssertInstancingSupported();
         void AssertOffsetInstancingSupported();
@@ -299,9 +287,8 @@ class DbgCommandBuffer final : public CommandBuffer
 
         void WarnImproperVertices(const std::string& topologyName, std::uint32_t unusedVertices);
 
-        void ResetFrameProfile();
-        void ResetBindings();
         void ResetStates();
+        void ResetBindingTable(const DbgPipelineLayout* pipelineLayoutDbg);
 
         void StartTimer(const char* annotation);
         void EndTimer();
@@ -329,20 +316,35 @@ class DbgCommandBuffer final : public CommandBuffer
 
         struct Bindings
         {
+            // Framebuffers
             DbgSwapChain*           swapChain                               = nullptr;
             DbgRenderTarget*        renderTarget                            = nullptr;
+            std::uint32_t           numViewports                            = 0;
+
+            // Stream inputs/outputs
             DbgBuffer*              vertexBufferStore[1]                    = {};
             DbgBuffer* const *      vertexBuffers                           = nullptr;
             std::uint32_t           numVertexBuffers                        = 0;
-            bool                    anyNonEmptyVertexBuffer                 = false;
             bool                    anyShaderAttributes                     = false;
             DbgBuffer*              indexBuffer                             = nullptr;
             std::uint64_t           indexBufferFormatSize                   = 0;
             std::uint64_t           indexBufferOffset                       = 0;
             DbgBuffer*              streamOutputs[LLGL_MAX_NUM_SO_BUFFERS]  = {};
             std::uint32_t           numStreamOutputs                        = 0;
+
+            // PSO
             DbgPipelineState*       pipelineState                           = nullptr;
-            const DbgShaderProgram* shaderProgram_                          = nullptr;
+            const DbgShader*        vertexShader                            = nullptr;
+            bool                    blendFactorSet                          = false;
+            bool                    stencilRefSet                           = false;
+
+            struct BindingTable
+            {
+                ResourceHeap*           resourceHeap;
+                std::vector<Resource*>  resources;
+                std::vector<char>       uniforms;
+            }
+            bindingTable;
         }
         bindings_;
 

@@ -1,16 +1,14 @@
 /*
  * D3D12MipGenerator.cpp
- \*
-
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D12MipGenerator.h"
 #include "D3D12Texture.h"
 #include "../Shader/Builtin/D3D12Builtin.h"
 #include "../Command/D3D12CommandContext.h"
-#include "../D3DX12/d3dx12.h"
 #include "../../DXCommon/DXCore.h"
 #include "../../DXCommon/DXTypes.h"
 
@@ -144,7 +142,7 @@ ComPtr<ID3D12PipelineState> D3D12MipGenerator::CreateComputePSO(
 void D3D12MipGenerator::CreateResourcesFor1DMips(ID3D12Device* device)
 {
     /* Initialize root signature */
-    D3D12RootSignatureBuilder rootSignature;
+    D3D12RootSignature rootSignature;
     {
         rootSignature.ResetAndAlloc(3, 1);
         rootSignature[0].InitAsConstants(0, 4);
@@ -167,7 +165,7 @@ void D3D12MipGenerator::CreateResourcesFor1DMips(ID3D12Device* device)
 void D3D12MipGenerator::CreateResourcesFor2DMips(ID3D12Device* device)
 {
     /* Initialize root signature */
-    D3D12RootSignatureBuilder rootSignature;
+    D3D12RootSignature rootSignature;
     {
         rootSignature.ResetAndAlloc(3, 1);
         rootSignature[0].InitAsConstants(0, 5);
@@ -194,7 +192,7 @@ void D3D12MipGenerator::CreateResourcesFor2DMips(ID3D12Device* device)
 void D3D12MipGenerator::CreateResourcesFor3DMips(ID3D12Device* device)
 {
     /* Initialize root signature */
-    D3D12RootSignatureBuilder rootSignature;
+    D3D12RootSignature rootSignature;
     {
         rootSignature.ResetAndAlloc(3, 1);
         rootSignature[0].InitAsConstants(0, 5);

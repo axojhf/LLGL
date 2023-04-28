@@ -1,8 +1,8 @@
 /*
  * LLGL.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_INCLUDE_H
@@ -13,16 +13,15 @@
 #include <LLGL/Window.h>
 #include <LLGL/Canvas.h>
 #include <LLGL/Display.h>
-#include <LLGL/Input.h>
 #include <LLGL/Timer.h>
 #include <LLGL/TypeInfo.h>
-#include <LLGL/ColorRGB.h>
-#include <LLGL/ColorRGBA.h>
 #include <LLGL/RenderSystem.h>
 #include <LLGL/Log.h>
 #include <LLGL/IndirectArguments.h>
 #include <LLGL/ImageFlags.h>
-#include <LLGL/VertexFormat.h>
+#include <LLGL/Utils/Input.h>
+#include <LLGL/Utils/ColorRGB.h>
+#include <LLGL/Utils/ColorRGBA.h>
 
 
 //DOXYGEN MAIN PAGE

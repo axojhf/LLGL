@@ -1,20 +1,22 @@
 /*
  * D3D11GraphicsPSOBase.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D11GraphicsPSOBase.h"
 #include "D3D11StateManager.h"
+#include "D3D11PipelineLayout.h"
 #include "../D3D11Types.h"
-#include "../Shader/D3D11ShaderProgram.h"
 #include "../Shader/D3D11Shader.h"
 #include "../../CheckedCast.h"
+#include "../../PipelineStateUtils.h"
 #include "../../../Core/Assertion.h"
-#include "../../../Core/Helper.h"
+#include "../../../Core/CoreUtils.h"
 #include "../../../Core/ByteBufferIterator.h"
 #include <LLGL/PipelineStateFlags.h>
+#include <stdexcept>
 
 
 namespace LLGL
@@ -27,7 +29,7 @@ void D3D11GraphicsPSOBase::Bind(D3D11StateManager& stateMngr)
     stateMngr.SetPrimitiveTopology(primitiveTopology_);
     stateMngr.SetInputLayout(inputLayout_.Get());
 
-    /* Set shader states */
+    /* Set shader stages */
     stateMngr.SetVertexShader   (vs_.Get());
     stateMngr.SetHullShader     (hs_.Get());
     stateMngr.SetDomainShader   (ds_.Get());
@@ -36,6 +38,10 @@ void D3D11GraphicsPSOBase::Bind(D3D11StateManager& stateMngr)
 
     /* Set static viewports and scissors */
     SetStaticViewportsAndScissors(stateMngr);
+
+    /* Set static samplers */
+    if (const auto* pipelineLayoutD3D = GetPipelineLayout())
+        pipelineLayoutD3D->BindGraphicsStaticSamplers(stateMngr);
 }
 
 
@@ -43,25 +49,26 @@ void D3D11GraphicsPSOBase::Bind(D3D11StateManager& stateMngr)
  * ======= Protected: =======
  */
 
-D3D11GraphicsPSOBase::D3D11GraphicsPSOBase(const GraphicsPipelineDescriptor& desc)
+D3D11GraphicsPSOBase::D3D11GraphicsPSOBase(const GraphicsPipelineDescriptor& desc) :
+    D3D11PipelineState { /*isGraphicsPSO:*/ true, desc.pipelineLayout, GetShadersAsArray(desc) }
 {
     /* Validate pointers and get D3D shader objects */
-    LLGL_ASSERT_PTR(desc.shaderProgram);
+    if (auto vertexShaderD3D = LLGL_CAST(const D3D11Shader*, desc.vertexShader))
+        inputLayout_ = vertexShaderD3D->GetInputLayout();
+    else
+        throw std::invalid_argument("cannot create D3D graphics pipeline without vertex shader");
 
-    auto shaderProgramD3D = LLGL_CAST(const D3D11ShaderProgram*, desc.shaderProgram);
-    StoreShaderObjects(*shaderProgramD3D);
-
-    inputLayout_ = shaderProgramD3D->GetInputLayout();
+    GetD3DNativeShaders(desc);
 
     /* Store dynamic pipeline states */
-    primitiveTopology_  = D3D11Types::Map(desc.primitiveTopology);
+    primitiveTopology_  = DXTypes::ToD3DPrimitiveTopology(desc.primitiveTopology);
     stencilRefDynamic_  = desc.stencil.referenceDynamic;
     stencilRef_         = desc.stencil.front.reference;
     blendFactorDynamic_ = desc.blend.blendFactorDynamic;
-    blendFactor_[0]     = desc.blend.blendFactor.r;
-    blendFactor_[1]     = desc.blend.blendFactor.g;
-    blendFactor_[2]     = desc.blend.blendFactor.b;
-    blendFactor_[3]     = desc.blend.blendFactor.a;
+    blendFactor_[0]     = desc.blend.blendFactor[0];
+    blendFactor_[1]     = desc.blend.blendFactor[1];
+    blendFactor_[2]     = desc.blend.blendFactor[2];
+    blendFactor_[3]     = desc.blend.blendFactor[3];
     sampleMask_         = desc.blend.sampleMask;
 
     /* Build static state buffer for viewports and scissors */
@@ -96,13 +103,13 @@ void D3D11GraphicsPSOBase::SetStaticViewportsAndScissors(D3D11StateManager& stat
  * ======= Private: =======
  */
 
-void D3D11GraphicsPSOBase::StoreShaderObjects(const D3D11ShaderProgram& shaderProgramD3D)
+void D3D11GraphicsPSOBase::GetD3DNativeShaders(const GraphicsPipelineDescriptor& desc)
 {
-    if (shaderProgramD3D.GetVS()) { vs_ = shaderProgramD3D.GetVS()->GetNative().vs; }
-    if (shaderProgramD3D.GetHS()) { hs_ = shaderProgramD3D.GetHS()->GetNative().hs; }
-    if (shaderProgramD3D.GetDS()) { ds_ = shaderProgramD3D.GetDS()->GetNative().ds; }
-    if (shaderProgramD3D.GetGS()) { gs_ = shaderProgramD3D.GetGS()->GetNative().gs; }
-    if (shaderProgramD3D.GetPS()) { ps_ = shaderProgramD3D.GetPS()->GetNative().ps; }
+    if (auto vs = desc.vertexShader        ) { vs_ = LLGL_CAST(D3D11Shader*, vs)->GetNative().vs; }
+    if (auto hs = desc.tessControlShader   ) { hs_ = LLGL_CAST(D3D11Shader*, hs)->GetNative().hs; }
+    if (auto ds = desc.tessEvaluationShader) { ds_ = LLGL_CAST(D3D11Shader*, ds)->GetNative().ds; }
+    if (auto gs = desc.geometryShader      ) { gs_ = LLGL_CAST(D3D11Shader*, gs)->GetNative().gs; }
+    if (auto ps = desc.fragmentShader      ) { ps_ = LLGL_CAST(D3D11Shader*, ps)->GetNative().ps; }
 }
 
 void D3D11GraphicsPSOBase::BuildStaticStateBuffer(const GraphicsPipelineDescriptor& desc)

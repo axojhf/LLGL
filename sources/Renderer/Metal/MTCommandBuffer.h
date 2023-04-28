@@ -1,8 +1,8 @@
 /*
  * MTCommandBuffer.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_MT_COMMAND_BUFFER_H
@@ -15,7 +15,7 @@
 #include <LLGL/StaticLimits.h>
 #include "Buffer/MTStagingBufferPool.h"
 #include "Buffer/MTTessFactorBuffer.h"
-#include "MTEncoderScheduler.h"
+#include "MTCommandContext.h"
 #include <vector>
 
 
@@ -27,6 +27,9 @@ class MTBuffer;
 class MTTexture;
 class MTSampler;
 class MTRenderTarget;
+class MTPipelineState;
+class MTDescriptorCache;
+class MTConstantsCache;
 
 class MTCommandBuffer final : public CommandBuffer
 {
@@ -116,13 +119,8 @@ class MTCommandBuffer final : public CommandBuffer
 
         /* ----- Resources ----- */
 
-        void SetResourceHeap(
-            ResourceHeap&           resourceHeap,
-            std::uint32_t           firstSet        = 0,
-            const PipelineBindPoint bindPoint       = PipelineBindPoint::Undefined
-        ) override;
-
-        void SetResource(Resource& resource, std::uint32_t slot, long bindFlags, long stageFlags = StageFlags::AllStages) override;
+        void SetResourceHeap(ResourceHeap& resourceHeap, std::uint32_t descriptorSet = 0) override;
+        void SetResource(std::uint32_t descriptor, Resource& resource) override;
 
         void ResetResourceSlots(
             const ResourceType  resourceType,
@@ -149,21 +147,9 @@ class MTCommandBuffer final : public CommandBuffer
         /* ----- Pipeline States ----- */
 
         void SetPipelineState(PipelineState& pipelineState) override;
-        void SetBlendFactor(const ColorRGBAf& color) override;
+        void SetBlendFactor(const float color[4]) override;
         void SetStencilReference(std::uint32_t reference, const StencilFace stencilFace = StencilFace::FrontAndBack) override;
-
-        void SetUniform(
-            UniformLocation location,
-            const void*     data,
-            std::uint32_t   dataSize
-        ) override;
-
-        void SetUniforms(
-            UniformLocation location,
-            std::uint32_t   count,
-            const void*     data,
-            std::uint32_t   dataSize
-        ) override;
+        void SetUniforms(std::uint32_t first, const void* data, std::uint16_t dataSize) override;
 
         /* ----- Queries ----- */
 
@@ -232,10 +218,6 @@ class MTCommandBuffer final : public CommandBuffer
         void QueueDrawable(id<MTLDrawable> drawable);
         void PresentDrawables();
 
-        void SetBuffer(MTBuffer& bufferMT, std::uint32_t slot, long stageFlags);
-        void SetTexture(MTTexture& textureMT, std::uint32_t slot, long stageFlags);
-        void SetSampler(MTSampler& samplerMT, std::uint32_t slot, long stageFlags);
-
         void FillBufferByte1(MTBuffer& bufferMT, const NSRange& range, std::uint8_t value);
         void FillBufferByte4(MTBuffer& bufferMT, const NSRange& range, std::uint32_t value);
         void FillBufferByte4Emulated(MTBuffer& bufferMT, const NSRange& range, std::uint32_t value);
@@ -251,6 +233,8 @@ class MTCommandBuffer final : public CommandBuffer
             NSUInteger                      numThreads
         );
 
+        void ResetRenderStates();
+
     private:
 
         id<MTLDevice>                   device_                 = nil;
@@ -258,7 +242,7 @@ class MTCommandBuffer final : public CommandBuffer
         id<MTLCommandBuffer>            cmdBuffer_              = nil;
         dispatch_semaphore_t            cmdBufferSemaphore_     = nil;
 
-        MTEncoderScheduler              encoderScheduler_;
+        MTCommandContext                context_;
         std::vector<id<MTLDrawable>>    drawables_;
 
         MTLPrimitiveType                primitiveType_          = MTLPrimitiveTypeTriangle;
@@ -268,6 +252,9 @@ class MTCommandBuffer final : public CommandBuffer
         NSUInteger                      indexTypeSize_          = 4;
         NSUInteger                      numPatchControlPoints_  = 0;
         const MTLSize*                  numThreadsPerGroup_     = nullptr;
+        MTPipelineState*                boundPipelineState_     = nullptr;
+        MTDescriptorCache*              descriptorCache_        = nullptr;
+        MTConstantsCache*               constantsCache_         = nullptr;
 
         MTStagingBufferPool             stagingBufferPool_;
 

@@ -1,15 +1,15 @@
 /*
  * LinuxWindow.cpp
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <LLGL/Platform/NativeHandle.h>
 #include <LLGL/Display.h>
 #include "LinuxWindow.h"
 #include "MapKey.h"
-#include "../../Core/Helper.h"
+#include "../../Core/CoreUtils.h"
 #include <exception>
 
 
@@ -102,16 +102,16 @@ Extent2D LinuxWindow::GetSize(bool useClientArea) const
     };
 }
 
-void LinuxWindow::SetTitle(const std::wstring& title)
+void LinuxWindow::SetTitle(const UTF8String& title)
 {
-    /* Convert UTF16 to UTF8 string (X11 limitation) and set window title */
-    std::string s(title.begin(), title.end());
-    XStoreName(display_, wnd_, s.c_str());
+    XStoreName(display_, wnd_, title.c_str());
 }
 
-std::wstring LinuxWindow::GetTitle() const
+UTF8String LinuxWindow::GetTitle() const
 {
-    return std::wstring();
+    char* title = nullptr;
+    XFetchName(display_, wnd_, &title);
+    return title;
 }
 
 void LinuxWindow::Show(bool show)

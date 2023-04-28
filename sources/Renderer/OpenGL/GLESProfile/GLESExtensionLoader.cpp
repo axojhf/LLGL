@@ -1,15 +1,19 @@
 /*
  * GLESExtensionLoader.cpp
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "../Ext/GLExtensionLoader.h"
 #include "GLESExtensions.h"
 #include "GLESExtensionsProxy.h"
 #include "OpenGLES.h"
-#include <EGL/egl.h>
+#if defined(LLGL_OS_IOS)
+#   import <OpenGLES/EAGL.h>
+#else
+#   include <EGL/egl.h>
+#endif
 #include <LLGL/Log.h>
 #include <functional>
 

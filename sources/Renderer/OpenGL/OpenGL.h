@@ -1,8 +1,8 @@
 /*
  * OpenGL.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_OPENGL_H
@@ -16,11 +16,11 @@
 #endif
 
 
-#if defined GL_ARB_draw_indirect || defined GL_ES_VERSION_3_1 || defined __APPLE__
+#if defined GL_ARB_draw_indirect || defined GL_ES_VERSION_3_1
 #   define LLGL_GLEXT_DRAW_INDIRECT
 #endif
 
-#if defined GL_ARB_draw_elements_base_vertex || defined GL_ES_VERSION_3_2 || defined __APPLE__
+#if defined GL_ARB_draw_elements_base_vertex || defined GL_ES_VERSION_3_2
 #   define LLGL_GLEXT_DRAW_ELEMENTS_BASE_VERTEX
 #endif
 
@@ -41,7 +41,7 @@
 #endif
 
 //TODO: which extension?
-#if defined LLGL_OPENGL || defined __APPLE__
+#if defined LLGL_OPENGL
 #   define LLGL_GLEXT_CONDITIONAL_RENDER
 #endif
 
@@ -67,6 +67,14 @@
 
 #if defined LLGL_OPENGL || defined GL_ES_VERSION_3_1
 #   define LLGL_GLEXT_GET_TEX_LEVEL_PARAMETER
+#endif
+
+#if defined GL_ARB_clip_control
+#   define LLGL_GLEXT_CLIP_CONTROL
+#endif
+
+#ifdef GL_TEXTURE_BORDER_COLOR
+#   define LLGL_SAMPLER_BORDER_COLOR
 #endif
 
 // At most one of these should be defined to indicate which API

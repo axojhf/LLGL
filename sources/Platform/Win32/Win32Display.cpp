@@ -1,14 +1,12 @@
 /*
  * Win32Display.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "Win32Display.h"
-#include "../../Core/Helper.h"
-#include <locale>
-#include <codecvt>
+#include "../../Core/CoreUtils.h"
 #include <algorithm>
 
 
@@ -246,16 +244,11 @@ bool Win32Display::IsPrimary() const
     return ((info.dwFlags & MONITORINFOF_PRIMARY) != 0);
 }
 
-std::wstring Win32Display::GetDeviceName() const
+UTF8String Win32Display::GetDeviceName() const
 {
     MONITORINFOEX infoEx;
     GetInfo(infoEx);
-    #ifdef UNICODE
-    return std::wstring(infoEx.szDevice);
-    #else
-    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-    return converter.from_bytes(infoEx.szDevice);
-    #endif
+    return infoEx.szDevice;
 }
 
 Offset2D Win32Display::GetOffset() const

@@ -1,8 +1,8 @@
 /*
  * D3D11BufferWithRV.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D11_BUFFER_WITH_RV_H
@@ -29,7 +29,10 @@ class D3D11BufferWithRV final : public D3D11Buffer
 
         D3D11BufferWithRV(ID3D11Device* device, const BufferDescriptor& desc, const void* initialData = nullptr);
 
-        // Creates a shader-resource-view (SRV) of a subresource of this buffer object.
+        /*
+        Creates a shader-resource-view (SRV) of a subresource of this buffer object.
+        If 'device' is null, the original device this buffer was created with will be used.
+        */
         void CreateSubresourceSRV(
             ID3D11Device*               device,
             ID3D11ShaderResourceView**  srvOutput,
@@ -38,7 +41,10 @@ class D3D11BufferWithRV final : public D3D11Buffer
             UINT                        numElements
         );
 
-        // Creates an unordered-access-view (UAV) of a subresource of this buffer object.
+        /*
+        Creates an unordered-access-view (UAV) of a subresource of this buffer object.
+        If 'device' is null, the original device this buffer was created with will be used.
+        */
         void CreateSubresourceUAV(
             ID3D11Device*               device,
             ID3D11UnorderedAccessView** uavOutput,

@@ -1,15 +1,15 @@
 /*
  * GLCoreProfileCaps.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "../GLRenderingCaps.h"
 #include "../GLTypes.h"
 #include "../Ext/GLExtensions.h"
 #include "../Ext/GLExtensionRegistry.h"
-#include "../../../Core/Helper.h"
+#include "../../../Core/CoreUtils.h"
 #include <cstdint>
 #include <limits>
 
@@ -179,7 +179,6 @@ static void GLGetSupportedTextureFormats(std::vector<Format>& textureFormats)
 static void GLGetSupportedFeatures(RenderingFeatures& features)
 {
     /* Query all boolean capabilies by their respective OpenGL extension */
-    features.hasDirectResourceBinding       = true;
     features.hasRenderTargets               = HasExtension(GLExt::ARB_framebuffer_object);
     features.has3DTextures                  = HasExtension(GLExt::EXT_texture3D);
     features.hasCubeTextures                = HasExtension(GLExt::ARB_texture_cube_map);

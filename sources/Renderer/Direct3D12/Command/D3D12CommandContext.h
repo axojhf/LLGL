@@ -1,8 +1,8 @@
 /*
  * D3D12CommandContext.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D12_COMMAND_CONTEXT_H
@@ -11,6 +11,10 @@
 
 #include "../../DXCommon/ComPtr.h"
 #include "../RenderState/D3D12Fence.h"
+#include "../RenderState/D3D12PipelineLayout.h"
+#include "../RenderState/D3D12StagingDescriptorHeapPool.h"
+#include "../RenderState/D3D12DescriptorCache.h"
+#include "../Buffer/D3D12StagingBufferPool.h"
 #include <d3d12.h>
 #include <cstddef>
 #include <cstdint>
@@ -74,18 +78,8 @@ class D3D12CommandContext
         }
 
         // Transition all subresources to the specified new state.
+        void TransitionResource(ID3D12Resource* resource, D3D12_RESOURCE_STATES newState, D3D12_RESOURCE_STATES oldState, bool flushImmediate = false);
         void TransitionResource(D3D12Resource& resource, D3D12_RESOURCE_STATES newState, bool flushImmediate = false);
-
-        #if 0 //TODO: not used yet
-        // Transition the specified subresource to the specified new state.
-        void TransitionSubresource(
-            D3D12Resource&          resource,
-            UINT                    subresource,
-            D3D12_RESOURCE_STATES   oldState,
-            D3D12_RESOURCE_STATES   newState,
-            bool                    flushImmediate = false
-        );
-        #endif
 
         // Insert a resource barrier for an unordered access view (UAV).
         void InsertUAVBarrier(D3D12Resource& resource, bool flushImmediate = false);
@@ -101,13 +95,90 @@ class D3D12CommandContext
             DXGI_FORMAT     format
         );
 
+        void UpdateSubresource(
+            D3D12Resource&  dstResource,
+            UINT64          dstOffset,
+            const void*     data,
+            UINT64          dataSize
+        );
+
         void SetGraphicsRootSignature(ID3D12RootSignature* rootSignature);
         void SetComputeRootSignature(ID3D12RootSignature* rootSignature);
         void SetPipelineState(ID3D12PipelineState* pipelineState);
         void SetDescriptorHeaps(UINT numDescriptorHeaps, ID3D12DescriptorHeap* const* descriptorHeaps);
 
+        void PrepareStagingDescriptorHeaps(
+            const D3D12DescriptorHeapSetLayout& layout,
+            const D3D12RootParameterIndices&    indices
+        );
+
         void SetGraphicsConstant(UINT parameterIndex, D3D12Constant value, UINT offset);
         void SetComputeConstant(UINT parameterIndex, D3D12Constant value, UINT offset);
+
+        void SetGraphicsRootParameter(UINT parameterIndex, D3D12_ROOT_PARAMETER_TYPE parameterType, D3D12_GPU_VIRTUAL_ADDRESS gpuVirtualAddr);
+        void SetComputeRootParameter(UINT parameterIndex, D3D12_ROOT_PARAMETER_TYPE parameterType, D3D12_GPU_VIRTUAL_ADDRESS gpuVirtualAddr);
+
+        D3D12_CPU_DESCRIPTOR_HANDLE GetCPUDescriptorHandle(D3D12_DESCRIPTOR_HEAP_TYPE type, UINT descriptor) const;
+
+        D3D12_GPU_DESCRIPTOR_HANDLE CopyDescriptorsForStaging(
+            D3D12_DESCRIPTOR_HEAP_TYPE  type,
+            D3D12_CPU_DESCRIPTOR_HANDLE srcDescHandle,
+            UINT                        firstDescriptor,
+            UINT                        numDescriptors
+        );
+
+        void EmplaceDescriptorForStaging(
+            Resource&                   resource,
+            UINT                        location,
+            D3D12_DESCRIPTOR_RANGE_TYPE descRangeType
+        );
+
+        void DrawInstanced(
+            UINT vertexCountPerInstance,
+            UINT instanceCount,
+            UINT startVertexLocation,
+            UINT startInstanceLocation
+        );
+
+        void DrawIndexedInstanced(
+            UINT    indexCountPerInstance,
+            UINT    instanceCount,
+            UINT    startIndexLocation,
+            INT     baseVertexLocation,
+            UINT    startInstanceLocation
+        );
+
+        void DrawIndirect(
+            ID3D12CommandSignature* commandSignature,
+            UINT                    maxCommandCount,
+            ID3D12Resource*         argumentBuffer,
+            UINT64                  argumentBufferOffset,
+            ID3D12Resource*         countBuffer             = nullptr,
+            UINT64                  countBufferOffset       = 0
+        );
+
+        void Dispatch(
+            UINT threadGroupCountX,
+            UINT threadGroupCountY,
+            UINT threadGroupCountZ
+        );
+
+        void DispatchIndirect(
+            ID3D12CommandSignature* commandSignature,
+            UINT                    maxCommandCount,
+            ID3D12Resource*         argumentBuffer,
+            UINT64                  argumentBufferOffset,
+            ID3D12Resource*         countBuffer             = nullptr,
+            UINT64                  countBufferOffset       = 0
+        );
+
+    public:
+
+        // Returns the native D3D12 device this command context was created with.
+        inline ID3D12Device* GetDevice() const
+        {
+            return device_;
+        }
 
     private:
 
@@ -150,6 +221,9 @@ class D3D12CommandContext
         // Switches to the next command allocator and resets it.
         void NextCommandAllocator();
 
+        void FlushGraphicsStagingDescriptorTables();
+        void FlushComputeStagingDescriptorTables();
+
         // Returns the current command allocator.
         inline ID3D12CommandAllocator* GetCommandAllocator() const
         {
@@ -158,6 +232,7 @@ class D3D12CommandContext
 
     private:
 
+        ID3D12Device*                       device_                                         = nullptr;
         D3D12CommandQueue*                  commandQueue_                                   = nullptr;
 
         ComPtr<ID3D12CommandAllocator>      commandAllocators_[g_maxNumAllocators];
@@ -165,12 +240,19 @@ class D3D12CommandContext
         UINT                                numAllocators_                                  = g_maxNumAllocators;
 
         UINT64                              allocatorFenceValues_[g_maxNumAllocators]       = {};
-        D3D12Fence                          allocatorFence_;
+        D3D12NativeFence                    allocatorFence_;
 
         ComPtr<ID3D12GraphicsCommandList>   commandList_;
 
         D3D12_RESOURCE_BARRIER              resourceBarriers_[g_maxNumResourceBarrieres];
         UINT                                numResourceBarriers_                            = 0;
+
+        D3D12StagingDescriptorHeapPool      stagingDescriptorPools_[g_maxNumAllocators][g_maxNumDescriptorHeaps];
+        D3D12DescriptorHeapSetLayout        stagingDescriptorSetLayout_;
+        D3D12RootParameterIndices           stagingDescriptorIndices_;
+        D3D12DescriptorCache                descriptorCaches_[g_maxNumAllocators];
+
+        D3D12StagingBufferPool              stagingBufferPools_[g_maxNumAllocators];
 
         StateCache                          stateCache_;
 

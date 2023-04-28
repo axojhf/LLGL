@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_StencilBuffer)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
@@ -14,8 +14,9 @@ class Example_StencilBuffer : public ExampleBase
     LLGL::PipelineLayout*       pipelineLayout          = nullptr;
     LLGL::ResourceHeap*         resourceHeap            = {};
 
-    LLGL::ShaderProgram*        shaderProgramScene      = nullptr;
-    LLGL::ShaderProgram*        shaderProgramStencil    = nullptr;
+    LLGL::Shader*               vsScene                 = nullptr;
+    LLGL::Shader*               fsScene                 = nullptr;
+    LLGL::Shader*               vsStencil               = nullptr;
 
     LLGL::PipelineState*        pipelineScene           = {};
     LLGL::PipelineState*        pipelineStencilWrite    = {};
@@ -95,67 +96,31 @@ private:
         // Load shader program
         if (Supported(LLGL::ShadingLanguage::HLSL))
         {
-            shaderProgramScene = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.hlsl", "VScene", "vs_5_0" },
-                    { LLGL::ShaderType::Fragment, "Example.hlsl", "PScene", "ps_5_0" },
-                },
-                { vertexFormat }
-            );
-            shaderProgramStencil = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex, "Example.hlsl", "VStencil", "vs_5_0" }
-                },
-                { vertexFormat }
-            );
+            vsScene = LoadShader({ LLGL::ShaderType::Vertex,   "Example.hlsl", "VScene", "vs_5_0" }, { vertexFormat });
+            fsScene = LoadShader({ LLGL::ShaderType::Fragment, "Example.hlsl", "PScene", "ps_5_0" });
+
+            vsStencil = LoadShader({ LLGL::ShaderType::Vertex, "Example.hlsl", "VStencil", "vs_5_0" }, { vertexFormat });
         }
         else if (Supported(LLGL::ShadingLanguage::GLSL))
         {
-            shaderProgramScene = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Scene.vert" },
-                    { LLGL::ShaderType::Fragment, "Scene.frag" },
-                },
-                { vertexFormat }
-            );
-            shaderProgramStencil = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex, "Stencil.vert" }
-                },
-                { vertexFormat }
-            );
+            vsScene = LoadShader({ LLGL::ShaderType::Vertex,   "Scene.vert" }, { vertexFormat });
+            fsScene = LoadShader({ LLGL::ShaderType::Fragment, "Scene.frag" });
+
+            vsStencil = LoadShader({ LLGL::ShaderType::Vertex, "Stencil.vert" }, { vertexFormat });
         }
         else if (Supported(LLGL::ShadingLanguage::SPIRV))
         {
-            shaderProgramScene = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Scene.450core.vert.spv" },
-                    { LLGL::ShaderType::Fragment, "Scene.450core.frag.spv" },
-                },
-                { vertexFormat }
-            );
-            shaderProgramStencil = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex, "Stencil.450core.vert.spv" }
-                },
-                { vertexFormat }
-            );
+            vsScene = LoadShader({ LLGL::ShaderType::Vertex,   "Scene.450core.vert.spv" }, { vertexFormat });
+            fsScene = LoadShader({ LLGL::ShaderType::Fragment, "Scene.450core.frag.spv" });
+
+            vsStencil = LoadShader({ LLGL::ShaderType::Vertex, "Stencil.450core.vert.spv" }, { vertexFormat });
         }
         else if (Supported(LLGL::ShadingLanguage::Metal))
         {
-            shaderProgramScene = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.metal", "VScene", "1.1" },
-                    { LLGL::ShaderType::Fragment, "Example.metal", "PScene", "1.1" },
-                },
-                { vertexFormat }
-            );
-            shaderProgramStencil = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex, "Example.metal", "VStencil", "1.1" }
-                },
-                { vertexFormat }
-            );
+            vsScene = LoadShader({ LLGL::ShaderType::Vertex,   "Example.metal", "VScene", "1.1" }, { vertexFormat });
+            fsScene = LoadShader({ LLGL::ShaderType::Fragment, "Example.metal", "PScene", "1.1" });
+
+            vsStencil = LoadShader({ LLGL::ShaderType::Vertex, "Example.metal", "VStencil", "1.1" }, { vertexFormat });
         }
         else
             throw std::runtime_error("shaders not supported for active renderer");
@@ -165,7 +130,7 @@ private:
     {
         // Create pipeline layouts for shadow-map and scene rendering
         pipelineLayout = renderer->CreatePipelineLayout(
-            LLGL::PipelineLayoutDesc("cbuffer(Settings@1):frag:vert")
+            LLGL::PipelineLayoutDesc("heap{cbuffer(Settings@1):frag:vert}")
         );
     }
 
@@ -175,7 +140,8 @@ private:
         {
             LLGL::GraphicsPipelineDescriptor pipelineDesc;
             {
-                pipelineDesc.shaderProgram                  = shaderProgramScene;
+                pipelineDesc.vertexShader                   = vsScene;
+                pipelineDesc.fragmentShader                 = fsScene;
                 pipelineDesc.renderPass                     = swapChain->GetRenderPass();
                 pipelineDesc.pipelineLayout                 = pipelineLayout;
                 pipelineDesc.depth.testEnabled              = true;
@@ -190,7 +156,7 @@ private:
         {
             LLGL::GraphicsPipelineDescriptor pipelineDesc;
             {
-                pipelineDesc.shaderProgram                  = shaderProgramStencil;
+                pipelineDesc.vertexShader                   = vsStencil;
                 pipelineDesc.renderPass                     = swapChain->GetRenderPass();
                 pipelineDesc.pipelineLayout                 = pipelineLayout;
                 pipelineDesc.depth.testEnabled              = true;                             // Read all depth bits
@@ -203,7 +169,7 @@ private:
                 pipelineDesc.stencil.front.writeMask        = ~0u;                              // Write all stencil bits
                 pipelineDesc.rasterizer.cullMode            = LLGL::CullMode::Back;
                 pipelineDesc.rasterizer.multiSampleEnabled  = (GetSampleCount() > 1);
-                pipelineDesc.blend.targets[0].colorMask     = { false, false, false, false };   // Write no color bits
+                pipelineDesc.blend.targets[0].colorMask     = 0x0;                              // Write no color bits
             }
             pipelineStencilWrite = renderer->CreatePipelineState(pipelineDesc);
         }
@@ -212,7 +178,8 @@ private:
         {
             LLGL::GraphicsPipelineDescriptor pipelineDesc;
             {
-                pipelineDesc.shaderProgram                  = shaderProgramScene;
+                pipelineDesc.vertexShader                   = vsScene;
+                pipelineDesc.fragmentShader                 = fsScene;
                 pipelineDesc.renderPass                     = swapChain->GetRenderPass();
                 pipelineDesc.pipelineLayout                 = pipelineLayout;
                 pipelineDesc.depth.testEnabled              = true;
@@ -232,12 +199,7 @@ private:
     void CreateResourceHeaps()
     {
         // Create resource heap for scene rendering
-        LLGL::ResourceHeapDescriptor resourceHeapDesc;
-        {
-            resourceHeapDesc.pipelineLayout = pipelineLayout;
-            resourceHeapDesc.resourceViews  = { constantBuffer };
-        }
-        resourceHeap = renderer->CreateResourceHeap(resourceHeapDesc);
+        resourceHeap = renderer->CreateResourceHeap(pipelineLayout, { constantBuffer });
     }
 
     void UpdateScene()
@@ -289,7 +251,7 @@ private:
     void RenderScene()
     {
         // Clear entire framebuffer, i.e. color, depth, and stencil buffers
-        commands->Clear(LLGL::ClearFlags::All, { backgroundColor });
+        commands->Clear(LLGL::ClearFlags::All, backgroundColor);
 
         // Render scene background
         commands->SetPipelineState(*pipelineScene);

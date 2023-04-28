@@ -1,8 +1,8 @@
 /*
  * VirtualCommandBuffer.h
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_VIRTUAL_COMMAND_BUFFER_H
@@ -29,7 +29,7 @@ struct DefaultBufferGrowPolicy
     }
     static inline std::size_t NextChunkCapacity(std::size_t currentChunkCapacity)
     {
-        return std::max(currentChunkCapacity * 2, MinChunkCapacity());
+        return (std::max)(currentChunkCapacity * 2, MinChunkCapacity());
     }
 };
 
@@ -302,7 +302,7 @@ class VirtualCommandBuffer
         // Returns whether the specified byte size fits into the current chunk.
         bool FitsIntoCurrentChunk(std::size_t size) const
         {
-            return (current_ != nullptr && current_->size + size < current_->capacity);
+            return (current_ != nullptr && current_->size + size <= current_->capacity);
         }
 
         // Allocates a new chunk and makes it the current one.

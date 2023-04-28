@@ -1,8 +1,8 @@
 /*
  * GeometryUtility.h
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_GEOMETRY_UTILITY_H
@@ -10,6 +10,7 @@
 
 
 #include <LLGL/LLGL.h>
+#include <LLGL/Container/ArrayView.h>
 #include <Gauss/Gauss.h>
 #include <vector>
 
@@ -30,12 +31,6 @@ struct TangentSpaceVertex
     Gs::Vector3f position;
     Gs::Vector3f normal;
     Gs::Vector3f tangents[2];
-    Gs::Vector2f texCoord;
-};
-
-struct VertexPos3Tex2
-{
-    Gs::Vector3f position;
     Gs::Vector2f texCoord;
 };
 
@@ -70,13 +65,13 @@ std::vector<std::uint32_t> GenerateCubeTriangleIndices();
 std::vector<std::uint32_t> GenerateCubeQuadIndices();
 
 // Generates 24 vertices for a unit cube with texture coordinates.
-std::vector<VertexPos3Tex2> GenerateTexturedCubeVertices();
+std::vector<TexturedVertex> GenerateTexturedCubeVertices();
 
 // Generates 36 indices for a unit cube of 24 vertices
 std::vector<std::uint32_t> GenerateTexturedCubeTriangleIndices();
 
 // Generates tangent-space vertices from the specified list of textured vertices.
-std::vector<TangentSpaceVertex> GenerateTangentSpaceVertices(const std::vector<TexturedVertex>& vertices);
+std::vector<TangentSpaceVertex> GenerateTangentSpaceVertices(const LLGL::ArrayView<TexturedVertex>& vertices);
 
 
 #endif

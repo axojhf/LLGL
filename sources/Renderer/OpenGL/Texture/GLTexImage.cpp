@@ -1,8 +1,8 @@
 /*
  * GLTexImage.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GLTexImage.h"
@@ -10,6 +10,7 @@
 #include "../GLProfile.h"
 #include "../Ext/GLExtensions.h"
 #include "../Ext/GLExtensionRegistry.h"
+#include <LLGL/Utils/ColorRGBA.h>
 #include <array>
 #include <algorithm>
 
@@ -19,9 +20,9 @@ namespace LLGL
 
 
 // Generates an image buffer with floating-points for RGBA components.
-static std::vector<ColorRGBAf> GenImageDataRGBAf(std::uint32_t numPixels, const ColorRGBAf& color)
+static std::vector<ColorRGBAf> GenImageDataRGBAf(std::uint32_t numPixels, const float (&color)[4])
 {
-    return std::vector<ColorRGBAf>(static_cast<std::size_t>(numPixels), color);
+    return std::vector<ColorRGBAf>(static_cast<std::size_t>(numPixels), ColorRGBAf{ color[0], color[1], color[2], color[3] });
 }
 
 // Generates an image buffer with floating-points for the Red component.
@@ -69,7 +70,7 @@ static void ErrIllegalUseOfDepthFormat()
 // Converts the internal format if necessary
 static Format FindSuitableDepthFormat(const TextureDescriptor& desc)
 {
-    if (IsDepthStencilFormat(desc.format))
+    if (IsDepthOrStencilFormat(desc.format))
     {
         if ((desc.bindFlags & BindFlags::ColorAttachment) != 0)
         {
@@ -503,7 +504,7 @@ static void GLTexImage1D(const TextureDescriptor& desc, const SrcImageDescriptor
             imageDesc->dataSize
         );
     }
-    else if (IsDepthStencilFormat(desc.format))
+    else if (IsDepthOrStencilFormat(desc.format))
     {
         /* Throw runtime error for illegal use of depth-stencil format */
         ErrIllegalUseOfDepthFormat();
@@ -659,7 +660,7 @@ static void GLTexImage3D(const TextureDescriptor& desc, const SrcImageDescriptor
             imageDesc->dataSize
         );
     }
-    else if (IsDepthStencilFormat(desc.format))
+    else if (IsDepthOrStencilFormat(desc.format))
     {
         /* Throw runtime error for illegal use of depth-stencil format */
         ErrIllegalUseOfDepthFormat();
@@ -840,7 +841,7 @@ static void GLTexImage1DArray(const TextureDescriptor& desc, const SrcImageDescr
             imageDesc->dataSize
         );
     }
-    else if (IsDepthStencilFormat(desc.format))
+    else if (IsDepthOrStencilFormat(desc.format))
     {
         /* Throw runtime error for illegal use of depth-stencil format */
         ErrIllegalUseOfDepthFormat();
@@ -1007,7 +1008,7 @@ static void GLTexImageCubeArray(const TextureDescriptor& desc, const SrcImageDes
             imageDesc->dataSize
         );
     }
-    else if (IsDepthStencilFormat(desc.format))
+    else if (IsDepthOrStencilFormat(desc.format))
     {
         /* Throw runtime error for illegal use of depth-stencil format */
         ErrIllegalUseOfDepthFormat();

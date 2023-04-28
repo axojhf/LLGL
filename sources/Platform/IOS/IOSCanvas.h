@@ -1,8 +1,8 @@
 /*
  * IOSCanvas.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_IOS_CANVAS_H
@@ -29,8 +29,8 @@ class IOSCanvas : public Canvas
 
         Extent2D GetContentSize() const override;
 
-        void SetTitle(const std::wstring& title) override;
-        std::wstring GetTitle() const override;
+        void SetTitle(const UTF8String& title) override;
+        UTF8String GetTitle() const override;
 
         void ResetPixelFormat() override;
 

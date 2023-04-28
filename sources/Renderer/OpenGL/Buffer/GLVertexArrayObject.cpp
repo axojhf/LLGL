@@ -1,18 +1,18 @@
 /*
  * GLVertexArrayObject.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GLVertexArrayObject.h"
 #include "../Ext/GLExtensions.h"
-#include "../Ext/GLExtensionLoader.h"
 #include "../Ext/GLExtensionRegistry.h"
 #include "../RenderState/GLStateManager.h"
 #include "../GLTypes.h"
 #include "../GLCore.h"
 #include "../../../Core/Exception.h"
+#include <LLGL/Utils/TypeNames.h>
 
 
 namespace LLGL
@@ -36,13 +36,17 @@ GLVertexArrayObject::~GLVertexArrayObject()
 
 void GLVertexArrayObject::BuildVertexAttribute(const VertexAttribute& attribute)
 {
-    if (!HasNativeVAO())
-        ThrowNotSupportedExcept(__FUNCTION__, "OpenGL extension 'GL_ARB_vertex_array_object'");
+    LLGL_ASSERT_GL_EXT(ARB_vertex_array_object);
 
     /* Get data type and components of vector type */
     const auto& formatAttribs = GetFormatAttribs(attribute.format);
     if ((formatAttribs.flags & FormatFlags::SupportsVertex) == 0)
-        ThrowNotSupportedExcept(__FUNCTION__, "specified vertex attribute");
+    {
+        if (auto formatStr = ToString(attribute.format))
+            LLGL_TRAP("LLGL::Format::%s cannot be used for vertex attributes", formatStr);
+        else
+            LLGL_TRAP("unknown format cannot be used for vertex attributes");
+    }
 
     /* Convert offset to pointer sized type (for 32- and 64 bit builds) */
     auto dataType       = GLTypes::Map(formatAttribs.dataType);
@@ -61,18 +65,14 @@ void GLVertexArrayObject::BuildVertexAttribute(const VertexAttribute& attribute)
     /* Use currently bound VBO for VertexAttribPointer functions */
     if ((formatAttribs.flags & FormatFlags::IsNormalized) == 0 && !IsFloatFormat(attribute.format))
     {
-        if (HasExtension(GLExt::EXT_gpu_shader4))
-        {
-            glVertexAttribIPointer(
-                attribIndex,
-                components,
-                dataType,
-                stride,
-                reinterpret_cast<const void*>(offsetPtrSized)
-            );
-        }
-        else
-            ThrowNotSupportedExcept(__FUNCTION__, "integral vertex attributes");
+        LLGL_ASSERT_GL_EXT(EXT_gpu_shader4, "integral vertex attributes");
+        glVertexAttribIPointer(
+            attribIndex,
+            components,
+            dataType,
+            stride,
+            reinterpret_cast<const void*>(offsetPtrSized)
+        );
     }
     else
     {

@@ -1,13 +1,14 @@
 /*
  * VKDeviceBuffer.cpp
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "VKDeviceBuffer.h"
 #include "../Memory/VKDeviceMemoryManager.h"
 #include "../VKCore.h"
+#include <algorithm>
 
 
 namespace LLGL
@@ -16,19 +17,19 @@ namespace LLGL
 
 /* ----- Common ----- */
 
-VKDeviceBuffer::VKDeviceBuffer(const VKPtr<VkDevice>& device) :
+VKDeviceBuffer::VKDeviceBuffer(VkDevice device) :
     buffer_ { device, vkDestroyBuffer }
 {
 }
 
-VKDeviceBuffer::VKDeviceBuffer(const VKPtr<VkDevice>& device, const VkBufferCreateInfo& createInfo) :
+VKDeviceBuffer::VKDeviceBuffer(VkDevice device, const VkBufferCreateInfo& createInfo) :
     VKDeviceBuffer { device }
 {
     CreateVkBuffer(device, createInfo);
 }
 
 VKDeviceBuffer::VKDeviceBuffer(
-    const VKPtr<VkDevice>&      device,
+    VkDevice                    device,
     const VkBufferCreateInfo&   createInfo,
     VKDeviceMemoryManager&      deviceMemoryMngr,
     VkMemoryPropertyFlags       memoryProperties)
@@ -57,7 +58,7 @@ VKDeviceBuffer& VKDeviceBuffer::operator = (VKDeviceBuffer&& rhs)
 
 /* ----- Native buffer ----- */
 
-void VKDeviceBuffer::CreateVkBuffer(const VKPtr<VkDevice>& device, const VkBufferCreateInfo& createInfo)
+void VKDeviceBuffer::CreateVkBuffer(VkDevice device, const VkBufferCreateInfo& createInfo)
 {
     /* Create Vulkan buffer object and query memory requirements */
     auto result = vkCreateBuffer(device, &createInfo, nullptr, buffer_.ReleaseAndGetAddressOf());
@@ -66,7 +67,7 @@ void VKDeviceBuffer::CreateVkBuffer(const VKPtr<VkDevice>& device, const VkBuffe
 }
 
 void VKDeviceBuffer::CreateVkBufferAndMemoryRegion(
-    const VKPtr<VkDevice>&      device,
+    VkDevice                    device,
     const VkBufferCreateInfo&   createInfo,
     VKDeviceMemoryManager&      deviceMemoryMngr,
     VkMemoryPropertyFlags       memoryProperties)
@@ -109,12 +110,15 @@ void VKDeviceBuffer::ReleaseMemoryRegion(VKDeviceMemoryManager& deviceMemoryMngr
     memoryRegion_ = nullptr;
 }
 
-void* VKDeviceBuffer::Map(VkDevice device)
+void* VKDeviceBuffer::Map(VkDevice device, VkDeviceSize offset, VkDeviceSize size)
 {
     if (memoryRegion_)
-        return memoryRegion_->GetParentChunk()->Map(device, memoryRegion_->GetOffset(), memoryRegion_->GetSize());
-    else
-        return nullptr;
+    {
+        offset  = (std::min)(offset, memoryRegion_->GetSize());
+        size    = (std::min)(size, memoryRegion_->GetSize() - offset);
+        return memoryRegion_->GetParentChunk()->Map(device, memoryRegion_->GetOffset() + offset, size);
+    }
+    return nullptr;
 }
 
 void VKDeviceBuffer::Unmap(VkDevice device)

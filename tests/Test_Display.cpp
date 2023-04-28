@@ -1,31 +1,27 @@
 /*
  * Test_Display.cpp
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <LLGL/Display.h>
 #include <iostream>
 #include <thread>
 #include <chrono>
-#include <locale>
-#include <codecvt>
 
 
 int main(int argc, char* argv[])
 {
     try
     {
-        std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> utf8converter;
-
         for (std::size_t i = 0; auto display = LLGL::Display::Get(i); ++i)
         {
             auto displayOffset  = display->GetOffset();
             auto displayMode    = display->GetDisplayMode();
             auto displayName    = display->GetDeviceName();
 
-            std::cout << "Display: \"" << utf8converter.to_bytes(displayName.c_str()) << "\"" << std::endl;
+            std::cout << "Display: \"" << displayName.c_str() << "\"" << std::endl;
             std::cout << "|-Primary = " << std::boolalpha << display->IsPrimary() << std::endl;
             std::cout << "|-X       = " << displayOffset.x << std::endl;
             std::cout << "|-Y       = " << displayOffset.y << std::endl;

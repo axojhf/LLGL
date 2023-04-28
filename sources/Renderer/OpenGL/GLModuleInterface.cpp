@@ -1,8 +1,8 @@
 /*
  * GLModuleInterface.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "../ModuleInterface.h"
@@ -64,10 +64,14 @@ LLGL_EXPORT const char* LLGL_RenderSystem_Name()
     return LLGL::ModuleOpenGL::GetRendererName();
 }
 
-LLGL_EXPORT void* LLGL_RenderSystem_Alloc(const void* renderSystemDesc)
+LLGL_EXPORT void* LLGL_RenderSystem_Alloc(const void* renderSystemDesc, int renderSystemDescSize)
 {
-    auto desc = reinterpret_cast<const LLGL::RenderSystemDescriptor*>(renderSystemDesc);
-    return LLGL::ModuleOpenGL::AllocRenderSystem(desc);
+    if (renderSystemDesc != nullptr && static_cast<std::size_t>(renderSystemDescSize) == sizeof(LLGL::RenderSystemDescriptor))
+    {
+        auto desc = reinterpret_cast<const LLGL::RenderSystemDescriptor*>(renderSystemDesc);
+        return LLGL::ModuleOpenGL::AllocRenderSystem(desc);
+    }
+    return nullptr;
 }
 
 } // /extern "C"

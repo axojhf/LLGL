@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_VolumeRendering)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
@@ -14,8 +14,8 @@ class Example_VolumeRendering : public ExampleBase
 
     const std::uint32_t         noiseTextureSize        = 64;
 
-    LLGL::ShaderProgram*        shaderProgramDepthOnly  = nullptr;
-    LLGL::ShaderProgram*        shaderProgramFinalPass  = nullptr;
+    LLGL::Shader*               vsScene                 = nullptr;
+    LLGL::Shader*               fsScene                 = nullptr;
 
     LLGL::PipelineLayout*       pipelineLayoutCbuffer   = nullptr;
     LLGL::PipelineLayout*       pipelineLayoutFinalPass = nullptr;
@@ -101,67 +101,23 @@ private:
         // Load shader programs
         if (Supported(LLGL::ShadingLanguage::HLSL))
         {
-            shaderProgramDepthOnly = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.hlsl", "VScene", "vs_5_0" },
-                },
-                { vertexFormat }
-            );
-            shaderProgramFinalPass = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.hlsl", "VScene", "vs_5_0" },
-                    { LLGL::ShaderType::Fragment, "Example.hlsl", "PScene", "ps_5_0" },
-                },
-                { vertexFormat }
-            );
+            vsScene = LoadShader({ LLGL::ShaderType::Vertex,   "Example.hlsl", "VScene", "vs_5_0" }, { vertexFormat });
+            fsScene = LoadShader({ LLGL::ShaderType::Fragment, "Example.hlsl", "PScene", "ps_5_0" });
         }
         else if (Supported(LLGL::ShadingLanguage::GLSL))
         {
-            shaderProgramDepthOnly = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.vert" },
-                },
-                { vertexFormat }
-            );
-            shaderProgramFinalPass = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.vert" },
-                    { LLGL::ShaderType::Fragment, "Example.frag" },
-                },
-                { vertexFormat }
-            );
+            vsScene = LoadShader({ LLGL::ShaderType::Vertex,   "Example.vert" }, { vertexFormat });
+            fsScene = LoadShader({ LLGL::ShaderType::Fragment, "Example.frag" });
         }
         else if (Supported(LLGL::ShadingLanguage::SPIRV))
         {
-            shaderProgramDepthOnly = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.450core.vert.spv" },
-                },
-                { vertexFormat }
-            );
-            shaderProgramFinalPass = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.450core.vert.spv" },
-                    { LLGL::ShaderType::Fragment, "Example.450core.frag.spv" },
-                },
-                { vertexFormat }
-            );
+            vsScene = LoadShader({ LLGL::ShaderType::Vertex,   "Example.450core.vert.spv" }, { vertexFormat });
+            fsScene = LoadShader({ LLGL::ShaderType::Fragment, "Example.450core.frag.spv" });
         }
         else if (Supported(LLGL::ShadingLanguage::Metal))
         {
-            shaderProgramDepthOnly = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.metal", "VScene", "1.1" },
-                },
-                { vertexFormat }
-            );
-            shaderProgramFinalPass = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.metal", "VScene", "1.1" },
-                    { LLGL::ShaderType::Fragment, "Example.metal", "PScene", "1.1" },
-                },
-                { vertexFormat }
-            );
+            vsScene = LoadShader({ LLGL::ShaderType::Vertex,   "Example.metal", "VScene", "1.1" }, { vertexFormat });
+            fsScene = LoadShader({ LLGL::ShaderType::Fragment, "Example.metal", "PScene", "1.1" });
         }
         else
             throw std::runtime_error("shaders not supported for active renderer");
@@ -201,7 +157,7 @@ private:
             //rtDesc.multiSampling    = GetMultiSampleDesc();
             rtDesc.attachments      =
             {
-                LLGL::AttachmentDescriptor{ LLGL::AttachmentType::Depth, depthRangeTexture }
+                LLGL::AttachmentDescriptor{ depthRangeTexture }
             };
         }
         depthRangeRenderTarget = renderer->CreateRenderTarget(rtDesc);
@@ -239,7 +195,7 @@ private:
         // Create default sampler state
         LLGL::SamplerDescriptor samplerDesc;
         {
-            samplerDesc.mipMapping = false;
+            samplerDesc.mipMapEnabled = false;
         }
         linearSampler = renderer->CreateSampler(samplerDesc);
     }
@@ -248,20 +204,20 @@ private:
     {
         // Create pipeline layout with only a single constnat buffer for depth-range pass and Z-pre pass
         pipelineLayoutCbuffer = renderer->CreatePipelineLayout(
-            LLGL::PipelineLayoutDesc("cbuffer(Settings@1):frag:vert")
+            LLGL::PipelineLayoutDesc("heap{cbuffer(Settings@1):frag:vert}")
         );
 
         // Create pipeline layout for final scene rendering
         if (IsOpenGL())
         {
             pipelineLayoutFinalPass = renderer->CreatePipelineLayout(
-                LLGL::PipelineLayoutDesc("cbuffer(Settings@1):frag:vert, texture(noiseTexture@2):frag, texture(depthRangeTexture@3):frag, sampler(2):frag, sampler(3):frag")
+                LLGL::PipelineLayoutDesc("heap{cbuffer(Settings@1):frag:vert, texture(noiseTexture@2):frag, texture(depthRangeTexture@3):frag, sampler(2):frag, sampler(3):frag}")
             );
         }
         else
         {
             pipelineLayoutFinalPass = renderer->CreatePipelineLayout(
-                LLGL::PipelineLayoutDesc("cbuffer(Settings@1):frag:vert, texture(noiseTexture@2):frag, texture(depthRangeTexture@3):frag, sampler(linearSampler@4):frag")
+                LLGL::PipelineLayoutDesc("heap{cbuffer(Settings@1):frag:vert, texture(noiseTexture@2):frag, texture(depthRangeTexture@3):frag, sampler(linearSampler@4):frag}")
             );
         }
     }
@@ -272,7 +228,7 @@ private:
         {
             LLGL::GraphicsPipelineDescriptor pipelineDesc;
             {
-                pipelineDesc.shaderProgram              = shaderProgramDepthOnly;
+                pipelineDesc.vertexShader               = vsScene;
                 pipelineDesc.renderPass                 = depthRangeRenderTarget->GetRenderPass();
                 pipelineDesc.pipelineLayout             = pipelineLayoutCbuffer;
                 pipelineDesc.depth.testEnabled          = true;
@@ -280,7 +236,7 @@ private:
                 pipelineDesc.depth.compareOp            = LLGL::CompareOp::Greater;
                 pipelineDesc.rasterizer.cullMode        = LLGL::CullMode::Front;
                 //pipelineDesc.rasterizer.multiSampling   = GetMultiSampleDesc();
-                pipelineDesc.blend.targets[0].colorMask = { false, false, false, false };
+                pipelineDesc.blend.targets[0].colorMask = 0x0;
             }
             pipelineRangePass = renderer->CreatePipelineState(pipelineDesc);
         }
@@ -289,7 +245,7 @@ private:
         {
             LLGL::GraphicsPipelineDescriptor pipelineDesc;
             {
-                pipelineDesc.shaderProgram              = shaderProgramDepthOnly;
+                pipelineDesc.vertexShader               = vsScene;
                 pipelineDesc.renderPass                 = swapChain->GetRenderPass();
                 pipelineDesc.pipelineLayout             = pipelineLayoutCbuffer;
                 pipelineDesc.depth.testEnabled          = true;
@@ -297,7 +253,7 @@ private:
                 pipelineDesc.depth.compareOp            = LLGL::CompareOp::Less;
                 pipelineDesc.rasterizer.cullMode        = LLGL::CullMode::Back;
                 //pipelineDesc.rasterizer.multiSampling   = GetMultiSampleDesc();
-                pipelineDesc.blend.targets[0].colorMask = { false, false, false, false };
+                pipelineDesc.blend.targets[0].colorMask = 0x0;
             }
             pipelineZPrePass = renderer->CreatePipelineState(pipelineDesc);
         }
@@ -306,7 +262,8 @@ private:
         {
             LLGL::GraphicsPipelineDescriptor pipelineDesc;
             {
-                pipelineDesc.shaderProgram              = shaderProgramFinalPass;
+                pipelineDesc.vertexShader               = vsScene;
+                pipelineDesc.fragmentShader             = fsScene;
                 pipelineDesc.renderPass                 = swapChain->GetRenderPass();
                 pipelineDesc.pipelineLayout             = pipelineLayoutFinalPass;
                 pipelineDesc.depth.testEnabled          = true;
@@ -337,26 +294,14 @@ private:
 
         // Create resource heap for Z-pre pass
         if (resourceHeapCbuffer == nullptr)
-        {
-            LLGL::ResourceHeapDescriptor resourceHeapDesc;
-            {
-                resourceHeapDesc.pipelineLayout = pipelineLayoutCbuffer;
-                resourceHeapDesc.resourceViews  = { constantBuffer };
-            }
-            resourceHeapCbuffer = renderer->CreateResourceHeap(resourceHeapDesc);
-        }
+            resourceHeapCbuffer = renderer->CreateResourceHeap(pipelineLayoutCbuffer, { constantBuffer });
 
         // Create resource heap for scene rendering
         {
-            LLGL::ResourceHeapDescriptor resourceHeapDesc;
-            {
-                resourceHeapDesc.pipelineLayout = pipelineLayoutFinalPass;
-                if (IsOpenGL())
-                    resourceHeapDesc.resourceViews = { constantBuffer, noiseTexture, depthRangeTexture, linearSampler, linearSampler };
-                else
-                    resourceHeapDesc.resourceViews = { constantBuffer, noiseTexture, depthRangeTexture, linearSampler };
-            }
-            resourceHeapFinalPass = renderer->CreateResourceHeap(resourceHeapDesc);
+            std::vector<LLGL::ResourceViewDescriptor> resourceViewsScene = { constantBuffer, noiseTexture, depthRangeTexture, linearSampler };
+            if (IsOpenGL())
+                resourceViewsScene.push_back(linearSampler);
+            resourceHeapFinalPass = renderer->CreateResourceHeap(pipelineLayoutFinalPass, resourceViewsScene);
         }
     }
 

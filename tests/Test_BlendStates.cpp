@@ -1,12 +1,13 @@
 /*
  * Test_BlendStates.cpp
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <LLGL/LLGL.h>
-#include <LLGL/Utility.h>
+#include <LLGL/Utils/Utility.h>
+#include <LLGL/Utils/VertexFormat.h>
 #include <Gauss/Gauss.h>
 #include <memory>
 #include <iostream>
@@ -46,8 +47,7 @@ int main()
         // Setup window title
         auto& window = static_cast<LLGL::Window&>(swapChain->GetSurface());
 
-        auto title = "LLGL Test 10 ( " + renderer->GetName() + " )";
-        window.SetTitle(std::wstring(title.begin(), title.end()));
+        window.SetTitle("LLGL Test 10 ( " + std::string(renderer->GetName()) + " )");
 
         // Setup input controller
         LLGL::Input input{ window };
@@ -82,18 +82,11 @@ int main()
         auto vertexBuffer = renderer->CreateBuffer(vertexBufferDesc, vertices);
 
         // Create shader program
-        LLGL::ShaderProgramDescriptor shaderProgramDesc;
-        {
-            LLGL::ShaderDescriptor vertexShaderDesc{ LLGL::ShaderType::Vertex,   "Shaders/BlendTest.vert" };
-            vertexShaderDesc.vertex.inputAttribs = vertexBufferDesc.vertexAttribs;
+        LLGL::ShaderDescriptor vertexShaderDesc{ LLGL::ShaderType::Vertex,   "Shaders/BlendTest.vert" };
+        vertexShaderDesc.vertex.inputAttribs = vertexFormat.attributes;
 
-            shaderProgramDesc.vertexShader      = renderer->CreateShader(vertexShaderDesc);//{ LLGL::ShaderType::Vertex,   "Shaders/BlendTest.vert" });
-            shaderProgramDesc.fragmentShader    = renderer->CreateShader({ LLGL::ShaderType::Fragment, "Shaders/BlendTest.frag" });
-        }
-        auto shaderProgram = renderer->CreateShaderProgram(shaderProgramDesc);
-
-        if (shaderProgram->HasErrors())
-            throw std::runtime_error(shaderProgram->GetReport());
+        auto vertexShader      = renderer->CreateShader(vertexShaderDesc);//{ LLGL::ShaderType::Vertex,   "Shaders/BlendTest.vert" });
+        auto fragmentShader    = renderer->CreateShader({ LLGL::ShaderType::Fragment, "Shaders/BlendTest.frag" });
 
         // Create graphics pipeline
         static const std::size_t numPipelines = 4;
@@ -102,7 +95,8 @@ int main()
 
         LLGL::GraphicsPipelineDescriptor pipelineDesc;
         {
-            pipelineDesc.shaderProgram      = shaderProgram;
+            pipelineDesc.vertexShader       = vertexShader;
+            pipelineDesc.fragmentShader     = fragmentShader;
             pipelineDesc.primitiveTopology  = LLGL::PrimitiveTopology::TriangleStrip;
         }
         pipeline[0] = renderer->CreatePipelineState(pipelineDesc);
@@ -118,10 +112,19 @@ int main()
         pipeline[2] = renderer->CreatePipelineState(pipelineDesc);
 
         {
-            pipelineDesc.blend.targets[0].blendEnabled = false;
-            pipelineDesc.blend.targets[0].colorMask = { false, false, false, false };
+            pipelineDesc.blend.targets[0].blendEnabled  = false;
+            pipelineDesc.blend.targets[0].colorMask     = 0x0;
         }
         pipeline[3] = renderer->CreatePipelineState(pipelineDesc);
+
+        for (auto p : pipeline)
+        {
+            if (auto report = p->GetReport())
+            {
+                if (report->HasErrors())
+                    throw std::runtime_error(report->GetText());
+            }
+        }
 
         // Create command buffer
         auto commandQueue = renderer->GetCommandQueue();

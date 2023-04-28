@@ -1,11 +1,11 @@
 /*
  * Image.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
-#include <LLGL/Image.h>
+#include <LLGL/Utils/Image.h>
 #include "ImageUtils.h"
 #include <algorithm>
 #include <string.h>
@@ -25,11 +25,11 @@ Image::Image(const Extent3D& extent, const ImageFormat format, const DataType da
 {
 }
 
-Image::Image(const Extent3D& extent, const ImageFormat format, const DataType dataType, const ColorRGBAd& fillColor) :
-    extent_   { extent                                                           },
-    format_   { format                                                           },
-    dataType_ { dataType                                                         },
-    data_     { GenerateImageBuffer(format, dataType, GetNumPixels(), fillColor) }
+Image::Image(const Extent3D& extent, const ImageFormat format, const DataType dataType, const ColorRGBAf& fillColor) :
+    extent_   { extent                                                                 },
+    format_   { format                                                                 },
+    dataType_ { dataType                                                               },
+    data_     { GenerateImageBuffer(format, dataType, GetNumPixels(), fillColor.Ptr()) }
 {
 }
 
@@ -77,7 +77,7 @@ Image& Image::operator = (Image&& rhs)
 
 /* ----- Storage ----- */
 
-void Image::Convert(const ImageFormat format, const DataType dataType, std::size_t threadCount)
+void Image::Convert(const ImageFormat format, const DataType dataType, unsigned threadCount)
 {
     /* Convert image buffer (if necessary) */
     if (data_)
@@ -101,22 +101,22 @@ void Image::Resize(const Extent3D& extent)
         data_.reset();
 }
 
-void Image::Resize(const Extent3D& extent, const ColorRGBAd& fillColor)
+void Image::Resize(const Extent3D& extent, const ColorRGBAf& fillColor)
 {
     if (extent_ != extent)
     {
         /* Generate new image buffer with fill color */
         extent_ = extent;
-        data_   = GenerateImageBuffer(GetFormat(), GetDataType(), GetNumPixels(), fillColor);
+        data_   = GenerateImageBuffer(GetFormat(), GetDataType(), GetNumPixels(), fillColor.Ptr());
     }
     else
     {
         /* Clear image by fill color */
-        Fill({ 0, 0, 0 }, extent, fillColor);
+        //Fill({ 0, 0, 0 }, extent, fillColor);
     }
 }
 
-void Image::Resize(const Extent3D& extent, const ColorRGBAd& fillColor, const Offset3D& offset)
+void Image::Resize(const Extent3D& extent, const ColorRGBAf& fillColor, const Offset3D& offset)
 {
     if (extent != GetExtent())
     {
@@ -134,7 +134,7 @@ void Image::Resize(const Extent3D& extent, const ColorRGBAd& fillColor, const Of
         {
             /* Resize image buffer with fill color */
             extent_ = extent;
-            data_   = GenerateImageBuffer(GetFormat(), GetDataType(), GetNumPixels(), fillColor);
+            data_   = GenerateImageBuffer(GetFormat(), GetDataType(), GetNumPixels(), fillColor.Ptr());
         }
         else
         {
@@ -146,11 +146,6 @@ void Image::Resize(const Extent3D& extent, const ColorRGBAd& fillColor, const Of
         /* Copy previous image into new image */
         Blit(offset, prevImage, { 0, 0, 0 }, prevImage.GetExtent());
     }
-}
-
-void Image::Resize(const Extent3D& extent, const SamplerFilter filter)
-{
-    //todo
 }
 
 void Image::Swap(Image& rhs)
@@ -283,13 +278,6 @@ void Image::Blit(Offset3D dstRegionOffset, const Image& srcImage, Offset3D srcRe
     }
 }
 
-void Image::Fill(Offset3D offset, Extent3D extent, const ColorRGBAd& fillColor)
-{
-    //ClampRegion(offset, extent);
-
-    //TODO
-}
-
 static std::size_t GetRequiredImageDataSize(const Extent3D& extent, const ImageFormat format, const DataType dataType)
 {
     return static_cast<std::size_t>(ImageFormatSize(format) * DataTypeSize(dataType) * extent.width * extent.height * extent.depth);
@@ -319,7 +307,7 @@ static void ValidateImageDataSize(const Extent3D& extent, const SrcImageDescript
     }
 }
 
-void Image::ReadPixels(const Offset3D& offset, const Extent3D& extent, const DstImageDescriptor& imageDesc, std::size_t threadCount) const
+void Image::ReadPixels(const Offset3D& offset, const Extent3D& extent, const DstImageDescriptor& imageDesc, unsigned threadCount) const
 {
     if (imageDesc.data && IsRegionInside(offset, extent))
     {
@@ -366,7 +354,7 @@ void Image::ReadPixels(const Offset3D& offset, const Extent3D& extent, const Dst
     }
 }
 
-void Image::WritePixels(const Offset3D& offset, const Extent3D& extent, const SrcImageDescriptor& imageDesc, std::size_t threadCount)
+void Image::WritePixels(const Offset3D& offset, const Extent3D& extent, const SrcImageDescriptor& imageDesc, unsigned threadCount)
 {
     if (imageDesc.data && IsRegionInside(offset, extent))
     {
@@ -410,21 +398,6 @@ void Image::WritePixels(const Offset3D& offset, const Extent3D& extent, const Sr
             );
         }
     }
-}
-
-void Image::MirrorYZPlane()
-{
-    //TODO
-}
-
-void Image::MirrorXZPlane()
-{
-    //TODO
-}
-
-void Image::MirrorXYPlane()
-{
-    //TODO
 }
 
 /* ----- Attributes ----- */

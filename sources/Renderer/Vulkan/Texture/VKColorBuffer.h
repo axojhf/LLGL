@@ -1,8 +1,8 @@
 /*
  * VKColorBuffer.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_VK_COLOR_BUFFER_H
@@ -21,7 +21,7 @@ class VKColorBuffer final : private VKRenderBuffer
 
     public:
 
-        VKColorBuffer(const VKPtr<VkDevice>& device);
+        VKColorBuffer(VkDevice device);
 
         // Explicit default move constructors required for GCC (to be used in VKSwapChain c'tor)
         VKColorBuffer(VKColorBuffer&&) = default;

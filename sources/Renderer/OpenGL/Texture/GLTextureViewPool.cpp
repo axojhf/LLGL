@@ -1,8 +1,8 @@
 /*
  * GLTextureViewPool.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GLTextureViewPool.h"
@@ -13,9 +13,8 @@
 #include "../Ext/GLExtensions.h"
 #include "../Ext/GLExtensionRegistry.h"
 #include "../../CheckedCast.h"
-#include "../../../Core/ContainerUtils.h"
-#include "../../../Core/Helper.h"
-#include "../../../Core/HelperMacros.h"
+#include "../../../Core/CoreUtils.h"
+#include "../../../Core/MacroUtils.h"
 #include <algorithm>
 
 
@@ -64,7 +63,7 @@ GLuint GLTextureViewPool::CreateTextureView(GLuint sourceTexID, const TextureVie
 
     /* Try to find texture view with same parameters */
     std::size_t insertionIndex = 0;
-    auto* sharedTexView = Utils::FindInSortedArray<GLTextureView>(
+    auto* sharedTexView = FindInSortedArray<GLTextureView>(
         textureViews_.data(),
         textureViews_.size(),
         [&texView](const GLTextureView& rhs)
@@ -98,7 +97,7 @@ void GLTextureViewPool::ReleaseTextureView(GLuint texID)
 {
     /* Try to find texture by GL texture ID only */
     std::size_t insertionIndex = 0;
-    auto* sharedTexView = Utils::FindInSortedArray<GLTextureView>(
+    auto* sharedTexView = FindInSortedArray<GLTextureView>(
         textureViews_.data(),
         textureViews_.size(),
         [texID](const GLTextureView& rhs)

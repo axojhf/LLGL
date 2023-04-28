@@ -1,8 +1,8 @@
 /*
  * ResourceFlags.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_RESOURCE_FLAGS_H
@@ -119,7 +119,7 @@ struct BindFlags
         \remarks This can only be used for Texture resources.
         \note This cannot be used together with the BindFlags::DepthStencilAttachment flag.
         \see AttachmentDescriptor::texture
-        \see AttachmentType::Color
+        \see AttachmentDescriptor::format
         */
         ColorAttachment         = (1 << 7),
 
@@ -128,7 +128,7 @@ struct BindFlags
         \remarks This can only be used for Texture resources.
         \note This cannot be used together with the BindFlags::ColorAttachment flag.
         \see AttachmentDescriptor::texture
-        \see AttachmentType::DepthStencil
+        \see AttachmentDescriptor::format
         */
         DepthStencilAttachment  = (1 << 8),
 
@@ -136,7 +136,7 @@ struct BindFlags
         \brief Specifies a resource as a combination of a Texture and Sampler (e.g. \c sampler2D in GLSL).
         \remarks This is only used for shader reflection and ignored by resource creation.
         \note Only supported with: OpenGL, Vulkan.
-        \see ShaderResource::binding
+        \see ShaderResourceReflection::binding
         */
         CombinedSampler         = (1 << 9),
 
@@ -162,9 +162,10 @@ struct BindFlags
 };
 
 /**
-\brief CPU read/write access flag enumeration.
+\brief CPU read/write access flag enumeration for mapping GPU into CPU memory space.
 \see BufferDescriptor::cpuAccessFlags
-\see CPUAccess
+\see RenderSystem::MapBuffer
+\see RenderSystem::UnmapBuffer
 */
 struct CPUAccessFlags
 {
@@ -172,13 +173,16 @@ struct CPUAccessFlags
     {
         /**
         \brief Resource mapping with CPU read access is required.
-        \see RenderSystem::MapBuffer
+        \see CPUAccess::ReadOnly
+        \see CPUAccess::ReadWrite
         */
         Read        = (1 << 0),
 
         /**
         \brief Resource mapping with CPU write access is required.
-        \see RenderSystem::MapBuffer
+        \see CPUAccess::WriteOnly
+        \see CPUAccess::WriteDiscard
+        \see CPUAccess::ReadWrite
         */
         Write       = (1 << 1),
 
@@ -237,6 +241,7 @@ struct MiscFlags
         \remarks This cannot be used together with the MiscFlags::Counter bit.
         \note Only supported with: Direct3D 11, Direct3D 12.
         \see BufferDescriptor::stride
+        \see ResourceViewDescriptor::initialCount
         \see https://docs.microsoft.com/en-us/windows/win32/api/d3d11/ne-d3d11-d3d11_buffer_uav_flag
         */
         Append          = (1 << 4),
@@ -247,6 +252,7 @@ struct MiscFlags
         \remarks This cannot be used together with the MiscFlags::Append bit.
         \note Only supported with Direct3D 11, Direct3D 12.
         \see BufferDescriptor::stride
+        \see ResourceViewDescriptor::initialCount
         \see https://docs.microsoft.com/en-us/windows/win32/api/d3d11/ne-d3d11-d3d11_buffer_uav_flag
         */
         Counter         = (1 << 5),

@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_Tessellation)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
@@ -18,7 +18,7 @@
 class Example_Tessellation : public ExampleBase
 {
 
-    LLGL::ShaderProgram*    shaderProgram       = nullptr;
+    ShaderPipeline          shaderPipeline;
     LLGL::PipelineState*    pipeline[2]         = { nullptr };
 
     LLGL::Buffer*           vertexBuffer        = nullptr;
@@ -26,7 +26,6 @@ class Example_Tessellation : public ExampleBase
     LLGL::Buffer*           constantBuffer      = nullptr;
 
     LLGL::PipelineLayout*   pipelineLayout      = nullptr;
-    LLGL::ResourceHeap*     resourceHeap        = nullptr;
 
     #ifdef ENABLE_RENDER_PASS
     LLGL::RenderPass*       renderPass          = nullptr;
@@ -96,50 +95,30 @@ public:
         // Load shader program
         if (Supported(LLGL::ShadingLanguage::GLSL))
         {
-            shaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,         "Example.vert" },
-                    { LLGL::ShaderType::TessControl,    "Example.tesc" },
-                    { LLGL::ShaderType::TessEvaluation, "Example.tese" },
-                    { LLGL::ShaderType::Fragment,       "Example.frag" }
-                },
-                { vertexFormat }
-            );
+            shaderPipeline.vs = LoadShader({ LLGL::ShaderType::Vertex,         "Example.vert" }, { vertexFormat });
+            shaderPipeline.hs = LoadShader({ LLGL::ShaderType::TessControl,    "Example.tesc" });
+            shaderPipeline.ds = LoadShader({ LLGL::ShaderType::TessEvaluation, "Example.tese" });
+            shaderPipeline.ps = LoadShader({ LLGL::ShaderType::Fragment,       "Example.frag" });
         }
         else if (Supported(LLGL::ShadingLanguage::SPIRV))
         {
-            shaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,         "Example.450core.vert.spv" },
-                    { LLGL::ShaderType::TessControl,    "Example.450core.tesc.spv" },
-                    { LLGL::ShaderType::TessEvaluation, "Example.450core.tese.spv" },
-                    { LLGL::ShaderType::Fragment,       "Example.450core.frag.spv" }
-                },
-                { vertexFormat }
-            );
+            shaderPipeline.vs = LoadShader({ LLGL::ShaderType::Vertex,         "Example.450core.vert.spv" }, { vertexFormat });
+            shaderPipeline.hs = LoadShader({ LLGL::ShaderType::TessControl,    "Example.450core.tesc.spv" });
+            shaderPipeline.ds = LoadShader({ LLGL::ShaderType::TessEvaluation, "Example.450core.tese.spv" });
+            shaderPipeline.ps = LoadShader({ LLGL::ShaderType::Fragment,       "Example.450core.frag.spv" });
         }
         else if (Supported(LLGL::ShadingLanguage::HLSL))
         {
-            shaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,         "Example.hlsl", "VS", "vs_5_0" },
-                    { LLGL::ShaderType::TessControl,    "Example.hlsl", "HS", "hs_5_0" },
-                    { LLGL::ShaderType::TessEvaluation, "Example.hlsl", "DS", "ds_5_0" },
-                    { LLGL::ShaderType::Fragment,       "Example.hlsl", "PS", "ps_5_0" }
-                },
-                { vertexFormat }
-            );
+            shaderPipeline.vs = LoadShader({ LLGL::ShaderType::Vertex,         "Example.hlsl", "VS", "vs_5_0" }, { vertexFormat });
+            shaderPipeline.hs = LoadShader({ LLGL::ShaderType::TessControl,    "Example.hlsl", "HS", "hs_5_0" });
+            shaderPipeline.ds = LoadShader({ LLGL::ShaderType::TessEvaluation, "Example.hlsl", "DS", "ds_5_0" });
+            shaderPipeline.ps = LoadShader({ LLGL::ShaderType::Fragment,       "Example.hlsl", "PS", "ps_5_0" });
         }
         else if (Supported(LLGL::ShadingLanguage::Metal))
         {
-            shaderProgram = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Compute,        "Example.metal", "HS", "2.0" },
-                    { LLGL::ShaderType::Vertex,         "Example.metal", "DS", "2.0" },
-                    { LLGL::ShaderType::Fragment,       "Example.metal", "PS", "2.0" }
-                },
-                { vertexFormat }
-            );
+            shaderPipeline.hs = LoadShader({ LLGL::ShaderType::Compute,        "Example.metal", "HS", "2.0" });
+            shaderPipeline.ds = LoadShader({ LLGL::ShaderType::Vertex,         "Example.metal", "DS", "2.0" }, { vertexFormat });
+            shaderPipeline.ps = LoadShader({ LLGL::ShaderType::Fragment,       "Example.metal", "PS", "2.0" });
             constantBufferIndex = 1;//TODO: unify
         }
     }
@@ -149,15 +128,9 @@ public:
     {
         LLGL::RenderPassDescriptor renderPassDesc;
         {
-            renderPassDesc.colorAttachments =
-            {
-                LLGL::AttachmentFormatDescriptor{ swapChain->GetColorFormat(), LLGL::AttachmentLoadOp::Clear },
-            };
-            renderPassDesc.depthAttachment =
-            (
-                LLGL::AttachmentFormatDescriptor{ swapChain->GetDepthStencilFormat(), LLGL::AttachmentLoadOp::Clear }
-            );
-            renderPassDesc.samples = GetMultiSampleDesc().SampleCount();
+            renderPassDesc.colorAttachments[0]  = LLGL::AttachmentFormatDescriptor{ swapChain->GetColorFormat(), LLGL::AttachmentLoadOp::Clear };
+            renderPassDesc.depthAttachment      = LLGL::AttachmentFormatDescriptor{ swapChain->GetDepthStencilFormat(), LLGL::AttachmentLoadOp::Clear };
+            renderPassDesc.samples              = GetMultiSampleDesc().SampleCount();
         }
         renderPass = renderer->CreateRenderPass(renderPassDesc);
     }
@@ -182,19 +155,14 @@ public:
         }
         pipelineLayout = renderer->CreatePipelineLayout(plDesc);
 
-        // Create resource view heap
-        LLGL::ResourceHeapDescriptor resourceHeapDesc;
-        {
-            resourceHeapDesc.pipelineLayout = pipelineLayout;
-            resourceHeapDesc.resourceViews  = { constantBuffer };
-        }
-        resourceHeap = renderer->CreateResourceHeap(resourceHeapDesc);
-
         // Setup graphics pipeline descriptors
         LLGL::GraphicsPipelineDescriptor pipelineDesc;
         {
             // Set references to shader program, render pass, and pipeline layout
-            pipelineDesc.shaderProgram                  = shaderProgram;
+            pipelineDesc.vertexShader                   = shaderPipeline.vs;
+            pipelineDesc.tessControlShader              = shaderPipeline.hs;
+            pipelineDesc.tessEvaluationShader           = shaderPipeline.ds;
+            pipelineDesc.fragmentShader                 = shaderPipeline.ps;
             #ifdef ENABLE_RENDER_PASS
             pipelineDesc.renderPass                     = renderPass;
             #else
@@ -306,16 +274,8 @@ private:
                 // Set graphics pipeline with the shader
                 commands->SetPipelineState(*pipeline[showWireframe ? 1 : 0]);
 
-                if (resourceHeap)
-                {
-                    // Bind resource view heap to graphics pipeline
-                    commands->SetResourceHeap(*resourceHeap);
-                }
-                else
-                {
-                    // Set constant buffer only to tessellation shader stages
-                    commands->SetResource(*constantBuffer, constantBufferIndex, LLGL::BindFlags::ConstantBuffer, LLGL::StageFlags::AllTessStages);
-                }
+                // Bind constant buffer to graphics pipeline
+                commands->SetResource(0, *constantBuffer);
 
                 // Draw tessellated quads with 24=4*6 vertices from patches of 4 control points
                 commands->DrawIndexed(24, 0);

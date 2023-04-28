@@ -1,20 +1,20 @@
 /*
  * VKDeviceMemory.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "VKDeviceMemory.h"
 #include "../VKCore.h"
-#include "../../../Core/Helper.h"
+#include "../../ContainerTypes.h"
 
 
 namespace LLGL
 {
 
 
-VKDeviceMemory::VKDeviceMemory(const VKPtr<VkDevice>& device, VkDeviceSize size, std::uint32_t memoryTypeIndex) :
+VKDeviceMemory::VKDeviceMemory(VkDevice device, VkDeviceSize size, std::uint32_t memoryTypeIndex) :
     deviceMemory_    { device, vkFreeMemory },
     size_            { size                 },
     memoryTypeIndex_ { memoryTypeIndex      },

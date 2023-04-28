@@ -1,8 +1,8 @@
 /*
  * GeometryUtility.cpp
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GeometryUtility.h"
@@ -143,45 +143,46 @@ std::vector<std::uint32_t> GenerateCubeQuadIndices()
     };
 }
 
-std::vector<VertexPos3Tex2> GenerateTexturedCubeVertices()
+std::vector<TexturedVertex> GenerateTexturedCubeVertices()
 {
     return
     {
+        //   x   y   z      nx  ny  nz      u  v
         // front
-        { { -1, -1, -1 }, { 0, 1 } },
-        { { -1,  1, -1 }, { 0, 0 } },
-        { {  1,  1, -1 }, { 1, 0 } },
-        { {  1, -1, -1 }, { 1, 1 } },
+        { { -1, -1, -1 }, {  0,  0, -1 }, { 0, 1 } },
+        { { -1,  1, -1 }, {  0,  0, -1 }, { 0, 0 } },
+        { {  1,  1, -1 }, {  0,  0, -1 }, { 1, 0 } },
+        { {  1, -1, -1 }, {  0,  0, -1 }, { 1, 1 } },
 
         // right
-        { {  1, -1, -1 }, { 0, 1 } },
-        { {  1,  1, -1 }, { 0, 0 } },
-        { {  1,  1,  1 }, { 1, 0 } },
-        { {  1, -1,  1 }, { 1, 1 } },
+        { {  1, -1, -1 }, { +1,  0,  0 }, { 0, 1 } },
+        { {  1,  1, -1 }, { +1,  0,  0 }, { 0, 0 } },
+        { {  1,  1,  1 }, { +1,  0,  0 }, { 1, 0 } },
+        { {  1, -1,  1 }, { +1,  0,  0 }, { 1, 1 } },
 
         // left
-        { { -1, -1,  1 }, { 0, 1 } },
-        { { -1,  1,  1 }, { 0, 0 } },
-        { { -1,  1, -1 }, { 1, 0 } },
-        { { -1, -1, -1 }, { 1, 1 } },
+        { { -1, -1,  1 }, { -1,  0,  0 }, { 0, 1 } },
+        { { -1,  1,  1 }, { -1,  0,  0 }, { 0, 0 } },
+        { { -1,  1, -1 }, { -1,  0,  0 }, { 1, 0 } },
+        { { -1, -1, -1 }, { -1,  0,  0 }, { 1, 1 } },
 
         // top
-        { { -1,  1, -1 }, { 0, 1 } },
-        { { -1,  1,  1 }, { 0, 0 } },
-        { {  1,  1,  1 }, { 1, 0 } },
-        { {  1,  1, -1 }, { 1, 1 } },
+        { { -1,  1, -1 }, {  0, +1,  0 }, { 0, 1 } },
+        { { -1,  1,  1 }, {  0, +1,  0 }, { 0, 0 } },
+        { {  1,  1,  1 }, {  0, +1,  0 }, { 1, 0 } },
+        { {  1,  1, -1 }, {  0, +1,  0 }, { 1, 1 } },
 
         // bottom
-        { { -1, -1,  1 }, { 0, 1 } },
-        { { -1, -1, -1 }, { 0, 0 } },
-        { {  1, -1, -1 }, { 1, 0 } },
-        { {  1, -1,  1 }, { 1, 1 } },
+        { { -1, -1,  1 }, {  0, -1,  0 }, { 0, 1 } },
+        { { -1, -1, -1 }, {  0, -1,  0 }, { 0, 0 } },
+        { {  1, -1, -1 }, {  0, -1,  0 }, { 1, 0 } },
+        { {  1, -1,  1 }, {  0, -1,  0 }, { 1, 1 } },
 
         // back
-        { {  1, -1,  1 }, { 0, 1 } },
-        { {  1,  1,  1 }, { 0, 0 } },
-        { { -1,  1,  1 }, { 1, 0 } },
-        { { -1, -1,  1 }, { 1, 1 } },
+        { {  1, -1,  1 }, {  0,  0, +1 }, { 0, 1 } },
+        { {  1,  1,  1 }, {  0,  0, +1 }, { 0, 0 } },
+        { { -1,  1,  1 }, {  0,  0, +1 }, { 1, 0 } },
+        { { -1, -1,  1 }, {  0,  0, +1 }, { 1, 1 } },
     };
 }
 
@@ -205,31 +206,32 @@ static void CopyVertex(TangentSpaceVertex& dst, const TexturedVertex& src)
     dst.texCoord = src.texCoord;
 }
 
-static void GenerateTangentSpace(TangentSpaceVertex& v0, TangentSpaceVertex& v1, TangentSpaceVertex& v2)
+static void NormalizeTangents(TangentSpaceVertex& v, const Gs::Vector3f& tangent0, const Gs::Vector3f& tangent1)
 {
-    auto dv1 = v1.position - v0.position;
-    auto dv2 = v2.position - v0.position;
-
-    auto st1 = v1.texCoord - v0.texCoord;
-    auto st2 = v2.texCoord - v0.texCoord;
-
-    auto tangent    = (dv1 * st2.x) - (dv2 * st1.x);
-    auto bitangent  = (dv1 * st2.y) - (dv2 * st1.y);
-
-    tangent.Normalize();
-    bitangent.Normalize();
-
-    v0.tangents[0] = tangent;
-    v0.tangents[1] = bitangent;
-
-    v1.tangents[0] = tangent;
-    v1.tangents[1] = bitangent;
-
-    v2.tangents[0] = tangent;
-    v2.tangents[1] = bitangent;
+    v.tangents[0] = Gs::Cross(v.normal, tangent1).Normalized();
+    v.tangents[1] = Gs::Cross(v.normal, tangent0).Normalized();
 }
 
-std::vector<TangentSpaceVertex> GenerateTangentSpaceVertices(const std::vector<TexturedVertex>& vertices)
+static void GenerateTangentSpace(TangentSpaceVertex& v0, TangentSpaceVertex& v1, TangentSpaceVertex& v2)
+{
+    const Gs::Vector3f edge1 = v1.position - v0.position;
+    const Gs::Vector3f edge2 = v2.position - v0.position;
+
+    const Gs::Vector2f deltaUV1 = v1.texCoord - v0.texCoord;
+    const Gs::Vector2f deltaUV2 = v2.texCoord - v0.texCoord;
+
+    Gs::Vector3f tangent0 = edge1 * deltaUV2.y - edge2 * deltaUV1.y;
+    Gs::Vector3f tangent1 = edge1 * deltaUV2.x - edge2 * deltaUV1.x;
+
+    tangent0.Normalize();
+    tangent1.Normalize();
+
+    NormalizeTangents(v0, tangent0, tangent1);
+    NormalizeTangents(v1, tangent0, tangent1);
+    NormalizeTangents(v2, tangent0, tangent1);
+}
+
+std::vector<TangentSpaceVertex> GenerateTangentSpaceVertices(const LLGL::ArrayView<TexturedVertex>& vertices)
 {
     std::vector<TangentSpaceVertex> outp;
     outp.resize(vertices.size());

@@ -1,16 +1,18 @@
 /*
  * Shader.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_SHADER_H
 #define LLGL_SHADER_H
 
 
-#include "RenderSystemChild.h"
-#include "ShaderFlags.h"
+#include <LLGL/RenderSystemChild.h>
+#include <LLGL/ShaderFlags.h>
+#include <LLGL/ShaderReflection.h>
+#include <LLGL/Report.h>
 
 
 namespace LLGL
@@ -29,33 +31,39 @@ class LLGL_EXPORT Shader : public RenderSystemChild
     public:
 
         /**
-        \brief Returns true if this shader has any errors. Otherwise, the compilation was successful.
-        \remarks If the compilation failed, this shader can not be used for a graphics or compute pipeline.
-        However, the details about the failure can be queried by the GetReport function.
-        \see GetReport
+        \brief Returns a pointer to the report or null if there is none.
+        \remarks If there is a report, it might contain warnings and/or errors from shader compilation process.
+        \see Report
         */
-        virtual bool HasErrors() const = 0;
+        virtual const Report* GetReport() const = 0;
 
         /**
-        \brief Returns the report message after the shader compilation or an empty string if there is no report.
-        \todo Change return value to std::unique_ptr<LLGL::Blob>
-        \see ShaderProgram::GetReport
+        \brief Returns a reflection of the shader pipeline layout with all required resources for this shader.
+        \param[out] reflection Specifies the output shader reflection. If the function returns \c false, the content of this parameter is <b>undefined</b>!
+        \remarks The list of resources in the reflection output is always sorted by the following attributes (lower number means higher priority for sorting):
+        -# Resource type in ascending order (see BindingDescriptor::type).
+        -# Binding flags in ascending order (see BindingDescriptor::bindFlags).
+        -# Binding slot in ascending order (see BindingDescriptor::slot).
+        \remarks Here is an example of such a sorted list (pseudocode):
+        \code{.txt}
+        resources[0] = { type: ResourceType::Buffer,  bindFlags: BindFlags::ConstantBuffer, slot: 0 }
+        resources[1] = { type: ResourceType::Buffer,  bindFlags: BindFlags::ConstantBuffer, slot: 2 }
+        resources[2] = { type: ResourceType::Texture, bindFlags: BindFlags::Sampled,        slot: 0 }
+        resources[3] = { type: ResourceType::Texture, bindFlags: BindFlags::Sampled,        slot: 1 }
+        resources[4] = { type: ResourceType::Texture, bindFlags: BindFlags::Sampled,        slot: 2 }
+        resources[5] = { type: ResourceType::Sampler, bindFlags: 0,                         slot: 2 }
+        \endcode
+        \remarks The \c instanceDivisor and \c offset members of the vertex attributes are ignored by this function.
+        \return True, if the reflection was successful. Otherwise, the shader reflection failed and the content of the output parameter \c reflection is undefined.
+        \note Since Metal needs a complete pipeline state for shader reflection, this function is only supported for compute shaders in the Metal backend.
+        \see ShaderReflection::resources
+        \see ShaderReflection::vertexAttributes
+        \see VertexAttribute::instanceDivisor
+        \see VertexAttribute::offset
         */
-        virtual std::string GetReport() const = 0;
+        virtual bool Reflect(ShaderReflection& reflection) const = 0;
 
-        /**
-        \brief Returns true if this is a post-tessellation vertex shader.
-        \remarks This is only used for the Metal backend to determine whether a post-tessellation vertex shader is used in conjunction with a compute kernel.
-        \remarks Default implementation always returns false.
-        \note Only supported with: Metal.
-        */
-        virtual bool IsPostTessellationVertex() const;
-
-        /**
-        \brief Returns the shader stage bitmask for this shader object.
-        \see StageFlags
-        */
-        long GetStageFlags() const;
+    public:
 
         //! Returns the type of this shader.
         inline ShaderType GetType() const

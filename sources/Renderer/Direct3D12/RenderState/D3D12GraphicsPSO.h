@@ -1,8 +1,8 @@
 /*
  * D3D12GraphicsPSO.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D12_GRAPHICS_PIPELINE_H
@@ -20,7 +20,6 @@ namespace LLGL
 class D3D12Device;
 class D3D12RenderPass;
 class D3D12PipelineLayout;
-class D3D12ShaderProgram;
 class D3D12CommandContext;
 class ByteBufferIterator;
 
@@ -58,7 +57,6 @@ class D3D12GraphicsPSO final : public D3D12PipelineState
         void CreateNativePSOFromDesc(
             D3D12Device&                        device,
             const D3D12PipelineLayout&          pipelineLayout,
-            const D3D12ShaderProgram&           shaderProgram,
             const D3D12RenderPass*              renderPass,
             const GraphicsPipelineDescriptor&   desc,
             Serialization::Serializer*          writer

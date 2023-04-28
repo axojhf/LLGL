@@ -1,17 +1,16 @@
 /*
  * SamplerFlags.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_SAMPLER_FLAGS_H
 #define LLGL_SAMPLER_FLAGS_H
 
 
-#include "Export.h"
-#include "PipelineStateFlags.h"
-#include "ColorRGBA.h"
+#include <LLGL/Export.h>
+#include <LLGL/PipelineStateFlags.h>
 #include <cstddef>
 #include <cstdint>
 
@@ -118,12 +117,12 @@ struct LLGL_EXPORT SamplerDescriptor
     SamplerFilter       mipMapFilter    = SamplerFilter::Linear;
 
     /**
-    \brief Specifies whether MIP-maps are used or not. By default true.
+    \brief Specifies whether MIP-mapping is enabled or disabled. By default true.
+    \remarks If MIP-mapping is disabled, \c mipMapFilter is ignored.
     \remarks The number of MIP-maps a texture has is specified by the TextureDescriptor::mipLevels attribute.
     \see TextureDescriptor::mipLevels
-    \todo Rename to \c mipMapEnabled.
     */
-    bool                mipMapping      = true;
+    bool                mipMapEnabled   = true;
 
     /**
     \brief MIP-mapping level-of-detail (LOD) bias (or rather offset). By default 0.
@@ -151,13 +150,13 @@ struct LLGL_EXPORT SamplerDescriptor
     CompareOp           compareOp       = CompareOp::Less;
 
     /**
-    \brief Border color. By default black (0, 0, 0, 0).
-    \note For Vulkan and Metal, only three predefined border colors are supported:
-    - Transparenty black: <code>{0,0,0,0}</code>
+    \brief Border color vector with four components: red, green, blue, and alpha. By default transparent-black (0, 0, 0, 0).
+    \note For Vulkan and Metal as well as static samplers in general, only three predefined border colors are supported:
+    - Transparent black: <code>{0,0,0,0}</code>
     - Opaque black: <code>{0,0,0,1}</code>
     - Opaque white: <code>{1,1,1,1}</code>
     */
-    ColorRGBAf          borderColor     = { 0.0f, 0.0f, 0.0f, 0.0f };
+    float               borderColor[4]  = { 0.0f, 0.0f, 0.0f, 0.0f };
 };
 
 

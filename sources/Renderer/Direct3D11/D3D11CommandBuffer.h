@@ -1,8 +1,8 @@
 /*
  * D3D11CommandBuffer.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D11_COMMAND_BUFFER_H
@@ -27,6 +27,9 @@ class D3D11StateManager;
 class D3D11RenderTarget;
 class D3D11SwapChain;
 class D3D11RenderPass;
+class D3D11PipelineState;
+class D3D11PipelineLayout;
+class D3D11ConstantsCache;
 
 class D3D11CommandBuffer final : public CommandBuffer
 {
@@ -120,13 +123,8 @@ class D3D11CommandBuffer final : public CommandBuffer
 
         /* ----- Resources ----- */
 
-        void SetResourceHeap(
-            ResourceHeap&           resourceHeap,
-            std::uint32_t           firstSet        = 0,
-            const PipelineBindPoint bindPoint       = PipelineBindPoint::Undefined
-        ) override;
-
-        void SetResource(Resource& resource, std::uint32_t slot, long bindFlags, long stageFlags = StageFlags::AllStages) override;
+        void SetResourceHeap(ResourceHeap& resourceHeap, std::uint32_t descriptorSet = 0) override;
+        void SetResource(std::uint32_t descriptor, Resource& resource) override;
 
         void ResetResourceSlots(
             const ResourceType  resourceType,
@@ -153,21 +151,9 @@ class D3D11CommandBuffer final : public CommandBuffer
         /* ----- Pipeline States ----- */
 
         void SetPipelineState(PipelineState& pipelineState) override;
-        void SetBlendFactor(const ColorRGBAf& color) override;
+        void SetBlendFactor(const float color[4]) override;
         void SetStencilReference(std::uint32_t reference, const StencilFace stencilFace = StencilFace::FrontAndBack) override;
-
-        void SetUniform(
-            UniformLocation location,
-            const void*     data,
-            std::uint32_t   dataSize
-        ) override;
-
-        void SetUniforms(
-            UniformLocation location,
-            std::uint32_t   count,
-            const void*     data,
-            std::uint32_t   dataSize
-        ) override;
+        void SetUniforms(std::uint32_t first, const void* data, std::uint16_t dataSize) override;
 
         /* ----- Queries ----- */
 
@@ -243,9 +229,15 @@ class D3D11CommandBuffer final : public CommandBuffer
 
     private:
 
-        void SetBuffer(Buffer& buffer, std::uint32_t slot, long bindFlags, long stageFlags);
-        void SetTexture(Texture& texture, std::uint32_t slot, long bindFlags, long stageFlags);
-        void SetSampler(Sampler& sampler, std::uint32_t slot, long stageFlags);
+        // Wrapper structure for the framebuffer resource views.
+        struct D3D11FramebufferView
+        {
+            UINT                            numRenderTargetViews    = 0;
+            ID3D11RenderTargetView* const * renderTargetViews       = nullptr;
+            ID3D11DepthStencilView*         depthStencilView        = nullptr;
+        };
+
+    private:
 
         void ResetBufferResourceSlots(std::uint32_t firstSlot, std::uint32_t numSlots, long bindFlags, long stageFlags);
         void ResetTextureResourceSlots(std::uint32_t firstSlot, std::uint32_t numSlots, long bindFlags, long stageFlags);
@@ -264,13 +256,10 @@ class D3D11CommandBuffer final : public CommandBuffer
             const ClearValue*       clearValues
         );
 
-        void ClearColorBuffer(std::uint32_t idx, const ColorRGBAf& color);
-
-        void ClearColorBuffers(
+        std::uint32_t ClearColorBuffers(
             const std::uint8_t* colorBuffers,
             std::uint32_t       numClearValues,
-            const ClearValue*   clearValues,
-            std::uint32_t&      idx
+            const ClearValue*   clearValues
         );
 
         void ClearWithIntermediateUAV(ID3D11Buffer* buffer, UINT offset, UINT size, const UINT (&valuesVec4)[4]);
@@ -286,15 +275,9 @@ class D3D11CommandBuffer final : public CommandBuffer
             D3D11_USAGE                 usage           = D3D11_USAGE_DEFAULT
         );
 
-    private:
+        void FlushConstantsCache();
 
-        // Wrapper structure for the framebuffer resource views.
-        struct D3D11FramebufferView
-        {
-            UINT                            numRenderTargetViews    = 0;
-            ID3D11RenderTargetView* const * renderTargetViews       = nullptr;
-            ID3D11DepthStencilView*         depthStencilView        = nullptr;
-        };
+        void ResetRenderState();
 
     private:
 
@@ -322,6 +305,9 @@ class D3D11CommandBuffer final : public CommandBuffer
 
         D3D11FramebufferView                framebufferView_;
         D3D11RenderTarget*                  boundRenderTarget_      = nullptr;
+        const D3D11PipelineLayout*          boundPipelineLayout_    = nullptr;
+        D3D11PipelineState*                 boundPipelineState_     = nullptr;
+        D3D11ConstantsCache*                boundConstantsCache_    = nullptr;
 
 };
 

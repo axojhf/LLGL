@@ -1,8 +1,8 @@
 /*
  * MTComputePSO.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_MT_COMPUTE_PSO_H
@@ -17,7 +17,7 @@ namespace LLGL
 
 
 struct ComputePipelineDescriptor;
-class MTShaderProgram;
+class MTShader;
 
 class MTComputePSO final : public MTPipelineState
 {
@@ -29,16 +29,24 @@ class MTComputePSO final : public MTPipelineState
         // Binds the compute pipeline state with the specified command encoder.
         void Bind(id<MTLComputeCommandEncoder> computeEncoder);
 
-        // Returns the shader program this pipeline was created with.
-        inline const MTShaderProgram* GetShaderProgram() const
+        // Returns the compute shader this pipeline was created with.
+        inline const MTShader* GetComputeShader() const
         {
-            return shaderProgram_;
+            return computeShader_;
         }
 
     private:
 
+        id<MTLComputePipelineState> CreateNativeComputePipelineState(
+            id<MTLDevice>   device,
+            id<MTLFunction> function,
+            NSError*&       error
+        );
+
+    private:
+
         id<MTLComputePipelineState> computePipelineState_   = nil;
-        const MTShaderProgram*      shaderProgram_          = nullptr;
+        const MTShader*             computeShader_          = nullptr;
 
 };
 

@@ -1,8 +1,8 @@
 /*
  * D3D12Texture.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_D3D12_TEXTURE_H
@@ -20,6 +20,7 @@ namespace LLGL
 
 class D3D12Buffer;
 class D3D12CommandContext;
+class D3D12SubresourceContext;
 
 class D3D12Texture final : public Texture
 {
@@ -38,23 +39,25 @@ class D3D12Texture final : public Texture
 
         D3D12Texture(ID3D12Device* device, const TextureDescriptor& desc);
 
+        // Updates the specified subresource, i.e. a single MIP-map level but one or more array layers.
         void UpdateSubresource(
-            ID3D12Device*               device,
-            ID3D12GraphicsCommandList*  commandList,
-            ComPtr<ID3D12Resource>&     uploadBuffer,
-            D3D12_SUBRESOURCE_DATA&     subresourceData,
-            UINT                        mipLevel        = 0,
-            UINT                        firstArrayLayer = 0,
-            UINT                        numArrayLayers  = ~0
+            D3D12SubresourceContext&        context,
+            const D3D12_SUBRESOURCE_DATA&   subresourceData,
+            const TextureSubresource&       subresource
+        );
+
+        // Updates the specified subresource, i.e. a single MIP-map level but one or more array layers.
+        void UpdateSubresourceRegion(
+            D3D12SubresourceContext&        context,
+            const D3D12_SUBRESOURCE_DATA&   subresourceData,
+            const TextureRegion&            region
         );
 
         // Creates a CPU accessible readback buffer for this texture resource.
         void CreateSubresourceCopyAsReadbackBuffer(
-            ID3D12Device*           device,
-            D3D12CommandContext&    commandContext,
-            const TextureRegion&    region,
-            ComPtr<ID3D12Resource>& readbackBuffer,
-            UINT&                   rowStride
+            D3D12SubresourceContext&    context,
+            const TextureRegion&        region,
+            UINT&                       rowStride
         );
 
         // Creates either the default SRV for the entire resource or a subresource.
@@ -80,6 +83,9 @@ class D3D12Texture final : public Texture
         // Returns the texture region for the specified offset and extent with respect to the type of this texture (i.e. whether or not array layers are handled by the subresource index).
         D3D12_BOX CalcRegion(const Offset3D& offset, const Extent3D& extent) const;
 
+        // Returns the DXGI format of the texture's base format, i.e. GetBaseFormat() converted to DXGI format.
+        DXGI_FORMAT GetBaseDXFormat() const;
+
         // Returns true if MIP-maps can be generated for this texture .
         bool SupportsGenerateMips() const;
 
@@ -101,6 +107,12 @@ class D3D12Texture final : public Texture
             return resource_.native.Get();
         }
 
+        // Returns the base texture format. Equivalent of GetFormat().
+        inline Format GetBaseFormat() const
+        {
+            return baseFormat_;
+        }
+
         // Returns the hardware resource format.
         inline DXGI_FORMAT GetDXFormat() const
         {
@@ -117,6 +129,12 @@ class D3D12Texture final : public Texture
         inline UINT GetNumArrayLayers() const
         {
             return numArrayLayers_;
+        }
+
+        // Returns the extent this texture was created with, i.e. the extent of the base MIP level.
+        inline const Extent3D& GetExtent() const
+        {
+            return extent_;
         }
 
         // Returns the entire texture subresource.
@@ -158,9 +176,11 @@ class D3D12Texture final : public Texture
 
         D3D12Resource                   resource_;
 
+        Format                          baseFormat_     = Format::Undefined;
         DXGI_FORMAT                     format_         = DXGI_FORMAT_UNKNOWN;
         UINT                            numMipLevels_   = 0;
         UINT                            numArrayLayers_ = 0;
+        Extent3D                        extent_;
 
         ComPtr<ID3D12DescriptorHeap>    mipDescHeap_;
 

@@ -1,16 +1,22 @@
 /*
  * Win32Timer.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
-#include "Win32Timer.h"
-#include "../../Core/Helper.h"
+#include <LLGL/Timer.h>
+#include "Win32LeanAndMean.h"
+#include <Windows.h>
 #include <algorithm>
+#include <atomic>
+#include <mutex>
 
 
 namespace LLGL
+{
+
+namespace Timer
 {
 
 
@@ -20,78 +26,74 @@ This is caused by unexpected data across the PCI to ISA bridge, aka south bridge
 */
 #define LLGL_LEAP_FORWARD_ADJUSTMENT
 
-std::unique_ptr<Timer> Timer::Create()
+static LONGLONG GetPerformanceFrequencyQuadPart()
 {
-    return MakeUnique<Win32Timer>();
+    LARGE_INTEGER frequency;
+    QueryPerformanceFrequency(&frequency);
+    return frequency.QuadPart;
 }
 
-Win32Timer::Win32Timer()
+LLGL_EXPORT std::uint64_t Frequency()
 {
-    QueryPerformanceFrequency(&clockFrequency_);
+    return static_cast<std::uint64_t>(GetPerformanceFrequencyQuadPart());
 }
 
-void Win32Timer::Start()
+static ULONGLONG GetWin32TickCount()
 {
-    /* Query current performance counter ticks */
-    QueryPerformanceCounter(&t0_);
-
-    #ifdef LLGL_LEAP_FORWARD_ADJUSTMENT
-    startTick_ = GetTickCount();
+    #if WINVER >= 0x0600
+    return GetTickCount64();
+    #else
+    return GetTickCount();
     #endif
-
-    running_ = true;
 }
 
-std::uint64_t Win32Timer::Stop()
+LLGL_EXPORT std::uint64_t Tick()
 {
-    /* Reset running state */
-    if (!running_)
-        return 0;
-
-    running_ = false;
-
-    /* Query elapsed ticks */
-    QueryPerformanceCounter(&t1_);
-    auto elapsedTime = t1_.QuadPart - t0_.QuadPart;
+    LARGE_INTEGER highResTick;
+    QueryPerformanceCounter(&highResTick);
 
     #ifdef LLGL_LEAP_FORWARD_ADJUSTMENT
-
-    /* Compute the number of millisecond ticks elapsed */
-    auto msecTicks          = static_cast<long long>(1000 * elapsedTime / clockFrequency_.QuadPart);
 
     /* Check for unexpected leaps */
-    auto elapsedLowTicks    = static_cast<long long>(GetTickCount() - startTick_);
-    auto msecOff            = msecTicks - elapsedLowTicks;
+    static std::mutex tickMutex;
+    std::lock_guard<std::mutex> guard{ tickMutex };
 
-    if (std::abs(msecOff) > 100)
+    static ULONGLONG lastLowResTick;
+    static LONGLONG lastHighResTick;
+    static LONGLONG lastHighResElapsedTime;
+
+    static const LONGLONG frequency = GetPerformanceFrequencyQuadPart();
+
+    const ULONGLONG lowResTick          = GetWin32TickCount();
+
+    const ULONGLONG elapsedLowResMS     = (lowResTick - lastLowResTick);
+    LONGLONG        elapsedHighResMS    = (highResTick.QuadPart - lastHighResTick) * 1000 / frequency;
+
+    const LONGLONG  millisecondsOff     = elapsedHighResMS - elapsedLowResMS;
+
+    if (std::abs(millisecondsOff) > 100 && lastLowResTick > 0)
     {
-        /* Adjust the starting time forwards */
-        LONGLONG msecAdjustment = std::min<LONGLONG>(
-            ( msecOff * clockFrequency_.QuadPart / 1000 ),
-            ( elapsedTime - prevElapsedTime_ )
+        /* Adjust leap by difference */
+        const LONGLONG adjustment = (std::min)(
+            (millisecondsOff * frequency / 1000),
+            (elapsedHighResMS - lastHighResElapsedTime)
         );
-        elapsedTime -= msecAdjustment;
+        highResTick.QuadPart -= adjustment;
+        elapsedHighResMS -= adjustment;
     }
 
-    /* Store the current elapsed time for adjustments next time */
-    prevElapsedTime_ = elapsedTime;
+    /* Store last elapsed time */
+    lastLowResTick          = lowResTick;
+    lastHighResTick         = highResTick.QuadPart;
+    lastHighResElapsedTime  = elapsedHighResMS;
 
-    #endif
+    #endif // /LLGL_LEAP_FORWARD_ADJUSTMENT
 
-    /* Return final elapsed time */
-    return static_cast<std::uint64_t>(elapsedTime);
+    return highResTick.QuadPart;
 }
 
-std::uint64_t Win32Timer::GetFrequency() const
-{
-    return static_cast<std::uint64_t>(clockFrequency_.QuadPart);
-}
 
-bool Win32Timer::IsRunning() const
-{
-    return running_;
-}
-
+} // /namespace Timer
 
 } // /namespace LLGL
 

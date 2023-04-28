@@ -1,13 +1,13 @@
 /*
  * AndroidGLSwapChainContext.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "AndroidGLSwapChainContext.h"
 #include "AndroidGLContext.h"
-#include "../../../../Core/Helper.h"
+#include "../../../../Core/CoreUtils.h"
 #include <LLGL/Platform/NativeHandle.h>
 
 
@@ -39,8 +39,12 @@ AndroidGLSwapChainContext::AndroidGLSwapChainContext(AndroidGLContext& context, 
     display_           { context.GetEGLDisplay() },
     context_           { context.GetEGLContext() }
 {
+    /* Get native surface handle */
+    NativeHandle nativeHandle;
+    surface.GetNativeHandle(&nativeHandle, sizeof(nativeHandle));
+
     /* Create drawable surface */
-    surface_ = eglCreateWindowSurface(display_, config_, nativeHandle.window, nullptr);
+    surface_ = eglCreateWindowSurface(display_, context.GetEGLConfig(), nativeHandle.window, nullptr);
     if (!surface_)
         throw std::runtime_error("eglCreateWindowSurface failed");
 }

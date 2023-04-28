@@ -1,8 +1,8 @@
 /*
  * VKDeviceMemory.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_VK_DEVICE_MEMORY_MANAGER_H
@@ -12,6 +12,7 @@
 //#include "../Vulkan.h"
 #include <vulkan/vulkan.h>
 #include "../VKPtr.h"
+#include "../../ContainerTypes.h"
 #include "VKDeviceMemory.h"
 #include "VKDeviceMemoryRegion.h"
 #include <vector>
@@ -34,7 +35,7 @@ class VKDeviceMemoryManager
     public:
 
         VKDeviceMemoryManager(
-            const VKPtr<VkDevice>&                  device,
+            VkDevice                                device,
             const VkPhysicalDeviceMemoryProperties& memoryProperties,
             VkDeviceSize                            minAllocationSize,
             bool                                    reduceFragmentation
@@ -88,13 +89,13 @@ class VKDeviceMemoryManager
 
     private:
 
-        const VKPtr<VkDevice>&                          device_;
-        VkPhysicalDeviceMemoryProperties                memoryProperties_;
+        VkDevice                                    device_;
+        VkPhysicalDeviceMemoryProperties            memoryProperties_;
 
-        VkDeviceSize                                    minAllocationSize_      = 1024*1024;
-        bool                                            reduceFragmentation_    = false;
+        VkDeviceSize                                minAllocationSize_      = 1024*1024;
+        bool                                        reduceFragmentation_    = false;
 
-        std::vector<std::unique_ptr<VKDeviceMemory>>    chunks_;
+        UnorderedUniquePtrVector<VKDeviceMemory>    chunks_;
 
 };
 

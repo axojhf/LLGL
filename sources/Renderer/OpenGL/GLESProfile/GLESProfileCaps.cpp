@@ -1,8 +1,8 @@
 /*
  * GLESProfileCaps.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "../GLRenderingCaps.h"
@@ -10,7 +10,7 @@
 #include "../GLTypes.h"
 #include "../Ext/GLExtensions.h"
 #include "../Ext/GLExtensionRegistry.h"
-#include "../../../Core/Helper.h"
+#include "../../../Core/CoreUtils.h"
 #include <cstdint>
 #include <limits>
 
@@ -134,7 +134,6 @@ static void GLGetSupportedTextureFormats(std::vector<Format>& textureFormats)
 static void GLGetSupportedFeatures(RenderingFeatures& features, GLint version)
 {
     /* Query all boolean capabilies by their respective OpenGL extension */
-    features.hasDirectResourceBinding       = true;
     features.hasRenderTargets               = true;             // GLES 2.0
     features.has3DTextures                  = true;             // GLES 2.0
     features.hasCubeTextures                = true;             // GLES 2.0

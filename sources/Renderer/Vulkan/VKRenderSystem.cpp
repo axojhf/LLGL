@@ -1,66 +1,38 @@
 /*
  * VKRenderSystem.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <LLGL/Platform/Platform.h>
 #include "VKRenderSystem.h"
 #include "Ext/VKExtensionLoader.h"
 #include "Ext/VKExtensions.h"
+#include "Ext/VKExtensionRegistry.h"
 #include "Memory/VKDeviceMemory.h"
 #include "../RenderSystemUtils.h"
 #include "../TextureUtils.h"
 #include "../CheckedCast.h"
-#include "../../Core/Helper.h"
+#include "../../Core/CoreUtils.h"
 #include "../../Core/Vendor.h"
 #include "VKCore.h"
 #include "VKTypes.h"
 #include "VKInitializers.h"
 #include "RenderState/VKPredicateQueryHeap.h"
 #include "RenderState/VKComputePSO.h"
-#include <LLGL/Log.h>
+#include "Shader/VKShaderModulePool.h"
+#include "../../Platform/Debug.h"
 #include <LLGL/ImageFlags.h>
+#include <limits>
 
 
 namespace LLGL
 {
 
 
-/* ----- Internal functions ----- */
-
-static VkResult CreateDebugReportCallbackEXT(VkInstance instance, const VkDebugReportCallbackCreateInfoEXT* createInfo, const VkAllocationCallbacks* allocator, VkDebugReportCallbackEXT* callback)
-{
-    auto func = reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetInstanceProcAddr(instance, "vkCreateDebugReportCallbackEXT"));
-    if (func != nullptr)
-        return func(instance, createInfo, allocator, callback);
-    else
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-static void DestroyDebugReportCallbackEXT(VkInstance instance, VkDebugReportCallbackEXT callback, const VkAllocationCallbacks* allocator)
-{
-    auto func = reinterpret_cast<PFN_vkDestroyDebugReportCallbackEXT>(vkGetInstanceProcAddr(instance, "vkDestroyDebugReportCallbackEXT"));
-    if (func != nullptr)
-        func(instance, callback, allocator);
-}
-
-static VkBufferUsageFlags GetStagingVkBufferUsageFlags(long cpuAccessFlags)
-{
-    if ((cpuAccessFlags & CPUAccessFlags::Write) != 0)
-        return VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    else
-        return VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-}
-
-
-/* ----- Common ----- */
-
 VKRenderSystem::VKRenderSystem(const RenderSystemDescriptor& renderSystemDesc) :
-    instance_              { vkDestroyInstance                        },
-    debugReportCallback_   { instance_, DestroyDebugReportCallbackEXT },
-    defaultPipelineLayout_ { device_, vkDestroyPipelineLayout         }
+    instance_ { vkDestroyInstance }
 {
     /* Extract optional renderer configuartion */
     auto rendererConfigVK = GetRendererConfiguration<RendererConfigurationVulkan>(renderSystemDesc);
@@ -75,7 +47,7 @@ VKRenderSystem::VKRenderSystem(const RenderSystemDescriptor& renderSystemDesc) :
     CreateLogicalDevice();
 
     /* Create default resources */
-    CreateDefaultPipelineLayout();
+    VKPipelineLayout::CreateDefault(device_);
 
     /* Create device memory manager */
     deviceMemoryMngr_ = MakeUnique<VKDeviceMemoryManager>(
@@ -89,21 +61,20 @@ VKRenderSystem::VKRenderSystem(const RenderSystemDescriptor& renderSystemDesc) :
 VKRenderSystem::~VKRenderSystem()
 {
     device_.WaitIdle();
+    VKShaderModulePool::Get().Clear();
+    VKPipelineLayout::ReleaseDefault();
 }
 
 /* ----- Swap-chain ----- */
 
-SwapChain* VKRenderSystem::CreateSwapChain(const SwapChainDescriptor& desc, const std::shared_ptr<Surface>& surface)
+SwapChain* VKRenderSystem::CreateSwapChain(const SwapChainDescriptor& swapChainDesc, const std::shared_ptr<Surface>& surface)
 {
-    return TakeOwnership(
-        swapChains_,
-        MakeUnique<VKSwapChain>(instance_, physicalDevice_, device_, *deviceMemoryMngr_, desc, surface)
-    );
+    return swapChains_.emplace<VKSwapChain>(instance_, physicalDevice_, device_, *deviceMemoryMngr_, swapChainDesc, surface);
 }
 
 void VKRenderSystem::Release(SwapChain& swapChain)
 {
-    RemoveFromUniqueSet(swapChains_, &swapChain);
+    swapChains_.erase(&swapChain);
 }
 
 /* ----- Command queues ----- */
@@ -115,52 +86,57 @@ CommandQueue* VKRenderSystem::GetCommandQueue()
 
 /* ----- Command buffers ----- */
 
-CommandBuffer* VKRenderSystem::CreateCommandBuffer(const CommandBufferDescriptor& desc)
+CommandBuffer* VKRenderSystem::CreateCommandBuffer(const CommandBufferDescriptor& commandBufferDesc)
 {
-    return TakeOwnership(
-        commandBuffers_,
-        MakeUnique<VKCommandBuffer>(physicalDevice_, device_, device_.GetVkQueue(), device_.GetQueueFamilyIndices(), desc)
-    );
+    return commandBuffers_.emplace<VKCommandBuffer>(physicalDevice_, device_, device_.GetVkQueue(), device_.GetQueueFamilyIndices(), commandBufferDesc);
 }
 
 void VKRenderSystem::Release(CommandBuffer& commandBuffer)
 {
-    RemoveFromUniqueSet(commandBuffers_, &commandBuffer);
+    commandBuffers_.erase(&commandBuffer);
 }
 
 /* ----- Buffers ------ */
 
-Buffer* VKRenderSystem::CreateBuffer(const BufferDescriptor& desc, const void* initialData)
+static VkBufferUsageFlags GetStagingVkBufferUsageFlags(long cpuAccessFlags)
 {
-    AssertCreateBuffer(desc, static_cast<uint64_t>(std::numeric_limits<VkDeviceSize>::max()));
+    if ((cpuAccessFlags & CPUAccessFlags::Write) != 0)
+        return VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    else
+        return VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+}
+
+Buffer* VKRenderSystem::CreateBuffer(const BufferDescriptor& bufferDesc, const void* initialData)
+{
+    AssertCreateBuffer(bufferDesc, static_cast<uint64_t>(std::numeric_limits<VkDeviceSize>::max()));
 
     /* Create staging buffer */
     VkBufferCreateInfo stagingCreateInfo;
     BuildVkBufferCreateInfo(
         stagingCreateInfo,
-        static_cast<VkDeviceSize>(desc.size),
-        GetStagingVkBufferUsageFlags(desc.cpuAccessFlags)
+        static_cast<VkDeviceSize>(bufferDesc.size),
+        GetStagingVkBufferUsageFlags(bufferDesc.cpuAccessFlags)
     );
 
-    auto stagingBuffer = CreateStagingBuffer(stagingCreateInfo, initialData, desc.size);
+    auto stagingBuffer = CreateStagingBufferAndInitialize(stagingCreateInfo, initialData, bufferDesc.size);
 
     /* Create primary buffer object */
-    auto buffer = TakeOwnership(buffers_, MakeUnique<VKBuffer>(device_, desc));
+    auto* bufferVK = buffers_.emplace<VKBuffer>(device_, bufferDesc);
 
     /* Allocate device memory */
     auto memoryRegion = deviceMemoryMngr_->Allocate(
-        buffer->GetDeviceBuffer().GetRequirements(),
+        bufferVK->GetDeviceBuffer().GetRequirements(),
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     );
-    buffer->BindMemoryRegion(device_, memoryRegion);
+    bufferVK->BindMemoryRegion(device_, memoryRegion);
 
     /* Copy staging buffer into hardware buffer */
-    device_.CopyBuffer(stagingBuffer.GetVkBuffer(), buffer->GetVkBuffer(), static_cast<VkDeviceSize>(desc.size));
+    device_.CopyBuffer(stagingBuffer.GetVkBuffer(), bufferVK->GetVkBuffer(), static_cast<VkDeviceSize>(bufferDesc.size));
 
-    if (desc.cpuAccessFlags != 0 || (desc.miscFlags & MiscFlags::DynamicUsage) != 0)
+    if (bufferDesc.cpuAccessFlags != 0 || (bufferDesc.miscFlags & MiscFlags::DynamicUsage) != 0)
     {
         /* Store ownership of staging buffer */
-        buffer->TakeStagingBuffer(std::move(stagingBuffer));
+        bufferVK->TakeStagingBuffer(std::move(stagingBuffer));
     }
     else
     {
@@ -168,13 +144,13 @@ Buffer* VKRenderSystem::CreateBuffer(const BufferDescriptor& desc, const void* i
         stagingBuffer.ReleaseMemoryRegion(*deviceMemoryMngr_);
     }
 
-    return buffer;
+    return bufferVK;
 }
 
 BufferArray* VKRenderSystem::CreateBufferArray(std::uint32_t numBuffers, Buffer* const * bufferArray)
 {
     AssertCreateBufferArray(numBuffers, bufferArray);
-    return TakeOwnership(bufferArrays_, MakeUnique<VKBufferArray>(numBuffers, bufferArray));
+    return bufferArrays_.emplace<VKBufferArray>(numBuffers, bufferArray);
 }
 
 void VKRenderSystem::Release(Buffer& buffer)
@@ -183,25 +159,25 @@ void VKRenderSystem::Release(Buffer& buffer)
     auto& bufferVK = LLGL_CAST(VKBuffer&, buffer);
     bufferVK.GetDeviceBuffer().ReleaseMemoryRegion(*deviceMemoryMngr_);
     bufferVK.GetStagingDeviceBuffer().ReleaseMemoryRegion(*deviceMemoryMngr_);
-    RemoveFromUniqueSet(buffers_, &buffer);
+    buffers_.erase(&buffer);
 }
 
 void VKRenderSystem::Release(BufferArray& bufferArray)
 {
-    RemoveFromUniqueSet(bufferArrays_, &bufferArray);
+    bufferArrays_.erase(&bufferArray);
 }
 
-void VKRenderSystem::WriteBuffer(Buffer& dstBuffer, std::uint64_t dstOffset, const void* data, std::uint64_t dataSize)
+void VKRenderSystem::WriteBuffer(Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t dataSize)
 {
-    auto& bufferVK = LLGL_CAST(VKBuffer&, dstBuffer);
+    auto& bufferVK = LLGL_CAST(VKBuffer&, buffer);
 
     if (bufferVK.GetStagingVkBuffer() != VK_NULL_HANDLE)
     {
-        /* Copy data to staging buffer memory */
-        device_.WriteBuffer(bufferVK.GetStagingDeviceBuffer(), data, dataSize, dstOffset);
+        /* Copy input data to staging buffer memory */
+        device_.WriteBuffer(bufferVK.GetStagingDeviceBuffer(), data, dataSize, offset);
 
         /* Copy staging buffer into hardware buffer */
-        device_.CopyBuffer(bufferVK.GetStagingVkBuffer(), bufferVK.GetVkBuffer(), dataSize, dstOffset, dstOffset);
+        device_.CopyBuffer(bufferVK.GetStagingVkBuffer(), bufferVK.GetVkBuffer(), dataSize, offset, offset);
     }
     else
     {
@@ -213,10 +189,45 @@ void VKRenderSystem::WriteBuffer(Buffer& dstBuffer, std::uint64_t dstOffset, con
             (VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
         );
 
-        auto stagingBuffer = CreateStagingBuffer(stagingCreateInfo, data, dataSize);
+        auto stagingBuffer = CreateStagingBufferAndInitialize(stagingCreateInfo, data, dataSize);
 
         /* Copy staging buffer into hardware buffer */
-        device_.CopyBuffer(stagingBuffer.GetVkBuffer(), bufferVK.GetVkBuffer(), dataSize, 0, dstOffset);
+        device_.CopyBuffer(stagingBuffer.GetVkBuffer(), bufferVK.GetVkBuffer(), dataSize, 0, offset);
+
+        /* Release device memory region of staging buffer */
+        stagingBuffer.ReleaseMemoryRegion(*deviceMemoryMngr_);
+    }
+}
+
+void VKRenderSystem::ReadBuffer(Buffer& buffer, std::uint64_t offset, void* data, std::uint64_t dataSize)
+{
+    auto& bufferVK = LLGL_CAST(VKBuffer&, buffer);
+
+    if (bufferVK.GetStagingVkBuffer() != VK_NULL_HANDLE)
+    {
+        /* Copy hardware buffer into staging buffer */
+        device_.CopyBuffer(bufferVK.GetVkBuffer(), bufferVK.GetStagingVkBuffer(), dataSize, offset, offset);
+
+        /* Copy staging buffer memory to output data */
+        device_.ReadBuffer(bufferVK.GetStagingDeviceBuffer(), data, dataSize, offset);
+    }
+    else
+    {
+        /* Create staging buffer */
+        VkBufferCreateInfo stagingCreateInfo;
+        BuildVkBufferCreateInfo(
+            stagingCreateInfo,
+            dataSize,
+            (VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+        );
+
+        auto stagingBuffer = CreateStagingBuffer(stagingCreateInfo);
+
+        /* Copy hardware buffer into staging buffer */
+        device_.CopyBuffer(bufferVK.GetVkBuffer(), stagingBuffer.GetVkBuffer(), dataSize, offset, 0);
+
+        /* Copy staging buffer memory to output data */
+        device_.ReadBuffer(stagingBuffer, data, dataSize, 0);
 
         /* Release device memory region of staging buffer */
         stagingBuffer.ReleaseMemoryRegion(*deviceMemoryMngr_);
@@ -226,41 +237,25 @@ void VKRenderSystem::WriteBuffer(Buffer& dstBuffer, std::uint64_t dstOffset, con
 void* VKRenderSystem::MapBuffer(Buffer& buffer, const CPUAccess access)
 {
     auto& bufferVK = LLGL_CAST(VKBuffer&, buffer);
+    return bufferVK.Map(device_, access, 0, bufferVK.GetSize());
+}
 
-    if (auto stagingBuffer = bufferVK.GetStagingVkBuffer())
-    {
-        /* Copy GPU local buffer into staging buffer for read accces */
-        if (access != CPUAccess::WriteOnly && access != CPUAccess::WriteDiscard)
-            device_.CopyBuffer(bufferVK.GetVkBuffer(), stagingBuffer, bufferVK.GetSize());
-
-        /* Map staging buffer */
-        return bufferVK.Map(device_, access);
-    }
-
-    return nullptr;
+void* VKRenderSystem::MapBuffer(Buffer& buffer, const CPUAccess access, std::uint64_t offset, std::uint64_t length)
+{
+    auto& bufferVK = LLGL_CAST(VKBuffer&, buffer);
+    return bufferVK.Map(device_, access, static_cast<VkDeviceSize>(offset), static_cast<VkDeviceSize>(length));
 }
 
 void VKRenderSystem::UnmapBuffer(Buffer& buffer)
 {
     auto& bufferVK = LLGL_CAST(VKBuffer&, buffer);
-
-    if (auto stagingBuffer = bufferVK.GetStagingVkBuffer())
-    {
-        /* Unmap staging buffer */
-        bufferVK.Unmap(device_);
-
-        /* Copy staging buffer into GPU local buffer for write access */
-        if (bufferVK.GetMappedCPUAccess() != CPUAccess::ReadOnly)
-            device_.CopyBuffer(stagingBuffer, bufferVK.GetVkBuffer(), bufferVK.GetSize());
-    }
+    bufferVK.Unmap(device_);
 }
 
 /* ----- Textures ----- */
 
 Texture* VKRenderSystem::CreateTexture(const TextureDescriptor& textureDesc, const SrcImageDescriptor* imageDesc)
 {
-    const auto& cfg = GetConfiguration();
-
     /* Determine size of image for staging buffer */
     const auto imageSize        = NumMipTexels(textureDesc, 0);
     const auto initialDataSize  = static_cast<VkDeviceSize>(GetMemoryFootprint(textureDesc.format, imageSize));
@@ -276,7 +271,7 @@ Texture* VKRenderSystem::CreateTexture(const TextureDescriptor& textureDesc, con
         if (formatAttribs.bitSize > 0 && (formatAttribs.flags & FormatFlags::IsCompressed) == 0)
         {
             /* Convert image format (will be null if no conversion is necessary) */
-            intermediateData = ConvertImageBuffer(*imageDesc, formatAttribs.format, formatAttribs.dataType, cfg.threadCount);
+            intermediateData = ConvertImageBuffer(*imageDesc, formatAttribs.format, formatAttribs.dataType, Constants::maxThreadCount);
         }
 
         if (intermediateData)
@@ -304,10 +299,7 @@ Texture* VKRenderSystem::CreateTexture(const TextureDescriptor& textureDesc, con
         /* Allocate default image data */
         const auto& formatAttribs = GetFormatAttribs(textureDesc.format);
         if (formatAttribs.bitSize > 0 && (formatAttribs.flags & FormatFlags::IsCompressed) == 0)
-        {
-            const ColorRGBAd fillColor{ textureDesc.clearValue.color.Cast<double>() };
-            intermediateData = GenerateImageBuffer(formatAttribs.format, formatAttribs.dataType, imageSize, fillColor);
-        }
+            intermediateData = GenerateImageBuffer(formatAttribs.format, formatAttribs.dataType, imageSize, textureDesc.clearValue.color);
         else
             intermediateData = AllocateByteBuffer(static_cast<std::size_t>(initialDataSize), UninitializeTag{});
 
@@ -319,13 +311,13 @@ Texture* VKRenderSystem::CreateTexture(const TextureDescriptor& textureDesc, con
     BuildVkBufferCreateInfo(
         stagingCreateInfo,
         initialDataSize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT  // <-- TODO: support read/write mapping //GetStagingVkBufferUsageFlags(desc.cpuAccessFlags)
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT
     );
 
-    auto stagingBuffer = CreateStagingBuffer(stagingCreateInfo, initialData, initialDataSize);
+    auto stagingBuffer = CreateStagingBufferAndInitialize(stagingCreateInfo, initialData, initialDataSize);
 
     /* Create device texture */
-    auto textureVK  = MakeUnique<VKTexture>(device_, *deviceMemoryMngr_, textureDesc);
+    auto* textureVK  = textures_.emplace<VKTexture>(device_, *deviceMemoryMngr_, textureDesc);
 
     /* Copy staging buffer into hardware texture, then transfer image into sampling-ready state */
     auto cmdBuffer = device_.AllocCommandBuffer();
@@ -380,7 +372,7 @@ Texture* VKRenderSystem::CreateTexture(const TextureDescriptor& textureDesc, con
     /* Create image view for texture */
     textureVK->CreateInternalImageView(device_);
 
-    return TakeOwnership(textures_, std::move(textureVK));
+    return textureVK;
 }
 
 void VKRenderSystem::Release(Texture& texture)
@@ -388,14 +380,12 @@ void VKRenderSystem::Release(Texture& texture)
     /* Release device memory region, then release texture object */
     auto& textureVK = LLGL_CAST(VKTexture&, texture);
     deviceMemoryMngr_->Release(textureVK.GetMemoryRegion());
-    RemoveFromUniqueSet(textures_, &texture);
+    textures_.erase(&texture);
 }
 
 void VKRenderSystem::WriteTexture(Texture& texture, const TextureRegion& textureRegion, const SrcImageDescriptor& imageDesc)
 {
     auto& textureVK = LLGL_CAST(VKTexture&, texture);
-
-    const auto& cfg = GetConfiguration();
 
     /* Determine size of image for staging buffer */
     const auto& offset          = textureRegion.offset;
@@ -415,7 +405,7 @@ void VKRenderSystem::WriteTexture(Texture& texture, const TextureRegion& texture
     if (formatAttribs.bitSize > 0 && (formatAttribs.flags & FormatFlags::IsCompressed) == 0)
     {
         /* Convert image format (will be null if no conversion is necessary) */
-        intermediateData = ConvertImageBuffer(imageDesc, formatAttribs.format, formatAttribs.dataType, cfg.threadCount);
+        intermediateData = ConvertImageBuffer(imageDesc, formatAttribs.format, formatAttribs.dataType, Constants::maxThreadCount);
     }
 
     if (intermediateData)
@@ -443,10 +433,10 @@ void VKRenderSystem::WriteTexture(Texture& texture, const TextureRegion& texture
     BuildVkBufferCreateInfo(
         stagingCreateInfo,
         imageDataSize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT  // <-- TODO: support read/write mapping //GetStagingVkBufferUsageFlags(desc.cpuAccessFlags)
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT  // <-- TODO: support read/write mapping //GetStagingVkBufferUsageFlags(bufferDesc.cpuAccessFlags)
     );
 
-    auto stagingBuffer = CreateStagingBuffer(stagingCreateInfo, imageData, imageDataSize);
+    auto stagingBuffer = CreateStagingBufferAndInitialize(stagingCreateInfo, imageData, imageDataSize);
 
     /* Copy staging buffer into hardware texture, then transfer image into sampling-ready state */
     auto cmdBuffer = device_.AllocCommandBuffer();
@@ -455,7 +445,7 @@ void VKRenderSystem::WriteTexture(Texture& texture, const TextureRegion& texture
             cmdBuffer,
             image,
             textureVK.GetVkFormat(),
-            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             subresource
         );
@@ -555,90 +545,82 @@ void VKRenderSystem::ReadTexture(Texture& texture, const TextureRegion& textureR
 
 /* ----- Sampler States ---- */
 
-Sampler* VKRenderSystem::CreateSampler(const SamplerDescriptor& desc)
+Sampler* VKRenderSystem::CreateSampler(const SamplerDescriptor& samplerDesc)
 {
-    return TakeOwnership(samplers_, MakeUnique<VKSampler>(device_, desc));
+    return samplers_.emplace<VKSampler>(device_, samplerDesc);
 }
 
 void VKRenderSystem::Release(Sampler& sampler)
 {
-    RemoveFromUniqueSet(samplers_, &sampler);
+    samplers_.erase(&sampler);
 }
 
 /* ----- Resource Heaps ----- */
 
-ResourceHeap* VKRenderSystem::CreateResourceHeap(const ResourceHeapDescriptor& desc)
+ResourceHeap* VKRenderSystem::CreateResourceHeap(const ResourceHeapDescriptor& resourceHeapDesc, const ArrayView<ResourceViewDescriptor>& initialResourceViews)
 {
-    return TakeOwnership(resourceHeaps_, MakeUnique<VKResourceHeap>(device_, desc));
+    return resourceHeaps_.emplace<VKResourceHeap>(device_, resourceHeapDesc, initialResourceViews);
 }
 
 void VKRenderSystem::Release(ResourceHeap& resourceHeap)
 {
-    RemoveFromUniqueSet(resourceHeaps_, &resourceHeap);
+    resourceHeaps_.erase(&resourceHeap);
+}
+
+std::uint32_t VKRenderSystem::WriteResourceHeap(ResourceHeap& resourceHeap, std::uint32_t firstDescriptor, const ArrayView<ResourceViewDescriptor>& resourceViews)
+{
+    auto& resourceHeapVK = LLGL_CAST(VKResourceHeap&, resourceHeap);
+    return resourceHeapVK.WriteResourceViews(device_, firstDescriptor, resourceViews);
 }
 
 /* ----- Render Passes ----- */
 
-RenderPass* VKRenderSystem::CreateRenderPass(const RenderPassDescriptor& desc)
+RenderPass* VKRenderSystem::CreateRenderPass(const RenderPassDescriptor& renderPassDesc)
 {
-    AssertCreateRenderPass(desc);
-    return TakeOwnership(renderPasses_, MakeUnique<VKRenderPass>(device_, desc));
+    return renderPasses_.emplace<VKRenderPass>(device_, renderPassDesc);
 }
 
 void VKRenderSystem::Release(RenderPass& renderPass)
 {
-    RemoveFromUniqueSet(renderPasses_, &renderPass);
+    renderPasses_.erase(&renderPass);
 }
 
 /* ----- Render Targets ----- */
 
-RenderTarget* VKRenderSystem::CreateRenderTarget(const RenderTargetDescriptor& desc)
+RenderTarget* VKRenderSystem::CreateRenderTarget(const RenderTargetDescriptor& renderTargetDesc)
 {
-    AssertCreateRenderTarget(desc);
-    return TakeOwnership(renderTargets_, MakeUnique<VKRenderTarget>(device_, *deviceMemoryMngr_, desc));
+    AssertCreateRenderTarget(renderTargetDesc);
+    return renderTargets_.emplace<VKRenderTarget>(device_, *deviceMemoryMngr_, renderTargetDesc);
 }
 
 void VKRenderSystem::Release(RenderTarget& renderTarget)
 {
-    /* Release device memory region, then release texture object */
-    auto& renderTargetVL = LLGL_CAST(VKRenderTarget&, renderTarget);
-    RemoveFromUniqueSet(renderTargets_, &renderTarget);
+    renderTargets_.erase(&renderTarget);
 }
 
 /* ----- Shader ----- */
 
-Shader* VKRenderSystem::CreateShader(const ShaderDescriptor& desc)
+Shader* VKRenderSystem::CreateShader(const ShaderDescriptor& shaderDesc)
 {
-    AssertCreateShader(desc);
-    return TakeOwnership(shaders_, MakeUnique<VKShader>(device_, desc));
-}
-
-ShaderProgram* VKRenderSystem::CreateShaderProgram(const ShaderProgramDescriptor& desc)
-{
-    AssertCreateShaderProgram(desc);
-    return TakeOwnership(shaderPrograms_, MakeUnique<VKShaderProgram>(desc));
+    AssertCreateShader(shaderDesc);
+    return shaders_.emplace<VKShader>(device_, shaderDesc);
 }
 
 void VKRenderSystem::Release(Shader& shader)
 {
-    RemoveFromUniqueSet(shaders_, &shader);
-}
-
-void VKRenderSystem::Release(ShaderProgram& shaderProgram)
-{
-    RemoveFromUniqueSet(shaderPrograms_, &shaderProgram);
+    shaders_.erase(&shader);
 }
 
 /* ----- Pipeline Layouts ----- */
 
-PipelineLayout* VKRenderSystem::CreatePipelineLayout(const PipelineLayoutDescriptor& desc)
+PipelineLayout* VKRenderSystem::CreatePipelineLayout(const PipelineLayoutDescriptor& pipelineLayoutDesc)
 {
-    return TakeOwnership(pipelineLayouts_, MakeUnique<VKPipelineLayout>(device_, desc));
+    return pipelineLayouts_.emplace<VKPipelineLayout>(device_, pipelineLayoutDesc);
 }
 
 void VKRenderSystem::Release(PipelineLayout& pipelineLayout)
 {
-    RemoveFromUniqueSet(pipelineLayouts_, &pipelineLayout);
+    pipelineLayouts_.erase(&pipelineLayout);
 }
 
 /* ----- Pipeline States ----- */
@@ -648,55 +630,51 @@ PipelineState* VKRenderSystem::CreatePipelineState(const Blob& /*serializedCache
     return nullptr;//TODO
 }
 
-PipelineState* VKRenderSystem::CreatePipelineState(const GraphicsPipelineDescriptor& desc, std::unique_ptr<Blob>* /*serializedCache*/)
+PipelineState* VKRenderSystem::CreatePipelineState(const GraphicsPipelineDescriptor& pipelineStateDesc, std::unique_ptr<Blob>* /*serializedCache*/)
 {
-    return TakeOwnership(
-        pipelineStates_,
-        MakeUnique<VKGraphicsPSO>(
-            device_,
-            defaultPipelineLayout_,
-            (!swapChains_.empty() ? (*swapChains_.begin())->GetRenderPass() : nullptr),
-            desc,
-            gfxPipelineLimits_
-        )
+    return pipelineStates_.emplace<VKGraphicsPSO>(
+        device_,
+        (!swapChains_.empty() ? (*swapChains_.begin())->GetRenderPass() : nullptr),
+        pipelineStateDesc,
+        gfxPipelineLimits_
     );
 }
 
-PipelineState* VKRenderSystem::CreatePipelineState(const ComputePipelineDescriptor& desc, std::unique_ptr<Blob>* /*serializedCache*/)
+PipelineState* VKRenderSystem::CreatePipelineState(const ComputePipelineDescriptor& pipelineStateDesc, std::unique_ptr<Blob>* /*serializedCache*/)
 {
-    return TakeOwnership(pipelineStates_, MakeUnique<VKComputePSO>(device_, desc, defaultPipelineLayout_));
+    return pipelineStates_.emplace<VKComputePSO>(device_, pipelineStateDesc);
 }
 
 void VKRenderSystem::Release(PipelineState& pipelineState)
 {
-    RemoveFromUniqueSet(pipelineStates_, &pipelineState);
+    pipelineStates_.erase(&pipelineState);
 }
 
 /* ----- Queries ----- */
 
-QueryHeap* VKRenderSystem::CreateQueryHeap(const QueryHeapDescriptor& desc)
+QueryHeap* VKRenderSystem::CreateQueryHeap(const QueryHeapDescriptor& queryHeapDesc)
 {
-    if (desc.renderCondition)
-        return TakeOwnership(queryHeaps_, MakeUnique<VKPredicateQueryHeap>(device_, *deviceMemoryMngr_, desc));
+    if (queryHeapDesc.renderCondition)
+        return queryHeaps_.emplace<VKPredicateQueryHeap>(device_, *deviceMemoryMngr_, queryHeapDesc);
     else
-        return TakeOwnership(queryHeaps_, MakeUnique<VKQueryHeap>(device_, desc));
+        return queryHeaps_.emplace<VKQueryHeap>(device_, queryHeapDesc);
 }
 
 void VKRenderSystem::Release(QueryHeap& queryHeap)
 {
-    RemoveFromUniqueSet(queryHeaps_, &queryHeap);
+    queryHeaps_.erase(&queryHeap);
 }
 
 /* ----- Fences ----- */
 
 Fence* VKRenderSystem::CreateFence()
 {
-    return TakeOwnership(fences_, MakeUnique<VKFence>(device_));
+    return fences_.emplace<VKFence>(device_);
 }
 
 void VKRenderSystem::Release(Fence& fence)
 {
-    RemoveFromUniqueSet(fences_, &fence);
+    fences_.erase(&fence);
 }
 
 
@@ -724,9 +702,20 @@ void VKRenderSystem::CreateInstance(const RendererConfigurationVulkan* config)
     auto extensionProperties = VKQueryInstanceExtensionProperties();
     std::vector<const char*> extensionNames;
 
+    auto IsVKExtSupportIncluded = [this](VKExtSupport extSupport)
+    {
+        return
+        (
+            extSupport == VKExtSupport::Required ||
+            extSupport == VKExtSupport::Optional ||
+            (this->debugLayerEnabled_ && extSupport == VKExtSupport::DebugOnly)
+        );
+    };
+
     for (const auto& prop : extensionProperties)
     {
-        if (IsExtensionRequired(prop.extensionName))
+        const auto extSupport = GetVulkanInstanceExtensionSupport(prop.extensionName);
+        if (IsVKExtSupportIncluded(extSupport))
             extensionNames.push_back(prop.extensionName);
     }
 
@@ -745,9 +734,9 @@ void VKRenderSystem::CreateInstance(const RendererConfigurationVulkan* config)
         {
             appInfo.sType                       = VK_STRUCTURE_TYPE_APPLICATION_INFO;
             appInfo.pNext                       = nullptr;
-            appInfo.pApplicationName            = config->application.applicationName.c_str();
+            appInfo.pApplicationName            = config->application.applicationName;
             appInfo.applicationVersion          = config->application.applicationVersion;
-            appInfo.pEngineName                 = config->application.engineName.c_str();
+            appInfo.pEngineName                 = config->application.engineName;
             appInfo.engineVersion               = config->application.engineVersion;
             appInfo.apiVersion                  = VK_API_VERSION_1_0;
         }
@@ -784,22 +773,12 @@ void VKRenderSystem::CreateInstance(const RendererConfigurationVulkan* config)
     VkResult result = vkCreateInstance(&instanceInfo, nullptr, instance_.ReleaseAndGetAddressOf());
     VKThrowIfFailed(result, "failed to create Vulkan instance");
 
+    /* Create debug report callback */
     if (debugLayerEnabled_)
         CreateDebugReportCallback();
 
     /* Load Vulkan instance extensions */
     VKLoadInstanceExtensions(instance_);
-}
-
-static Log::ReportType ToReportType(VkDebugReportFlagsEXT flags)
-{
-    if ((flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) != 0)
-        return Log::ReportType::Error;
-    if ((flags & VK_DEBUG_REPORT_WARNING_BIT_EXT) != 0)
-        return Log::ReportType::Warning;
-    if ((flags & VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT) != 0)
-        return Log::ReportType::Performance;
-    return Log::ReportType::Information;
 }
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL VKDebugCallback(
@@ -812,9 +791,31 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL VKDebugCallback(
     const char*                 message,
     void*                       userData)
 {
-    //auto renderSystemVK = reinterpret_cast<VKRenderSystem*>(userData);
-    Log::PostReport(ToReportType(flags), message, "vkDebugReportCallback");
+    DebugPuts(message);
     return VK_FALSE;
+}
+
+static VkResult CreateDebugReportCallbackEXT(
+    VkInstance                                  instance,
+    const VkDebugReportCallbackCreateInfoEXT*   createInfo,
+    const VkAllocationCallbacks*                allocator,
+    VkDebugReportCallbackEXT*                   callback)
+{
+    auto func = reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetInstanceProcAddr(instance, "vkCreateDebugReportCallbackEXT"));
+    if (func != nullptr)
+        return func(instance, createInfo, allocator, callback);
+    else
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+}
+
+static void DestroyDebugReportCallbackEXT(
+    VkInstance                      instance,
+    VkDebugReportCallbackEXT        callback,
+    const VkAllocationCallbacks*    allocator)
+{
+    auto func = reinterpret_cast<PFN_vkDestroyDebugReportCallbackEXT>(vkGetInstanceProcAddr(instance, "vkDestroyDebugReportCallbackEXT"));
+    if (func != nullptr)
+        func(instance, callback, allocator);
 }
 
 void VKRenderSystem::CreateDebugReportCallback()
@@ -837,6 +838,7 @@ void VKRenderSystem::CreateDebugReportCallback()
         createInfo.pfnCallback  = VKDebugCallback;
         createInfo.pUserData    = reinterpret_cast<void*>(this);
     }
+    debugReportCallback_ = VKPtr<VkDebugReportCallbackEXT>{ instance_, DestroyDebugReportCallbackEXT };
     auto result = CreateDebugReportCallbackEXT(instance_, &createInfo, nullptr, debugReportCallback_.ReleaseAndGetAddressOf());
     VKThrowIfFailed(result, "failed to create Vulkan debug report callback");
 }
@@ -873,49 +875,24 @@ void VKRenderSystem::CreateLogicalDevice()
     VKLoadDeviceExtensions(device_, physicalDevice_.GetExtensionNames());
 }
 
-void VKRenderSystem::CreateDefaultPipelineLayout()
-{
-    VkPipelineLayoutCreateInfo layoutCreateInfo = {};
-    {
-        layoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    }
-    auto result = vkCreatePipelineLayout(device_, &layoutCreateInfo, nullptr, defaultPipelineLayout_.ReleaseAndGetAddressOf());
-    VKThrowIfFailed(result, "failed to create Vulkan default pipeline layout");
-}
-
 bool VKRenderSystem::IsLayerRequired(const char* name, const RendererConfigurationVulkan* config) const
 {
     if (config != nullptr)
     {
-        for (const auto& layer : config->enabledLayers)
+        for (const char* layer : config->enabledLayers)
         {
-            if (std::strcmp(layer.c_str(), name) == 0)
+            if (::strcmp(layer, name) == 0)
                 return true;
         }
     }
 
     if (debugLayerEnabled_)
     {
-        if (std::strcmp(name, VK_LAYER_KHRONOS_VALIDATION_NAME) == 0)
+        if (::strcmp(name, VK_LAYER_KHRONOS_VALIDATION_NAME) == 0)
             return true;
     }
 
     return false;
-}
-
-bool VKRenderSystem::IsExtensionRequired(const std::string& name) const
-{
-    return
-    (
-        name == VK_KHR_SURFACE_EXTENSION_NAME
-        #ifdef LLGL_OS_WIN32
-        || name == VK_KHR_WIN32_SURFACE_EXTENSION_NAME
-        #endif
-        #ifdef LLGL_OS_LINUX
-        || name == VK_KHR_XLIB_SURFACE_EXTENSION_NAME
-        #endif
-        || (debugLayerEnabled_ && name == VK_EXT_DEBUG_REPORT_EXTENSION_NAME)
-    );
 }
 
 VKDeviceBuffer VKRenderSystem::CreateStagingBuffer(const VkBufferCreateInfo& createInfo)
@@ -929,7 +906,7 @@ VKDeviceBuffer VKRenderSystem::CreateStagingBuffer(const VkBufferCreateInfo& cre
     };
 }
 
-VKDeviceBuffer VKRenderSystem::CreateStagingBuffer(
+VKDeviceBuffer VKRenderSystem::CreateStagingBufferAndInitialize(
     const VkBufferCreateInfo&   createInfo,
     const void*                 data,
     VkDeviceSize                dataSize)

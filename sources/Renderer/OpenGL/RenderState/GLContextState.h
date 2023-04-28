@@ -1,8 +1,8 @@
 /*
  * GLContextState.h
  * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_GL_CONTEXT_STATE_H
@@ -20,15 +20,15 @@ namespace LLGL
 // Structure with all information about the state of an OpenGL context that can be managed by GLStateManager.
 struct GLContextState
 {
-    static const GLuint numTextureLayers    = 32;
-    static const GLuint numImageUnits       = 8;
-    static const GLuint numCaps             = static_cast<GLuint>(GLState::Num);
-    static const GLuint numBufferTargets    = static_cast<GLuint>(GLBufferTarget::Num);
-    static const GLuint numFboTargets       = static_cast<GLuint>(GLFramebufferTarget::Num);
-    static const GLuint numTextureTargets   = static_cast<GLuint>(GLTextureTarget::Num);
+    static constexpr GLuint numTextureLayers    = 32;
+    static constexpr GLuint numImageUnits       = 8;
+    static constexpr GLuint numCaps             = static_cast<GLuint>(GLState::Num);
+    static constexpr GLuint numBufferTargets    = static_cast<GLuint>(GLBufferTarget::Num);
+    static constexpr GLuint numFboTargets       = static_cast<GLuint>(GLFramebufferTarget::Num);
+    static constexpr GLuint numTextureTargets   = static_cast<GLuint>(GLTextureTarget::Num);
 
     #ifdef LLGL_GL_ENABLE_VENDOR_EXT
-    static const GLuint numCapsExt          = static_cast<GLuint>(GLStateExt::Num);
+    static constexpr GLuint numCapsExt          = static_cast<GLuint>(GLStateExt::Num);
     #endif
 
     // Rasterizer state
@@ -58,7 +58,11 @@ struct GLContextState
 
     // Clip control
     GLenum          clipOrigin                          = GL_LOWER_LEFT;
+    #ifdef LLGL_GLEXT_CLIP_CONTROL
     GLenum          clipDepthMode                       = GL_NEGATIVE_ONE_TO_ONE;
+    #else
+    GLenum          clipDepthMode                       = 0;
+    #endif
 
     // Capabilities
     bool            capabilities[numCaps]               = {};
@@ -106,6 +110,7 @@ struct GLContextState
 
     // Programs
     GLuint          boundProgram                        = 0;
+    GLuint          boundProgramPipeline                = 0;
 
     // Samplers
     GLuint          boundSamplers[numTextureLayers];

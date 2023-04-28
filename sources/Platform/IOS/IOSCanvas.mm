@@ -1,12 +1,12 @@
 /*
  * IOSCanvas.mm
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "IOSCanvas.h"
-#include "../../Core/Helper.h"
+#include "../../Core/CoreUtils.h"
 #include <LLGL/Platform/NativeHandle.h>
 
 
@@ -113,14 +113,14 @@ Extent2D IOSCanvas::GetContentSize() const
     return { 0u, 0u }; //todo...
 }
 
-void IOSCanvas::SetTitle(const std::wstring& title)
+void IOSCanvas::SetTitle(const UTF8String& title)
 {
     //todo...
 }
 
-std::wstring IOSCanvas::GetTitle() const
+UTF8String IOSCanvas::GetTitle() const
 {
-    return L""; //todo...
+    return {}; //todo...
 }
 
 

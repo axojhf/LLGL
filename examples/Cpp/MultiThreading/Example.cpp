@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_MultiThreading)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
@@ -13,7 +13,7 @@
 
 
 // Enables/disables the use of two secondary command buffers
-#define ENABLE_SECONDARY_COMMAND_BUFFERS
+//#define ENABLE_SECONDARY_COMMAND_BUFFERS
 
 class Measure
 {
@@ -26,22 +26,21 @@ class Measure
 
         // Interval (in milliseconds) to the next measurement result.
         Measure(std::uint64_t interval = 1000, const std::string& title = "Average Time") :
-            timer_    { LLGL::Timer::Create() },
-            interval_ { interval              },
-            title_    { title                 }
+            interval_ { interval },
+            title_    { title    }
         {
         }
 
         void Start()
         {
             // Start timer
-            timer_->Start();
+            timer_.Start();
         }
 
         void Stop()
         {
             // Take sample
-            elapsed_ += timer_->Stop();
+            elapsed_ += timer_.Stop();
             ++samples_;
 
             // Check if average elapsed time can be printed again
@@ -62,7 +61,7 @@ class Measure
             if (samples_ > 0)
             {
                 auto averageTime = static_cast<double>(elapsed_);
-                averageTime /= static_cast<double>(timer_->GetFrequency());
+                averageTime /= static_cast<double>(timer_.GetFrequency());
                 averageTime *= 1000000.0;
                 averageTime /= static_cast<double>(samples_);
 
@@ -78,19 +77,19 @@ class Measure
 
     private:
 
-        std::unique_ptr<LLGL::Timer>    timer_;
-        std::uint64_t                   interval_           = 0;
-        TimePoint                       intervalStartTime_;
-        std::uint64_t                   samples_            = 0;
-        std::uint64_t                   elapsed_            = 0;
-        std::string                     title_;
+        Stopwatch       timer_;
+        std::uint64_t   interval_           = 0;
+        TimePoint       intervalStartTime_;
+        std::uint64_t   samples_            = 0;
+        std::uint64_t   elapsed_            = 0;
+        std::string     title_;
 
 };
 
 class Example_MultiThreading : public ExampleBase
 {
 
-    LLGL::ShaderProgram*        shaderProgram       = nullptr;
+    ShaderPipeline              shaderPipeline;
     LLGL::Buffer*               vertexBuffer        = nullptr;
     LLGL::Buffer*               indexBuffer         = nullptr;
     LLGL::PipelineLayout*       pipelineLayout      = nullptr;
@@ -107,7 +106,13 @@ class Example_MultiThreading : public ExampleBase
         LLGL::Buffer*           constantBuffer      = nullptr;
         LLGL::ResourceHeap*     resourceHeap        = nullptr;
         LLGL::CommandBuffer*    secondaryCmdBuffer  = nullptr;
-        Gs::Matrix4f            wvpMatrix;
+
+        struct Matrices
+        {
+            Gs::Matrix4f        wvpMatrix;
+            Gs::Matrix4f        wMatrix;
+        }
+        matrices;
     }
     bundle[2];
 
@@ -129,6 +134,7 @@ private:
         // Specify vertex format
         LLGL::VertexFormat vertexFormat;
         vertexFormat.AppendAttribute({ "position", LLGL::Format::RGB32Float });
+        vertexFormat.AppendAttribute({ "normal",   LLGL::Format::RGB32Float });
         vertexFormat.AppendAttribute({ "texCoord", LLGL::Format::RG32Float  });
 
         // Generate data for mesh buffers
@@ -141,7 +147,7 @@ private:
         indexBuffer = CreateIndexBuffer(indices, LLGL::Format::R32UInt);
 
         for (auto& bdl : bundle)
-            bdl.constantBuffer = CreateConstantBuffer(bdl.wvpMatrix);
+            bdl.constantBuffer = CreateConstantBuffer(bdl.matrices);
 
         return vertexFormat;
     }
@@ -149,30 +155,24 @@ private:
     void LoadShaders(const LLGL::VertexFormat& vertexFormat)
     {
         // Load shader program
-        shaderProgram = LoadStandardShaderProgram({ vertexFormat });
+        shaderPipeline = LoadStandardShaderPipeline({ vertexFormat });
     }
 
     void CreatePipelines()
     {
         // Create pipeline layout
-        pipelineLayout = renderer->CreatePipelineLayout(LLGL::PipelineLayoutDesc("cbuffer(Scene@1):vert"));
+        pipelineLayout = renderer->CreatePipelineLayout(LLGL::PipelineLayoutDesc("heap{cbuffer(Scene@1):vert}"));
 
         // Create resource view heap
         for (auto& bdl : bundle)
-        {
-            LLGL::ResourceHeapDescriptor resourceHeapDesc;
-            {
-                resourceHeapDesc.pipelineLayout = pipelineLayout;
-                resourceHeapDesc.resourceViews  = { bdl.constantBuffer };
-            }
-            bdl.resourceHeap = renderer->CreateResourceHeap(resourceHeapDesc);
-        }
+            bdl.resourceHeap = renderer->CreateResourceHeap(pipelineLayout, { bdl.constantBuffer });
 
         // Setup graphics pipeline descriptors
         LLGL::GraphicsPipelineDescriptor pipelineDesc;
         {
             // Set references to shader program, and pipeline layout
-            pipelineDesc.shaderProgram                  = shaderProgram;
+            pipelineDesc.vertexShader                   = shaderPipeline.vs;
+            pipelineDesc.fragmentShader                 = shaderPipeline.ps;
             pipelineDesc.pipelineLayout                 = pipelineLayout;
             pipelineDesc.rasterizer.multiSampleEnabled  = (GetSampleCount() > 1);
 
@@ -324,12 +324,12 @@ private:
         #endif // /ENABLE_SECONDARY_COMMAND_BUFFERS
     }
 
-    void Transform(Gs::Matrix4f& matrix, const Gs::Vector3f& pos, float angle)
+    void Transform(Bundle::Matrices& matrices, const Gs::Vector3f& pos, float angle)
     {
-        matrix.LoadIdentity();
-        Gs::Translate(matrix, pos);
-        Gs::RotateFree(matrix, Gs::Vector3f(1, 1, 1).Normalized(), angle);
-        matrix = projection * matrix;
+        matrices.wMatrix.LoadIdentity();
+        Gs::Translate(matrices.wMatrix, pos);
+        Gs::RotateFree(matrices.wMatrix, Gs::Vector3f(1, 1, 1).Normalized(), angle);
+        matrices.wvpMatrix = projection * matrices.wMatrix;
     }
 
     void UpdateScene()
@@ -339,8 +339,8 @@ private:
         rotation += 0.01f;
 
         // Update scene matrices
-        Transform(bundle[0].wvpMatrix, { -1, 0, 8 }, -rotation);
-        Transform(bundle[1].wvpMatrix, { +1, 0, 8 }, +rotation);
+        Transform(bundle[0].matrices, { -1, 0, 8 }, -rotation);
+        Transform(bundle[1].matrices, { +1, 0, 8 }, +rotation);
 
         // Update constant buffer
         for (auto& bdl : bundle)
@@ -348,8 +348,8 @@ private:
             renderer->WriteBuffer(
                 *bdl.constantBuffer,
                 0,
-                &(bdl.wvpMatrix),
-                sizeof(Gs::Matrix4f)
+                &(bdl.matrices),
+                sizeof(bdl.matrices)
             );
         }
     }

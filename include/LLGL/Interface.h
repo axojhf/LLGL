@@ -1,8 +1,8 @@
 /*
  * Interface.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_INTERFACE_H
@@ -40,7 +40,6 @@ namespace LLGL
 \see RenderSystem
 \see RenderSystemChild
 \see Surface
-\see Timer
 */
 class LLGL_EXPORT Interface : public NonCopyable
 {

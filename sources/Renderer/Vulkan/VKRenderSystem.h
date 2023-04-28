@@ -1,8 +1,8 @@
 /*
  * VKRenderSystem.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_VK_RENDER_SYSTEM_H
@@ -23,7 +23,6 @@
 #include "Buffer/VKBufferArray.h"
 
 #include "Shader/VKShader.h"
-#include "Shader/VKShaderProgram.h"
 
 #include "Texture/VKTexture.h"
 #include "Texture/VKSampler.h"
@@ -59,7 +58,7 @@ class VKRenderSystem final : public RenderSystem
 
         /* ----- Swap-chain ----- */
 
-        SwapChain* CreateSwapChain(const SwapChainDescriptor& desc, const std::shared_ptr<Surface>& surface = nullptr) override;
+        SwapChain* CreateSwapChain(const SwapChainDescriptor& swapChainDesc, const std::shared_ptr<Surface>& surface = nullptr) override;
 
         void Release(SwapChain& swapChain) override;
 
@@ -69,21 +68,23 @@ class VKRenderSystem final : public RenderSystem
 
         /* ----- Command buffers ----- */
 
-        CommandBuffer* CreateCommandBuffer(const CommandBufferDescriptor& desc = {}) override;
+        CommandBuffer* CreateCommandBuffer(const CommandBufferDescriptor& commandBufferDesc = {}) override;
 
         void Release(CommandBuffer& commandBuffer) override;
 
         /* ----- Buffers ------ */
 
-        Buffer* CreateBuffer(const BufferDescriptor& desc, const void* initialData = nullptr) override;
+        Buffer* CreateBuffer(const BufferDescriptor& bufferDesc, const void* initialData = nullptr) override;
         BufferArray* CreateBufferArray(std::uint32_t numBuffers, Buffer* const * bufferArray) override;
 
         void Release(Buffer& buffer) override;
         void Release(BufferArray& bufferArray) override;
 
-        void WriteBuffer(Buffer& dstBuffer, std::uint64_t dstOffset, const void* data, std::uint64_t dataSize) override;
+        void WriteBuffer(Buffer& buffer, std::uint64_t offset, const void* data, std::uint64_t dataSize) override;
+        void ReadBuffer(Buffer& buffer, std::uint64_t offset, void* data, std::uint64_t dataSize) override;
 
         void* MapBuffer(Buffer& buffer, const CPUAccess access) override;
+        void* MapBuffer(Buffer& buffer, const CPUAccess access, std::uint64_t offset, std::uint64_t length) override;
         void UnmapBuffer(Buffer& buffer) override;
 
         /* ----- Textures ----- */
@@ -97,53 +98,53 @@ class VKRenderSystem final : public RenderSystem
 
         /* ----- Sampler States ---- */
 
-        Sampler* CreateSampler(const SamplerDescriptor& desc) override;
+        Sampler* CreateSampler(const SamplerDescriptor& samplerDesc) override;
 
         void Release(Sampler& sampler) override;
 
         /* ----- Resource Heaps ----- */
 
-        ResourceHeap* CreateResourceHeap(const ResourceHeapDescriptor& desc) override;
+        ResourceHeap* CreateResourceHeap(const ResourceHeapDescriptor& resourceHeapDesc, const ArrayView<ResourceViewDescriptor>& initialResourceViews = {}) override;
 
         void Release(ResourceHeap& resourceHeap) override;
 
+        std::uint32_t WriteResourceHeap(ResourceHeap& resourceHeap, std::uint32_t firstDescriptor, const ArrayView<ResourceViewDescriptor>& resourceViews) override;
+
         /* ----- Render Passes ----- */
 
-        RenderPass* CreateRenderPass(const RenderPassDescriptor& desc) override;
+        RenderPass* CreateRenderPass(const RenderPassDescriptor& renderPassDesc) override;
 
         void Release(RenderPass& renderPass) override;
 
         /* ----- Render Targets ----- */
 
-        RenderTarget* CreateRenderTarget(const RenderTargetDescriptor& desc) override;
+        RenderTarget* CreateRenderTarget(const RenderTargetDescriptor& renderTargetDesc) override;
 
         void Release(RenderTarget& renderTarget) override;
 
         /* ----- Shader ----- */
 
-        Shader* CreateShader(const ShaderDescriptor& desc) override;
-        ShaderProgram* CreateShaderProgram(const ShaderProgramDescriptor& desc) override;
+        Shader* CreateShader(const ShaderDescriptor& shaderDesc) override;
 
         void Release(Shader& shader) override;
-        void Release(ShaderProgram& shaderProgram) override;
 
         /* ----- Pipeline Layouts ----- */
 
-        PipelineLayout* CreatePipelineLayout(const PipelineLayoutDescriptor& desc) override;
+        PipelineLayout* CreatePipelineLayout(const PipelineLayoutDescriptor& pipelineLayoutDesc) override;
 
         void Release(PipelineLayout& pipelineLayout) override;
 
         /* ----- Pipeline States ----- */
 
         PipelineState* CreatePipelineState(const Blob& serializedCache) override;
-        PipelineState* CreatePipelineState(const GraphicsPipelineDescriptor& desc, std::unique_ptr<Blob>* serializedCache = nullptr) override;
-        PipelineState* CreatePipelineState(const ComputePipelineDescriptor& desc, std::unique_ptr<Blob>* serializedCache = nullptr) override;
+        PipelineState* CreatePipelineState(const GraphicsPipelineDescriptor& pipelineStateDesc, std::unique_ptr<Blob>* serializedCache = nullptr) override;
+        PipelineState* CreatePipelineState(const ComputePipelineDescriptor& pipelineStateDesc, std::unique_ptr<Blob>* serializedCache = nullptr) override;
 
         void Release(PipelineState& pipelineState) override;
 
         /* ----- Queries ----- */
 
-        QueryHeap* CreateQueryHeap(const QueryHeapDescriptor& desc) override;
+        QueryHeap* CreateQueryHeap(const QueryHeapDescriptor& queryHeapDesc) override;
 
         void Release(QueryHeap& queryHeap) override;
 
@@ -159,14 +160,12 @@ class VKRenderSystem final : public RenderSystem
         void CreateDebugReportCallback();
         void PickPhysicalDevice();
         void CreateLogicalDevice();
-        void CreateDefaultPipelineLayout();
 
         bool IsLayerRequired(const char* name, const RendererConfigurationVulkan* config) const;
-        bool IsExtensionRequired(const std::string& name) const;
 
         VKDeviceBuffer CreateStagingBuffer(const VkBufferCreateInfo& createInfo);
 
-        VKDeviceBuffer CreateStagingBuffer(
+        VKDeviceBuffer CreateStagingBufferAndInitialize(
             const VkBufferCreateInfo&   createInfo,
             const void*                 data,
             VkDeviceSize                dataSize
@@ -182,7 +181,6 @@ class VKRenderSystem final : public RenderSystem
         VKDevice                                device_;
 
         VKPtr<VkDebugReportCallbackEXT>         debugReportCallback_;
-        VKPtr<VkPipelineLayout>                 defaultPipelineLayout_;
 
         bool                                    debugLayerEnabled_      = false;
 
@@ -202,7 +200,6 @@ class VKRenderSystem final : public RenderSystem
         HWObjectContainer<VKRenderPass>         renderPasses_;
         HWObjectContainer<VKRenderTarget>       renderTargets_;
         HWObjectContainer<VKShader>             shaders_;
-        HWObjectContainer<VKShaderProgram>      shaderPrograms_;
         HWObjectContainer<VKPipelineLayout>     pipelineLayouts_;
         HWObjectContainer<VKPipelineState>      pipelineStates_;
         HWObjectContainer<VKResourceHeap>       resourceHeaps_;

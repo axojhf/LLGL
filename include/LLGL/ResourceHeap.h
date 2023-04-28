@@ -1,15 +1,15 @@
 /*
  * ResourceHeap.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_RESOURCE_HEAP_H
 #define LLGL_RESOURCE_HEAP_H
 
 
-#include "RenderSystemChild.h"
+#include <LLGL/RenderSystemChild.h>
 #include <cstdint>
 
 
@@ -33,12 +33,12 @@ class LLGL_EXPORT ResourceHeap : public RenderSystemChild
 
         /**
         \brief Returns the number of descriptor sets in this heap.
-        \remarks This is determined by the number of resources in the heap divided by the number of bindings in the pipeline layout.
+        \remarks This is determined by the number of resources in the heap divided by the number of heap bindings in the pipeline layout.
         The total number of resources in the heap can therefore be determined by the following code:
         \code
-        myResourceHeap->GetNumDescriptorSets() * myPipelineLayout->GetNumBindings();
+        myResourceHeap->GetNumDescriptorSets() * myPipelineLayout->GetNumHeapBindings();
         \endcode
-        \see PipelineLayout::GetNumBindings
+        \see PipelineLayout::GetNumHeapBindings
         \see CommandBuffer::SetResourceHeap
         */
         virtual std::uint32_t GetNumDescriptorSets() const = 0;

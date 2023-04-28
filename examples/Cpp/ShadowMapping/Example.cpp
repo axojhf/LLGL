@@ -1,8 +1,8 @@
 /*
  * Example.cpp (Example_ShadowMapping)
  *
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include <ExampleBase.h>
@@ -11,23 +11,23 @@
 class Example_ShadowMapping : public ExampleBase
 {
 
-    LLGL::ShaderProgram*        shaderProgramShadowMap  = nullptr;
-    LLGL::ShaderProgram*        shaderProgramScene      = nullptr;
+    LLGL::Shader*               vsShadowMap             = nullptr;
+    LLGL::Shader*               vsScene                 = nullptr;
+    LLGL::Shader*               fsScene                 = nullptr;
 
     LLGL::PipelineLayout*       pipelineLayoutShadowMap = nullptr;
     LLGL::PipelineLayout*       pipelineLayoutScene     = nullptr;
 
-    LLGL::PipelineState*        pipelineShadowMap       = {};
-    LLGL::PipelineState*        pipelineScene           = {};
+    LLGL::PipelineState*        pipelineShadowMap       = nullptr;
+    LLGL::PipelineState*        pipelineScene           = nullptr;
 
-    LLGL::ResourceHeap*         resourceHeapShadowMap   = {};
-    LLGL::ResourceHeap*         resourceHeapScene       = {};
+    LLGL::ResourceHeap*         resourceHeapShadowMap   = nullptr;
+    LLGL::ResourceHeap*         resourceHeapScene       = nullptr;
 
     LLGL::Buffer*               vertexBuffer            = nullptr;
     LLGL::Buffer*               constantBuffer          = nullptr;
 
     LLGL::Texture*              shadowMap               = nullptr;
-    LLGL::Sampler*              shadowMapSampler        = nullptr;
     const LLGL::Extent2D        shadowMapResolution     = { 256, 256 };
     LLGL::RenderTarget*         shadowMapRenderTarget   = nullptr;
 
@@ -69,8 +69,9 @@ public:
         vertexBuffer->SetName("Buffer.Vertices");
         constantBuffer->SetName("Buffer.Constants");
 
-        shaderProgramShadowMap->SetName("ShadowMap.ShaderProgram");
-        shaderProgramScene->SetName("Scene.ShaderProgram");
+        vsShadowMap->SetName("ShadowMap.VertexShader");
+        vsScene->SetName("Scene.VertexShader");
+        fsScene->SetName("Scene.FragmentShader");
 
         shadowMap->SetName("ShadowMap.Texture");
         shadowMapRenderTarget->SetName("ShadowMap.RenderTarget");
@@ -112,67 +113,31 @@ private:
         // Load shader program
         if (Supported(LLGL::ShadingLanguage::GLSL))
         {
-            shaderProgramShadowMap = LoadShaderProgramAndPatchClippingOrigin(
-                {
-                    { LLGL::ShaderType::Vertex, "ShadowMap.vert" }
-                },
-                { vertexFormat }
-            );
-            shaderProgramScene = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Scene.vert" },
-                    { LLGL::ShaderType::Fragment, "Scene.frag" },
-                },
-                { vertexFormat }
-            );
+            vsShadowMap = LoadShaderAndPatchClippingOrigin({ LLGL::ShaderType::Vertex, "ShadowMap.vert" }, { vertexFormat });
+
+            vsScene     = LoadShader({ LLGL::ShaderType::Vertex,   "Scene.vert" }, { vertexFormat });
+            fsScene     = LoadShader({ LLGL::ShaderType::Fragment, "Scene.frag" });
         }
         else if (Supported(LLGL::ShadingLanguage::SPIRV))
         {
-            shaderProgramShadowMap = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex, "ShadowMap.450core.vert.spv" }
-                },
-                { vertexFormat }
-            );
-            shaderProgramScene = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Scene.450core.vert.spv" },
-                    { LLGL::ShaderType::Fragment, "Scene.450core.frag.spv" },
-                },
-                { vertexFormat }
-            );
+            vsShadowMap = LoadShader({ LLGL::ShaderType::Vertex, "ShadowMap.450core.vert.spv" }, { vertexFormat });
+
+            vsScene = LoadShader({ LLGL::ShaderType::Vertex,   "Scene.450core.vert.spv" }, { vertexFormat });
+            fsScene = LoadShader({ LLGL::ShaderType::Fragment, "Scene.450core.frag.spv" });
         }
         else if (Supported(LLGL::ShadingLanguage::HLSL))
         {
-            shaderProgramShadowMap = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex, "Example.hlsl", "VShadowMap", "vs_5_0" }
-                },
-                { vertexFormat }
-            );
-            shaderProgramScene = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.hlsl", "VScene", "vs_5_0" },
-                    { LLGL::ShaderType::Fragment, "Example.hlsl", "PScene", "ps_5_0" },
-                },
-                { vertexFormat }
-            );
+            vsShadowMap = LoadShader({ LLGL::ShaderType::Vertex, "Example.hlsl", "VShadowMap", "vs_5_0" }, { vertexFormat });
+
+            vsScene = LoadShader({ LLGL::ShaderType::Vertex,   "Example.hlsl", "VScene", "vs_5_0" }, { vertexFormat });
+            fsScene = LoadShader({ LLGL::ShaderType::Fragment, "Example.hlsl", "PScene", "ps_5_0" });
         }
         else if (Supported(LLGL::ShadingLanguage::Metal))
         {
-            shaderProgramShadowMap = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex, "Example.metal", "VShadowMap", "1.1" }
-                },
-                { vertexFormat }
-            );
-            shaderProgramScene = LoadShaderProgram(
-                {
-                    { LLGL::ShaderType::Vertex,   "Example.metal", "VScene", "1.1" },
-                    { LLGL::ShaderType::Fragment, "Example.metal", "PScene", "1.1" },
-                },
-                { vertexFormat }
-            );
+            vsShadowMap = LoadShader({ LLGL::ShaderType::Vertex, "Example.metal", "VShadowMap", "1.1" }, { vertexFormat });
+
+            vsScene = LoadShader({ LLGL::ShaderType::Vertex,   "Example.metal", "VScene", "1.1" }, { vertexFormat });
+            fsScene = LoadShader({ LLGL::ShaderType::Fragment, "Example.metal", "PScene", "1.1" });
         }
         else
             throw std::runtime_error("shaders not supported for active renderer");
@@ -198,45 +163,55 @@ private:
             renderTargetDesc.resolution     = shadowMapResolution;
             renderTargetDesc.attachments    =
             {
-                LLGL::AttachmentDescriptor { LLGL::AttachmentType::Depth, shadowMap }
+                LLGL::AttachmentDescriptor{ shadowMap }
             };
         }
         shadowMapRenderTarget = renderer->CreateRenderTarget(renderTargetDesc);
-
-        // Create texture sampler
-        LLGL::SamplerDescriptor samplerDesc;
-        {
-            samplerDesc.addressModeU    = LLGL::SamplerAddressMode::Border;
-            samplerDesc.addressModeV    = LLGL::SamplerAddressMode::Border;
-            samplerDesc.addressModeW    = LLGL::SamplerAddressMode::Border;
-            samplerDesc.borderColor     = { 1.0f, 1.0f, 1.0f, 1.0f };
-            samplerDesc.compareEnabled  = true;
-            samplerDesc.mipMapping      = false;
-        }
-        shadowMapSampler = renderer->CreateSampler(samplerDesc);
     }
 
     void CreatePipelineLayouts()
     {
-        // Create pipeline layouts for shadow-map and scene rendering
-        if (IsOpenGL())
+        // Initialize shadow-map sampler
+        LLGL::SamplerDescriptor shadowSamplerDesc;
         {
-            pipelineLayoutShadowMap = renderer->CreatePipelineLayout(
-                LLGL::PipelineLayoutDesc("cbuffer(0):vert")
-            );
-            pipelineLayoutScene = renderer->CreatePipelineLayout(
-                LLGL::PipelineLayoutDesc("cbuffer(0):frag:vert, texture(0):frag, sampler(0):frag")
-            );
+            shadowSamplerDesc.addressModeU      = LLGL::SamplerAddressMode::Border;
+            shadowSamplerDesc.addressModeV      = LLGL::SamplerAddressMode::Border;
+            shadowSamplerDesc.addressModeW      = LLGL::SamplerAddressMode::Border;
+            shadowSamplerDesc.borderColor[0]    = 1.0f;
+            shadowSamplerDesc.borderColor[1]    = 1.0f;
+            shadowSamplerDesc.borderColor[2]    = 1.0f;
+            shadowSamplerDesc.borderColor[3]    = 1.0f;
+            shadowSamplerDesc.compareEnabled    = true;
+            shadowSamplerDesc.mipMapEnabled     = false;
         }
-        else
+
+        // Create pipeline layouts for shadow-map rendering
+        LLGL::PipelineLayoutDescriptor shadowLayoutDesc;
         {
-            pipelineLayoutShadowMap = renderer->CreatePipelineLayout(
-                LLGL::PipelineLayoutDesc("cbuffer(1):vert")
-            );
-            pipelineLayoutScene = renderer->CreatePipelineLayout(
-                LLGL::PipelineLayoutDesc("cbuffer(1):frag:vert, texture(2):frag, sampler(3):frag")
-            );
+            shadowLayoutDesc.heapBindings =
+            {
+                LLGL::BindingDescriptor{ LLGL::ResourceType::Buffer, LLGL::BindFlags::ConstantBuffer, LLGL::StageFlags::VertexStage, (IsOpenGL() ? 0u : 1u) }
+            };
         }
+        pipelineLayoutShadowMap = renderer->CreatePipelineLayout(shadowLayoutDesc);
+
+        // Create pipeline layout for scene rendering
+        LLGL::PipelineLayoutDescriptor sceneLayoutDesc;
+        {
+            sceneLayoutDesc.heapBindings =
+            {
+                LLGL::BindingDescriptor{ LLGL::ResourceType::Buffer,  LLGL::BindFlags::ConstantBuffer, LLGL::StageFlags::FragmentStage | LLGL::StageFlags::VertexStage, (IsOpenGL() ? 0u : 1u) },
+                LLGL::BindingDescriptor{ LLGL::ResourceType::Texture, LLGL::BindFlags::Sampled,        LLGL::StageFlags::FragmentStage,                                 (IsOpenGL() ? 0u : 2u) },
+            };
+            sceneLayoutDesc.staticSamplers =
+            {
+                LLGL::StaticSamplerDescriptor
+                {
+                    LLGL::StageFlags::FragmentStage, (IsOpenGL() ? 0u : 3u), shadowSamplerDesc
+                }
+            };
+        }
+        pipelineLayoutScene = renderer->CreatePipelineLayout(sceneLayoutDesc);
     }
 
     void CreatePipelines()
@@ -245,7 +220,7 @@ private:
         {
             LLGL::GraphicsPipelineDescriptor pipelineDesc;
             {
-                pipelineDesc.shaderProgram                          = shaderProgramShadowMap;
+                pipelineDesc.vertexShader                           = vsShadowMap;
                 pipelineDesc.renderPass                             = shadowMapRenderTarget->GetRenderPass();
                 pipelineDesc.pipelineLayout                         = pipelineLayoutShadowMap;
                 pipelineDesc.depth.testEnabled                      = true;
@@ -253,7 +228,7 @@ private:
                 pipelineDesc.rasterizer.cullMode                    = LLGL::CullMode::Back;
                 pipelineDesc.rasterizer.depthBias.constantFactor    = 4.0f;
                 pipelineDesc.rasterizer.depthBias.slopeFactor       = 4.0f;
-                pipelineDesc.blend.targets[0].colorMask             = { false, false, false, false };
+                pipelineDesc.blend.targets[0].colorMask             = 0x0;
                 pipelineDesc.viewports                              = { shadowMapResolution };
             }
             pipelineShadowMap = renderer->CreatePipelineState(pipelineDesc);
@@ -263,7 +238,8 @@ private:
         {
             LLGL::GraphicsPipelineDescriptor pipelineDesc;
             {
-                pipelineDesc.shaderProgram                  = shaderProgramScene;
+                pipelineDesc.vertexShader                   = vsScene;
+                pipelineDesc.fragmentShader                 = fsScene;
                 pipelineDesc.renderPass                     = swapChain->GetRenderPass();
                 pipelineDesc.pipelineLayout                 = pipelineLayoutScene;
                 pipelineDesc.depth.testEnabled              = true;
@@ -278,19 +254,10 @@ private:
     void CreateResourceHeaps()
     {
         // Create resource heap for shadow-map rendering
-        LLGL::ResourceHeapDescriptor resourceHeapDesc;
-        {
-            resourceHeapDesc.pipelineLayout = pipelineLayoutShadowMap;
-            resourceHeapDesc.resourceViews  = { constantBuffer };
-        }
-        resourceHeapShadowMap = renderer->CreateResourceHeap(resourceHeapDesc);
+        resourceHeapShadowMap = renderer->CreateResourceHeap(pipelineLayoutShadowMap, { constantBuffer });
 
         // Create resource heap for scene rendering
-        {
-            resourceHeapDesc.pipelineLayout = pipelineLayoutScene;
-            resourceHeapDesc.resourceViews  = { constantBuffer, shadowMap, shadowMapSampler };
-        }
-        resourceHeapScene = renderer->CreateResourceHeap(resourceHeapDesc);
+        resourceHeapScene = renderer->CreateResourceHeap(pipelineLayoutScene, { constantBuffer, shadowMap });
     }
 
     void UpdateScene()
@@ -372,7 +339,7 @@ private:
         // Render scene onto screen
         commands->BeginRenderPass(*swapChain);
         {
-            commands->Clear(LLGL::ClearFlags::ColorDepth, { backgroundColor });
+            commands->Clear(LLGL::ClearFlags::ColorDepth, backgroundColor);
             commands->SetViewport(swapChain->GetResolution());
             commands->SetPipelineState(*pipelineScene);
             commands->SetResourceHeap(*resourceHeapScene);

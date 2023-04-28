@@ -1,27 +1,26 @@
 /*
  * SwapChain.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_SWAP_CHAIN_H
 #define LLGL_SWAP_CHAIN_H
 
 
-#include "RenderTarget.h"
-#include "SwapChainFlags.h"
-#include "RenderSystemFlags.h"
-#include "Surface.h"
+#include <LLGL/RenderTarget.h>
+#include <LLGL/SwapChainFlags.h>
+#include <LLGL/RenderSystemFlags.h>
+#include <LLGL/Surface.h>
 
-#include "Buffer.h"
-#include "BufferArray.h"
-#include "ShaderProgram.h"
-#include "Texture.h"
-#include "RenderTarget.h"
-#include "PipelineState.h"
-#include "Sampler.h"
-#include "QueryHeap.h"
+#include <LLGL/Buffer.h>
+#include <LLGL/BufferArray.h>
+#include <LLGL/Texture.h>
+#include <LLGL/RenderTarget.h>
+#include <LLGL/PipelineState.h>
+#include <LLGL/Sampler.h>
+#include <LLGL/QueryHeap.h>
 
 #include <string>
 #include <memory>
@@ -46,6 +45,9 @@ class LLGL_EXPORT SwapChain : public RenderTarget
         LLGL_DECLARE_INTERFACE( InterfaceID::SwapChain );
 
     public:
+
+        //! Release the internal data.
+        ~SwapChain();
 
         /* ----- Render Target ----- */
 
@@ -133,15 +135,12 @@ class LLGL_EXPORT SwapChain : public RenderTarget
         auto& myWindow = static_cast<LLGL::Window&>(mySwapChain->GetSurface());
         \endcode
         */
-        inline Surface& GetSurface() const
-        {
-            return *surface_;
-        }
+        Surface& GetSurface() const;
 
     protected:
 
-        //! Default constructor with no effect.
-        SwapChain() = default;
+        //! Allocates the internal data.
+        SwapChain();
 
         //! Constructor to initialize the swap-chain with the specified video mode and V-sync.
         SwapChain(const SwapChainDescriptor& desc);
@@ -179,7 +178,7 @@ class LLGL_EXPORT SwapChain : public RenderTarget
         bool ResetDisplayFullscreenMode();
 
         /**
-        \breif Primary function to resize all swap buffers.
+        \brief Primary function to resize all swap buffers.
         \see ResizeBuffers
         */
         virtual bool ResizeBuffersPrimary(const Extent2D& resolution) = 0;
@@ -191,12 +190,8 @@ class LLGL_EXPORT SwapChain : public RenderTarget
 
     private:
 
-        std::shared_ptr<Surface>    surface_;
-
-        Extent2D                    resolution_;
-
-        Offset2D                    normalModeSurfacePos_;
-        bool                        normalModeSurfacePosStored_ = false;
+        struct Pimpl;
+        Pimpl* pimpl_;
 
 };
 

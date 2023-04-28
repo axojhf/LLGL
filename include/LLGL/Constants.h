@@ -1,8 +1,8 @@
 /*
  * Constants.h
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #ifndef LLGL_CONSTANTS_H
@@ -10,6 +10,7 @@
 
 
 #include <cstdint>
+#include <cstddef>
 
 
 namespace LLGL
@@ -23,34 +24,37 @@ namespace Constants
 /* ----- Constants ----- */
 
 /**
-\brief Specifies the maximal number of threads the system supports.
+\brief Specifies the maximal number of threads the host system supports.
 \see ConvertImageBuffer
+\see RenderSystem::CreateTexture
+\see RenderSystem::WriteTexture
+\see RenderSystem::ReadTexture
 */
-static const std::uint32_t  maxThreadCount  = ~0u;
+constexpr unsigned      maxThreadCount  = -1;
 
 /**
 \brief Offset value to determine the offset automatically, e.g. to append a vertex attribute at the end of a vertex format.
 \see VertexFormat::AppendAttribute
 */
-static const std::uint32_t  ignoreOffset    = ~0u;
+constexpr std::uint32_t ignoreOffset    = -1;
 
 /**
 \brief Specifies an invalid binding slot for shader resources.
-\see ShaderResource::slot
+\see ShaderResourceReflection::slot
 */
-static const std::uint32_t  invalidSlot     = ~0u;
+constexpr std::uint32_t invalidSlot     = -1;
 
 /**
 \brief Specifies to use the whole size of a resource.
 \see CommandBuffer::FillBuffer
 */
-static const std::uint64_t  wholeSize       = ~0ull;
+constexpr std::uint64_t wholeSize       = -1;
 
 /**
 \brief Specifies an invalid timer ID for window events.
 \see WindowBehavior::moveAndResizeTimerID
 */
-static const std::uint32_t invalidTimerID   = 0u;
+constexpr std::uint32_t invalidTimerID  = 0u;
 
 
 } // /namespace Constants

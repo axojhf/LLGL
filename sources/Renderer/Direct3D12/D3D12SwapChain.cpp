@@ -1,8 +1,8 @@
 /*
  * D3D12SwapChain.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "D3D12SwapChain.h"
@@ -12,12 +12,14 @@
 #include "Command/D3D12CommandContext.h"
 #include "Command/D3D12CommandQueue.h"
 #include "Buffer/D3D12Buffer.h"
+#include "RenderState/D3D12DescriptorHeap.h"
 #include "../CheckedCast.h"
-#include "../../Core/Helper.h"
+#include "../../Core/CoreUtils.h"
 #include "../DXCommon/DXTypes.h"
 
 #include <LLGL/Platform/NativeHandle.h>
 #include <LLGL/Log.h>
+#include <LLGL/Utils/ForRange.h>
 #include "D3DX12/d3dx12.h"
 #include <algorithm>
 
@@ -173,7 +175,7 @@ bool D3D12SwapChain::HasDepthBuffer() const
 
 void D3D12SwapChain::SyncGPU()
 {
-    renderSystem_.SyncGPU(frameFenceValues_[currentFrame_]);
+    renderSystem_.SyncGPU();
 }
 
 
@@ -214,7 +216,7 @@ void D3D12SwapChain::CreateResolutionDependentResources(const Extent2D& resoluti
     SyncGPU();
 
     /* Release previous window size dependent resources, and reset fence values to current value */
-    for (UINT i = 0; i < numFrames_; ++i)
+    for_range(i, numFrames_)
     {
         colorBuffers_[i].native.Reset();
         colorBuffersMS_[i].native.Reset();
@@ -294,12 +296,12 @@ void D3D12SwapChain::CreateColorBufferRTVs(const Extent2D& resolution)
         descHeapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
         descHeapDesc.NodeMask       = 0;
     }
-    rtvDescHeap_ = renderSystem_.GetDevice().CreateDXDescriptorHeap(descHeapDesc);
+    rtvDescHeap_ = D3D12DescriptorHeap::CreateNativeOrThrow(renderSystem_.GetDevice().GetNative(), descHeapDesc);
 
     /* Create color buffers */
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvDescHandle(rtvDescHeap_->GetCPUDescriptorHandleForHeapStart());
 
-    for (UINT i = 0; i < numFrames_; ++i)
+    for_range(i, numFrames_)
     {
         /* Get render target resource from swap-chain buffer */
         auto hr = swapChainDXGI_->GetBuffer(i, IID_PPV_ARGS(colorBuffers_[i].native.ReleaseAndGetAddressOf()));
@@ -362,7 +364,7 @@ void D3D12SwapChain::CreateDepthStencil(const Extent2D& resolution)
         descHeapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
         descHeapDesc.NodeMask       = 0;
     }
-    dsvDescHeap_ = renderSystem_.GetDevice().CreateDXDescriptorHeap(descHeapDesc);
+    dsvDescHeap_ = D3D12DescriptorHeap::CreateNativeOrThrow(renderSystem_.GetDevice().GetNative(), descHeapDesc);
 
     /* Create depth-stencil buffer */
     auto tex2DDesc = CD3DX12_RESOURCE_DESC::Tex2D(
@@ -393,14 +395,15 @@ void D3D12SwapChain::CreateDepthStencil(const Extent2D& resolution)
 void D3D12SwapChain::MoveToNextFrame()
 {
     /* Schedule signal command into the queue */
-    commandQueue_->SignalFence(frameFence_, frameFenceValues_[currentFrame_]);
+    const UINT64 currentFenceValue = frameFenceValues_[currentFrame_];
+    commandQueue_->SignalFence(frameFence_.Get(), currentFenceValue);
 
     /* Advance frame index */
     currentFrame_ = swapChainDXGI_->GetCurrentBackBufferIndex();
 
     /* Wait until the fence value of the next frame is signaled, so we know the next frame is ready to start */
-    frameFence_.WaitForValue(frameFenceValues_[currentFrame_]);
-    frameFenceValues_[currentFrame_] = frameFence_.GetNextValue();
+    frameFence_.WaitForHigherSignal(frameFenceValues_[currentFrame_]);
+    frameFenceValues_[currentFrame_] = currentFenceValue + 1;
 }
 
 

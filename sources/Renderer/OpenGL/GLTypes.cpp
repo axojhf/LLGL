@@ -1,14 +1,13 @@
 /*
  * GLTypes.cpp
- * 
- * This file is part of the "LLGL" project (Copyright (c) 2015-2019 by Lukas Hermanns)
- * See "LICENSE.txt" for license information.
+ *
+ * Copyright (c) 2015 Lukas Hermanns. All rights reserved.
+ * Licensed under the terms of the BSD 3-Clause license (see LICENSE.txt).
  */
 
 #include "GLTypes.h"
+#include "../../Core/Exception.h"
 #include <LLGL/StaticLimits.h>
-#include <stdexcept>
-#include <string>
 
 
 namespace LLGL
@@ -23,13 +22,13 @@ namespace GLTypes
 [[noreturn]]
 static void MapFailed(const char* typeName)
 {
-    throw std::invalid_argument("failed to map <LLGL::" + std::string(typeName) + "> to OpenGL parameter");
+    LLGL_TRAP("failed to map <LLGL::%s> to OpenGL parameter", typeName);
 }
 
 [[noreturn]]
 static void UnmapFailed(const char* typeName)
 {
-    throw std::invalid_argument("failed to unmap <LLGL::" + std::string(typeName) + "> from OpenGL parameter");
+    LLGL_TRAP("failed to unmap <LLGL::%s> from OpenGL parameter", typeName);
 }
 
 
@@ -301,7 +300,9 @@ static GLenum MapIntegerImageFormat(const ImageFormat imageFormat)
         case ImageFormat::BGR:              return GL_BGR_INTEGER;
         #endif
         case ImageFormat::RGBA:             return GL_RGBA_INTEGER;
+        #ifdef LLGL_OPENGL
         case ImageFormat::BGRA:             return GL_BGRA_INTEGER;
+        #endif
         case ImageFormat::Depth:            return GL_DEPTH_COMPONENT;
         case ImageFormat::DepthStencil:     return GL_DEPTH_STENCIL;
         #ifdef LLGL_OPENGL
